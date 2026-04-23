@@ -27,11 +27,34 @@ fun LoginScreen(
     val updateManager = remember { UpdateManager(context) }
     var updateInfo by remember { mutableStateOf<AppUpdateInfo?>(null) }
     var showUpdateDialog by remember { mutableStateOf(false) }
+    var isCheckingUpdate by remember { mutableStateOf(false) }
+    var showNoUpdateToast by remember { mutableStateOf(false) }
+    var downloadProgress by remember { mutableStateOf<Float?>(null) }
+    var showDownloadDialog by remember { mutableStateOf(false) }
+
+    fun checkUpdates(manual: Boolean = false) {
+        scope.launch {
+            if (manual) isCheckingUpdate = true
+            val info = updateManager.checkForUpdates()
+            if (manual) isCheckingUpdate = false
+            
+            if (info != null) {
+                updateInfo = info
+                showUpdateDialog = true
+            } else if (manual) {
+                showNoUpdateToast = true
+            }
+        }
+    }
 
     LaunchedEffect(Unit) {
-        updateInfo = updateManager.checkForUpdates()
-        if (updateInfo != null) {
-            showUpdateDialog = true
+        checkUpdates(manual = false)
+    }
+
+    if (showNoUpdateToast) {
+        LaunchedEffect(showNoUpdateToast) {
+            android.widget.Toast.makeText(context, "O aplicativo já está atualizado", android.widget.Toast.LENGTH_SHORT).show()
+            showNoUpdateToast = false
         }
     }
 
@@ -43,9 +66,20 @@ fun LoginScreen(
             confirmButton = {
                 TextButton(onClick = {
                     showUpdateDialog = false
-                    updateInfo?.let {
+                    updateInfo?.let { info ->
+                        showDownloadDialog = true
                         scope.launch {
-                            updateManager.downloadAndInstallApk(it.apk_url)
+                            try {
+                                android.util.Log.d("LoginScreen", "Iniciando download via botão: ${info.apk_url}")
+                                updateManager.downloadAndInstallApk(info.apk_url) { progress ->
+                                    downloadProgress = progress
+                                }
+                            } catch (e: Exception) {
+                                showDownloadDialog = false
+                                downloadProgress = null
+                                android.util.Log.e("LoginScreen", "Erro ao processar download", e)
+                                android.widget.Toast.makeText(context, "Erro ao baixar: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                            }
                         }
                     }
                 }) {
@@ -57,6 +91,31 @@ fun LoginScreen(
                     Text("Agora não")
                 }
             }
+        )
+    }
+
+    if (showDownloadDialog) {
+        AlertDialog(
+            onDismissRequest = { /* Bloqueia fechar durante download */ },
+            title = { Text("Baixando Atualização") },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    val progress = downloadProgress ?: 0f
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                    )
+                    Text("${(progress * 100).toInt()}%")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Por favor, aguarde enquanto baixamos a nova versão...",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            },
+            confirmButton = {} // Sem botões, fecha ao terminar
         )
     }
 
@@ -115,6 +174,19 @@ fun LoginScreen(
             } else {
                 Text("Entrar")
             }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        TextButton(
+            onClick = { checkUpdates(manual = true) },
+            enabled = !isCheckingUpdate
+        ) {
+            if (isCheckingUpdate) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Text("Verificar se há atualizações")
         }
     }
 }

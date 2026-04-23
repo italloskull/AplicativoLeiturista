@@ -3,12 +3,19 @@ package com.example.oaplicativo.data
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import androidx.core.content.FileProvider
 import com.example.oaplicativo.BuildConfig
 import io.ktor.client.HttpClient
-import io.ktor.client.call.body
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.get
-import io.ktor.client.statement.bodyAsBytes
+import io.ktor.client.request.prepareGet
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.http.contentLength
+import io.ktor.serialization.kotlinx.json.json
+import io.ktor.client.call.body
+import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -27,85 +34,157 @@ data class GitHubRelease(
 @Serializable
 data class GitHubAsset(
     val name: String,
-    @SerialName("browser_download_url") val downloadUrl: String
+    @SerialName("browser_download_url") val downloadUrl: String,
+    val size: Long = 0L
 )
 
 data class AppUpdateInfo(
     val version_name: String,
     val apk_url: String,
-    val changelog: String
+    val changelog: String,
+    val fileSize: Long = 0L
 )
 
 class UpdateManager(private val context: Context) {
-    private val client = HttpClient()
+    private val client = HttpClient {
+        install(ContentNegotiation) {
+            json(Json { ignoreUnknownKeys = true })
+        }
+        install(HttpTimeout) {
+            requestTimeoutMillis = 60000
+            connectTimeoutMillis = 60000
+        }
+    }
     private val json = Json { ignoreUnknownKeys = true }
 
-    // COLOQUE SEU USUÁRIO E NOME DO REPOSITÓRIO AQUI
-    private val GITHUB_OWNER = "seu-usuario"
-    private val GITHUB_REPO = "seu-repositorio"
+    // CONFIGURADO COM SEU REPOSITÓRIO REAL
+    private val GITHUB_OWNER = "italloskull"
+    private val GITHUB_REPO = "AplicativoLeiturista"
     private val GITHUB_API_URL = "https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"
 
     suspend fun checkForUpdates(): AppUpdateInfo? {
         return withContext(Dispatchers.IO) {
             try {
+                Log.d("UpdateManager", "Verificando atualizações em: $GITHUB_API_URL")
                 val responseString: String = client.get(GITHUB_API_URL).body()
+                Log.d("UpdateManager", "Resposta do GitHub: $responseString")
                 val release = json.decodeFromString<GitHubRelease>(responseString)
                 
-                // GitHub costuma usar "v1.0.0", removemos o 'v' para comparar
                 val latestVersion = release.tagName.removePrefix("v")
                 val currentVersion = BuildConfig.VERSION_NAME
+                
+                Log.d("UpdateManager", "Versão atual: $currentVersion | Versão no GitHub: $latestVersion")
 
                 if (isNewerVersion(latestVersion, currentVersion)) {
+                    Log.d("UpdateManager", "Nova versão detectada!")
                     val apkAsset = release.assets.find { it.name.endsWith(".apk") }
                     if (apkAsset != null) {
+                        Log.d("UpdateManager", "APK encontrado: ${apkAsset.downloadUrl} (${apkAsset.size} bytes)")
                         AppUpdateInfo(
                             version_name = latestVersion,
                             apk_url = apkAsset.downloadUrl,
-                            changelog = release.body
+                            changelog = release.body,
+                            fileSize = apkAsset.size
                         )
-                    } else null
+                    } else {
+                        Log.e("UpdateManager", "Nenhum arquivo .apk encontrado na release do GitHub!")
+                        null
+                    }
                 } else {
+                    Log.d("UpdateManager", "O app já está na versão mais recente.")
                     null
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e("UpdateManager", "Erro ao verificar atualizações", e)
                 null
             }
         }
     }
 
     private fun isNewerVersion(latest: String, current: String): Boolean {
-        // Comparação simples de string, ou você pode quebrar em números
-        return latest != current
+        val latestParts = latest.split(".").mapNotNull { it.trim().toIntOrNull() }
+        val currentParts = current.split(".").mapNotNull { it.trim().toIntOrNull() }
+        
+        val maxLength = maxOf(latestParts.size, currentParts.size)
+        for (i in 0 until maxLength) {
+            val latestPart = latestParts.getOrElse(i) { 0 }
+            val currentPart = currentParts.getOrElse(i) { 0 }
+            if (latestPart > currentPart) return true
+            if (latestPart < currentPart) return false
+        }
+        return false
     }
 
-    suspend fun downloadAndInstallApk(apkUrl: String) {
+    suspend fun downloadAndInstallApk(apkUrl: String, onProgress: (Float) -> Unit) {
         withContext(Dispatchers.IO) {
             try {
-                val response = client.get(apkUrl)
-                val bytes = response.bodyAsBytes()
+                Log.d("UpdateManager", "Iniciando download do APK (streaming): $apkUrl")
                 
                 val file = File(context.cacheDir, "update.apk")
-                FileOutputStream(file).use { it.write(bytes) }
+                if (file.exists()) file.delete()
                 
-                installApk(file)
+                client.prepareGet(apkUrl).execute { response ->
+                    if (response.status.value !in 200..299) {
+                        throw Exception("Erro no servidor: ${response.status}")
+                    }
+                    
+                    val totalBytes = response.contentLength() ?: -1L
+                    val channel = response.bodyAsChannel()
+                    var bytesRead = 0L
+                    
+                    FileOutputStream(file).use { output ->
+                        val buffer = ByteArray(8192)
+                        while (!channel.isClosedForRead) {
+                            val read = channel.readAvailable(buffer)
+                            if (read > 0) {
+                                output.write(buffer, 0, read)
+                                bytesRead += read
+                                if (totalBytes > 0) {
+                                    val progress = bytesRead.toFloat() / totalBytes.toFloat()
+                                    withContext(Dispatchers.Main) {
+                                        onProgress(progress)
+                                    }
+                                }
+                            }
+                            if (read == -1) break
+                        }
+                    }
+                }
+
+                Log.d("UpdateManager", "Download concluído. Arquivo salvo em: ${file.absolutePath} (Tamanho: ${file.length()} bytes)")
+                
+                if (file.length() == 0L) {
+                    Log.e("UpdateManager", "O arquivo baixado está vazio!")
+                    return@withContext
+                }
+                
+                withContext(Dispatchers.Main) {
+                    onProgress(1f)
+                    installApk(file)
+                }
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e("UpdateManager", "Erro fatal durante download/instalação", e)
             }
         }
     }
 
     private fun installApk(file: File) {
-        val uri: Uri = FileProvider.getUriForFile(
-            context, 
-            "${context.packageName}.fileprovider", 
-            file
-        )
+        try {
+            Log.d("UpdateManager", "Iniciando instalação. URI Authority: ${context.packageName}.fileprovider")
+            val uri: Uri = FileProvider.getUriForFile(
+                context, 
+                "${context.packageName}.fileprovider", 
+                file
+            )
 
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+            }
+            Log.d("UpdateManager", "Disparando Intent de instalação")
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            Log.e("UpdateManager", "Erro ao disparar intent de instalação", e)
         }
-        context.startActivity(intent)
     }
 }

@@ -7,6 +7,7 @@ import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.storage.Storage
 
 object SupabaseClient {
+    // Agora lendo do BuildConfig gerado pelo Gradle
     private val SUPABASE_URL = BuildConfig.SUPABASE_URL
     private val SUPABASE_KEY = BuildConfig.SUPABASE_KEY
 
