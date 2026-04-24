@@ -15,12 +15,18 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -53,9 +59,11 @@ val imageDescriptions = arrayOf(
     R.string.image3_description,
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BakingScreen(
-    bakingViewModel: BakingViewModel = viewModel()
+    bakingViewModel: BakingViewModel = viewModel(),
+    onBack: () -> Unit
 ) {
     val selectedImage = remember { mutableIntStateOf(0) }
     val placeholderPrompt = stringResource(R.string.prompt_placeholder)
@@ -65,16 +73,24 @@ fun BakingScreen(
     val uiState by bakingViewModel.uiState.collectAsState()
     val resources = LocalResources.current
 
-    Scaffold { innerPadding ->
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.baking_title)) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = "Voltar"
+                        )
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
         Column(
             modifier = Modifier.padding(innerPadding).fillMaxSize()
         ) {
-            Text(
-                text = stringResource(R.string.baking_title),
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(16.dp)
-            )
-
             LazyRow(
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -161,5 +177,5 @@ fun BakingScreen(
 @Preview(showSystemUi = true)
 @Composable
 fun BakingScreenPreview() {
-    BakingScreen()
+    BakingScreen(onBack = {})
 }

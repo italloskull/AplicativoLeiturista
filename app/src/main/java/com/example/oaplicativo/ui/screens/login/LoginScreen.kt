@@ -1,6 +1,9 @@
 package com.example.oaplicativo.ui.screens.login
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -11,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.oaplicativo.data.AppUpdateInfo
 import com.example.oaplicativo.data.UpdateManager
+import com.example.oaplicativo.util.SecurityUtils
 import kotlinx.coroutines.launch
 
 @Composable
@@ -18,11 +22,12 @@ fun LoginScreen(
     onLoginSuccess: () -> Unit,
     viewModel: LoginViewModel = viewModel()
 ) {
-    var username by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    var identifier by remember { mutableStateOf(SecurityUtils.getRememberedIdentifier(context) ?: "") }
+    var password by remember { mutableStateOf(SecurityUtils.getRememberedPassword(context) ?: "") }
+    var rememberMe by remember { mutableStateOf(SecurityUtils.isRememberMeEnabled(context)) }
     val loginState by viewModel.loginState.collectAsState()
 
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val updateManager = remember { UpdateManager(context) }
     var updateInfo by remember { mutableStateOf<AppUpdateInfo?>(null) }
@@ -125,68 +130,113 @@ fun LoginScreen(
         }
     }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
+            .padding(16.dp)
     ) {
-        Text(text = "Login Saneamento", style = MaterialTheme.typography.headlineMedium)
-        Spacer(modifier = Modifier.height(32.dp))
-        OutlinedTextField(
-            value = username,
-            onValueChange = { username = it },
-            label = { Text("E-mail") },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = loginState !is LoginState.Loading
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        OutlinedTextField(
-            value = password,
-            onValueChange = { password = it },
-            label = { Text("Senha") },
-            visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth(),
-            enabled = loginState !is LoginState.Loading
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        if (loginState is LoginState.Error) {
-            Text(
-                text = (loginState as LoginState.Error).message,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-        }
-
-        Button(
-            onClick = { viewModel.login(username, password) },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = loginState !is LoginState.Loading
+        Card(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .padding(16.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
         ) {
-            if (loginState is LoginState.Loading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(24.dp),
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    strokeWidth = 2.dp
+            Column(
+                modifier = Modifier
+                    .padding(32.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(text = "Login Recadastre.IA", style = MaterialTheme.typography.headlineMedium)
+                Spacer(modifier = Modifier.height(32.dp))
+                OutlinedTextField(
+                    value = identifier,
+                    onValueChange = { identifier = it },
+                    label = { Text("E-mail ou Usuário") },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = loginState !is LoginState.Loading,
+                    leadingIcon = {
+                        Icon(Icons.Filled.Email, contentDescription = "Ícone de E-mail ou Usuário")
+                    }
                 )
-            } else {
-                Text("Entrar")
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Senha") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = loginState !is LoginState.Loading,
+                    leadingIcon = {
+                        Icon(Icons.Filled.Lock, contentDescription = "Ícone de Senha")
+                    }
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = rememberMe,
+                        onCheckedChange = { rememberMe = it },
+                        enabled = loginState !is LoginState.Loading
+                    )
+                    Text(
+                        text = "Lembrar-me",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(start = 4.dp)
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (loginState is LoginState.Error) {
+                    Text(
+                        text = (loginState as LoginState.Error).message,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                }
+
+                Button(
+                    onClick = { viewModel.login(context, identifier, password, rememberMe) },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = loginState !is LoginState.Loading
+                ) {
+                    if (loginState is LoginState.Loading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text("Entrar")
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                TextButton(
+                    onClick = { checkUpdates(manual = true) },
+                    enabled = !isCheckingUpdate
+                ) {
+                    if (isCheckingUpdate) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    Text("Verificar se há atualizações")
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        TextButton(
-            onClick = { checkUpdates(manual = true) },
-            enabled = !isCheckingUpdate
-        ) {
-            if (isCheckingUpdate) {
-                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                Spacer(modifier = Modifier.width(8.dp))
-            }
-            Text("Verificar se há atualizações")
-        }
+        Text(
+            text = "Versão: ${com.example.oaplicativo.BuildConfig.VERSION_NAME}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 8.dp)
+        )
     }
 }

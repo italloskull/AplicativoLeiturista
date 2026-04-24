@@ -118,9 +118,11 @@ class UpdateManager(private val context: Context) {
     suspend fun downloadAndInstallApk(apkUrl: String, onProgress: (Float) -> Unit) {
         withContext(Dispatchers.IO) {
             try {
-                Log.d("UpdateManager", "Iniciando download do APK (streaming): $apkUrl")
+                Log.d("UpdateManager", "Iniciando download do APK: $apkUrl")
                 
-                val file = File(context.cacheDir, "update.apk")
+                // Usar externalCacheDir é mais seguro para o Instalador de Pacotes
+                val storageDir = context.externalCacheDir ?: context.cacheDir
+                val file = File(storageDir, "update.apk")
                 if (file.exists()) file.delete()
                 
                 client.prepareGet(apkUrl).execute { response ->
@@ -133,29 +135,32 @@ class UpdateManager(private val context: Context) {
                     var bytesRead = 0L
                     
                     FileOutputStream(file).use { output ->
-                        val buffer = ByteArray(8192)
+                        val buffer = ByteArray(64 * 1024)
                         while (!channel.isClosedForRead) {
                             val read = channel.readAvailable(buffer)
+                            if (read == -1) break
                             if (read > 0) {
                                 output.write(buffer, 0, read)
                                 bytesRead += read
                                 if (totalBytes > 0) {
                                     val progress = bytesRead.toFloat() / totalBytes.toFloat()
-                                    withContext(Dispatchers.Main) {
-                                        onProgress(progress)
+                                    // Throttle progress updates to avoid excessive recompositions
+                                    if (bytesRead % (1024 * 512) == 0L || bytesRead == totalBytes) {
+                                        withContext(Dispatchers.Main) {
+                                            onProgress(progress)
+                                        }
                                     }
                                 }
                             }
-                            if (read == -1) break
                         }
+                        output.flush()
                     }
                 }
 
-                Log.d("UpdateManager", "Download concluído. Arquivo salvo em: ${file.absolutePath} (Tamanho: ${file.length()} bytes)")
+                Log.d("UpdateManager", "Download concluído. Tamanho: ${file.length()} bytes")
                 
-                if (file.length() == 0L) {
-                    Log.e("UpdateManager", "O arquivo baixado está vazio!")
-                    return@withContext
+                if (file.length() <= 1024) { // Se for muito pequeno, provavelmente é um erro de HTML/Redirecionamento
+                    throw Exception("Arquivo APK inválido ou muito pequeno.")
                 }
                 
                 withContext(Dispatchers.Main) {
@@ -163,7 +168,7 @@ class UpdateManager(private val context: Context) {
                     installApk(file)
                 }
             } catch (e: Exception) {
-                Log.e("UpdateManager", "Erro fatal durante download/instalação", e)
+                Log.e("UpdateManager", "Erro no download/instalação", e)
             }
         }
     }

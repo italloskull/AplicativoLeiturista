@@ -21,7 +21,6 @@ class UserRegistrationViewModel(
                 _registrationState.value = RegistrationState.Success
             } catch (e: Exception) {
                 _registrationState.value = RegistrationState.Error(e.message ?: "Erro desconhecido")
-                e.printStackTrace()
             }
         }
     }
