@@ -2,13 +2,14 @@ package com.example.oaplicativo.ui.screens.user_registration
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.oaplicativo.data.AuthRepository
+import com.example.oaplicativo.data.repository.AuthRepositoryImpl
+import com.example.oaplicativo.domain.repository.AuthRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 class UserRegistrationViewModel(
-    private val authRepository: AuthRepository = AuthRepository.getInstance()
+    private val authRepository: AuthRepository = AuthRepositoryImpl.getInstance()
 ) : ViewModel() {
     private val _registrationState = MutableStateFlow<RegistrationState>(RegistrationState.Idle)
     val registrationState: StateFlow<RegistrationState> = _registrationState

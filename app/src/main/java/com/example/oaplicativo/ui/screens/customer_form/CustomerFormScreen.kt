@@ -10,9 +10,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
@@ -20,10 +24,14 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.oaplicativo.model.Customer
+import com.example.oaplicativo.presentation.components.CensoredDataField
 import com.example.oaplicativo.ui.components.BooleanOption
 import com.example.oaplicativo.ui.components.SpinnerOption
 import com.example.oaplicativo.util.LocationHelper
+import com.example.oaplicativo.util.privacy.PrivacyUtils
 import kotlinx.coroutines.launch
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,9 +39,16 @@ fun CustomerFormScreen(
     customerId: String? = null,
     onSaveSuccess: () -> Unit,
     onBack: () -> Unit,
-    viewModel: CustomerFormViewModel = viewModel()
+    viewModel: CustomerFormViewModel = viewModel(factory = androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner.current?.let {
+        androidx.lifecycle.viewmodel.viewModelFactory {
+            addInitializer(CustomerFormViewModel::class) {
+                CustomerFormViewModel(application = (this[androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY] as android.app.Application))
+            }
+        }
+    } ?: androidx.lifecycle.viewmodel.viewModelFactory { })
 ) {
     val customer = remember(customerId) { viewModel.getCustomer(customerId) }
+    val userProfile by viewModel.currentUserProfile.collectAsState()
 
     var nome by remember(customer) { mutableStateOf(customer?.name ?: "") }
     var matricula by remember(customer) { mutableStateOf(customer?.registrationNumber ?: "") }
@@ -71,6 +86,10 @@ fun CustomerFormScreen(
     val formState by viewModel.state.collectAsState()
 
     val isMatriculaValid by remember { derivedStateOf { matricula.isNotEmpty() } }
+    
+    val isDataCensoredInitial = remember(customer) { PrivacyUtils.shouldMaskSensitiveData(customer?.createdAt) }
+    var isEditingCensoredData by remember { mutableStateOf(false) }
+    val shouldShowCensored = isDataCensoredInitial && !isEditingCensoredData
 
     var showDeleteDialog by remember { mutableStateOf(false) }
 
@@ -149,30 +168,46 @@ fun CustomerFormScreen(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                 )
             }
+            
             Spacer(modifier = Modifier.height(8.dp))
-            OutlinedTextField(
+            
+            CensoredDataField(
+                label = "E-mail (Opcional)",
                 value = email,
-                onValueChange = { if (it.length <= 254) email = it },
-                label = { Text("E-mail (Opcional)") },
-                modifier = Modifier.fillMaxWidth(),
+                onValueChange = { email = it },
+                isCensored = shouldShowCensored,
+                censoredValue = PrivacyUtils.applyPartialEmailCensorship(email),
+                onEditClick = { isEditingCensoredData = true; email = "" },
+                leadingIcon = Icons.Default.Email,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
             )
+            
             Spacer(modifier = Modifier.height(8.dp))
-            OutlinedTextField(
+            
+            CensoredDataField(
+                label = "Telefone Fixo (Opcional)",
                 value = telefoneFixo,
-                onValueChange = { if (it.all { char -> char.isDigit() } && it.length <= 13) telefoneFixo = it },
-                label = { Text("Telefone Fixo (Opcional)") },
-                modifier = Modifier.fillMaxWidth(),
+                onValueChange = { telefoneFixo = it },
+                isCensored = shouldShowCensored,
+                censoredValue = PrivacyUtils.applyPartialPhoneCensorship(telefoneFixo),
+                onEditClick = { isEditingCensoredData = true; telefoneFixo = "" },
+                leadingIcon = Icons.Default.Phone,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
             )
+            
             Spacer(modifier = Modifier.height(8.dp))
-            OutlinedTextField(
+            
+            CensoredDataField(
+                label = "Celular (Opcional)",
                 value = celular,
-                onValueChange = { if (it.all { char -> char.isDigit() } && it.length <= 13) celular = it },
-                label = { Text("Celular (Opcional)") },
-                modifier = Modifier.fillMaxWidth(),
+                onValueChange = { celular = it },
+                isCensored = shouldShowCensored,
+                censoredValue = PrivacyUtils.applyPartialPhoneCensorship(celular),
+                onEditClick = { isEditingCensoredData = true; celular = "" },
+                leadingIcon = Icons.Default.Smartphone,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
             )
+
             Spacer(modifier = Modifier.height(16.dp))
 
             BooleanOption(label = "Caixa de medição é padrão?", checked = isCaixaPadrao) { isCaixaPadrao = it }
@@ -189,23 +224,23 @@ fun CustomerFormScreen(
                 onOptionSelected = { situacaoLocal = it }
             )
 
+            Spacer(modifier = Modifier.height(8.dp))
+
             SpinnerOption(
                 label = "Quantidade de Economias",
-                options = (1..20).toList(),
-                selectedOption = qtdEconomias,
-                onOptionSelected = { qtdEconomias = it },
-                optionToString = { it.toString() }
+                options = (1..50).map { it.toString() },
+                selectedOption = qtdEconomias?.toString(),
+                onOptionSelected = { it?.let { qtdEconomias = it.toIntOrNull() } }
             )
 
             Spacer(modifier = Modifier.height(16.dp))
-            
+
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Localização GPS", style = MaterialTheme.typography.titleSmall)
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Localização GPS", style = MaterialTheme.typography.titleMedium)
                     if (latitude != null && longitude != null) {
                         Text("Lat: $latitude", style = MaterialTheme.typography.bodyMedium)
                         Text("Long: $longitude", style = MaterialTheme.typography.bodyMedium)
@@ -262,25 +297,63 @@ fun CustomerFormScreen(
             Button(
                 onClick = {
                     if (isMatriculaValid) {
-                        viewModel.saveCustomer(
-                            Customer(
-                                id = customer?.id,
-                                name = nome.trim(),
-                                registrationNumber = matricula.trim(),
-                                registrationDigit = digitoMatricula.trim(),
-                                email = email.trim().lowercase(),
-                                landline = telefoneFixo.trim(),
-                                cellPhone = celular.trim(),
-                                isStandardMeasurementBox = isCaixaPadrao,
-                                isStandardizedSeals = isLacresPadronizados,
-                                isHdAccessible = isHdAcessivel,
-                                isVacationer = isVeranista,
-                                locationStatus = situacaoLocal,
-                                economiesCount = qtdEconomias,
-                                latitude = latitude,
-                                longitude = longitude
+                        scope.launch {
+                            // AUTOMAÇÃO DE GPS PRECISO: 
+                            var finalLat = latitude
+                            var finalLong = longitude
+
+                            if (finalLat == null || finalLong == null) {
+                                val fineLoc = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+                                
+                                if (fineLoc == PackageManager.PERMISSION_GRANTED) {
+                                    // Temos permissão, captura agora com alta precisão
+                                    val loc = locationHelper.getCurrentLocation()
+                                    finalLat = loc?.latitude
+                                    finalLong = loc?.longitude
+                                } else {
+                                    // NÃO temos permissão, pedimos agora
+                                    locationPermissionLauncher.launch(
+                                        arrayOf(
+                                            Manifest.permission.ACCESS_FINE_LOCATION,
+                                            Manifest.permission.ACCESS_COARSE_LOCATION
+                                        )
+                                    )
+                                    // Após o pedido, o usuário precisará clicar em Salvar de novo 
+                                    // para garantir que a captura ocorra com a nova permissão.
+                                    return@launch
+                                }
+                            }
+
+                            val fullNow = ZonedDateTime.now()
+                            val timestampIso = fullNow.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+                            val simplifiedDate = fullNow.format(DateTimeFormatter.ofPattern("yyyy/MM/dd"))
+
+                            viewModel.saveCustomer(
+                                Customer(
+                                    id = customer?.id,
+                                    name = nome.trim(),
+                                    registrationNumber = matricula.trim(),
+                                    registrationDigit = digitoMatricula.trim(),
+                                    email = email.trim().lowercase(),
+                                    landline = telefoneFixo.trim(),
+                                    cellPhone = celular.trim(),
+                                    isStandardMeasurementBox = isCaixaPadrao,
+                                    isStandardizedSeals = isLacresPadronizados,
+                                    isHdAccessible = isHdAcessivel,
+                                    isVacationer = isVeranista,
+                                    locationStatus = situacaoLocal,
+                                    economiesCount = qtdEconomias,
+                                    latitude = finalLat,
+                                    longitude = finalLong,
+                                    
+                                    // CAMPOS DE AUDITORIA
+                                    addedBy = userProfile?.fullName ?: userProfile?.username ?: "Usuário Desconhecido",
+                                    capturedAt = timestampIso,
+                                    createdAt = timestampIso,
+                                    date = simplifiedDate
+                                )
                             )
-                        )
+                        }
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),

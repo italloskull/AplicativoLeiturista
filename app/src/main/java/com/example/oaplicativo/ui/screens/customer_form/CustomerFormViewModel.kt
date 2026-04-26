@@ -1,9 +1,20 @@
 package com.example.oaplicativo.ui.screens.customer_form
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.oaplicativo.data.CustomerRepository
+import androidx.work.Constraints
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import com.example.oaplicativo.data.repository.AuthRepositoryImpl
+import com.example.oaplicativo.data.local.LocalDatabase
+import com.example.oaplicativo.data.repository.CustomerRepositoryImpl
+import com.example.oaplicativo.data.sync.SyncWorker
+import com.example.oaplicativo.domain.repository.AuthRepository
+import com.example.oaplicativo.domain.repository.CustomerRepository
 import com.example.oaplicativo.model.Customer
+import com.example.oaplicativo.model.UserProfile
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,21 +28,32 @@ sealed class CustomerFormState {
 }
 
 class CustomerFormViewModel(
-    private val repository: CustomerRepository = CustomerRepository.getInstance()
-) : ViewModel() {
+    application: Application,
+    private val repository: CustomerRepository = CustomerRepositoryImpl.getInstance(),
+    private val authRepository: AuthRepository = AuthRepositoryImpl.getInstance()
+) : AndroidViewModel(application) {
     
     private val _state = MutableStateFlow<CustomerFormState>(CustomerFormState.Idle)
     val state: StateFlow<CustomerFormState> = _state.asStateFlow()
+
+    val currentUserProfile: StateFlow<UserProfile?> = authRepository.currentUserProfile
+
+    private val db = LocalDatabase(application)
+    private val workManager = WorkManager.getInstance(application)
 
     fun saveCustomer(customer: Customer) {
         viewModelScope.launch {
             _state.value = CustomerFormState.Loading
             try {
-                if (customer.id.isNullOrEmpty()) {
-                    repository.addCustomer(customer)
-                } else {
-                    repository.updateCustomer(customer)
-                }
+                // PASSO 1: Salva no banco local (Garante que não se perca)
+                db.saveCustomerOffline(customer)
+                
+                // PASSO 2: Atualiza a UI local imediatamente
+                updateRepositoryWithLocalData()
+
+                // PASSO 3: Sincronização única via WorkManager
+                scheduleSync()
+
                 _state.value = CustomerFormState.Success
             } catch (e: Exception) {
                 _state.value = CustomerFormState.Error(e.message ?: "Erro ao salvar cliente")
@@ -39,8 +61,26 @@ class CustomerFormViewModel(
         }
     }
 
+    private fun updateRepositoryWithLocalData() {
+        val pending = db.getPendingCustomers().map { it.second }
+        repository.updateLocalCustomers(pending)
+    }
+
+    private fun scheduleSync() {
+        val syncRequest = OneTimeWorkRequestBuilder<SyncWorker>()
+            .build()
+
+        workManager.enqueue(syncRequest)
+    }
+
     fun getCustomer(id: String?): Customer? {
-        return id?.let { repository.getCustomerById(it) }
+        var customer: Customer? = null
+        if (id != null) {
+            viewModelScope.launch {
+                customer = repository.getCustomerById(id)
+            }
+        }
+        return customer
     }
 
     fun resetState() {

@@ -7,7 +7,8 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
-import com.example.oaplicativo.data.AuthRepository
+import com.example.oaplicativo.data.repository.AuthRepositoryImpl
+import com.example.oaplicativo.domain.repository.AuthRepository
 import com.example.oaplicativo.ui.screens.customer_form.CustomerFormScreen
 import com.example.oaplicativo.ui.screens.customer_list.CustomerListScreen
 import com.example.oaplicativo.ui.screens.login.LoginScreen
@@ -18,7 +19,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun SetupNavGraph(navController: NavHostController) {
     val scope = rememberCoroutineScope()
-    val authRepository = AuthRepository.getInstance()
+    val authRepository: AuthRepository = AuthRepositoryImpl.getInstance()
     val context = androidx.compose.ui.platform.LocalContext.current
 
     NavHost(

@@ -30,5 +30,20 @@ data class Customer(
     @SerialName("economies_count")
     val economiesCount: Int? = null,
     @SerialName("created_at")
-    val createdAt: String? = null
+    val createdAt: String? = null,
+    
+    // Novos campos de Auditoria
+    @SerialName("added_by")
+    val addedBy: String? = null,
+    @SerialName("captured_at")
+    val capturedAt: String? = null,
+    @SerialName("synced_at")
+    val syncedAt: String? = null,
+    
+    // Novo campo de Data Simplificada (yyyy/MM/dd)
+    @SerialName("date")
+    val date: String? = null,
+
+    @kotlinx.serialization.Transient
+    val isSynced: Boolean = true
 )

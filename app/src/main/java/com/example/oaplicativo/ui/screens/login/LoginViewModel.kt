@@ -2,7 +2,8 @@ package com.example.oaplicativo.ui.screens.login
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.oaplicativo.data.AuthRepository
+import com.example.oaplicativo.data.repository.AuthRepositoryImpl
+import com.example.oaplicativo.domain.repository.AuthRepository
 import com.example.oaplicativo.util.SecurityUtils
 import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -10,7 +11,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 class LoginViewModel(
-    private val authRepository: AuthRepository = AuthRepository.getInstance()
+    private val authRepository: AuthRepository = AuthRepositoryImpl.getInstance()
 ) : ViewModel() {
     private val _loginState = MutableStateFlow<LoginState>(LoginState.Idle)
     val loginState: StateFlow<LoginState> = _loginState

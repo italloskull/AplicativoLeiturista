@@ -6,6 +6,8 @@ import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.storage.Storage
 import io.github.jan.supabase.functions.Functions
+import io.github.jan.supabase.realtime.Realtime
+import io.ktor.client.engine.okhttp.OkHttp
 
 object SupabaseClient {
     // Agora lendo do BuildConfig gerado pelo Gradle
@@ -16,9 +18,13 @@ object SupabaseClient {
         supabaseUrl = SUPABASE_URL,
         supabaseKey = SUPABASE_KEY
     ) {
+        // Usar o motor OkHttp que suporta WebSockets (necessário para Realtime)
+        httpEngine = OkHttp.create()
+
         install(Auth)
         install(Postgrest)
         install(Storage)
         install(Functions)
+        install(Realtime)
     }
 }

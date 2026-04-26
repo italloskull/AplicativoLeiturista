@@ -9,11 +9,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.oaplicativo.data.AppUpdateInfo
 import com.example.oaplicativo.data.UpdateManager
+import com.example.oaplicativo.presentation.components.AppButton
+import com.example.oaplicativo.presentation.components.AppTextField
 import com.example.oaplicativo.util.SecurityUtils
 import kotlinx.coroutines.launch
 
@@ -149,27 +153,23 @@ fun LoginScreen(
             ) {
                 Text(text = "Login Recadastre.IA", style = MaterialTheme.typography.headlineMedium)
                 Spacer(modifier = Modifier.height(32.dp))
-                OutlinedTextField(
+                AppTextField(
                     value = identifier,
                     onValueChange = { identifier = it },
-                    label = { Text("E-mail ou Usuário") },
+                    label = "E-mail ou Usuário",
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = loginState !is LoginState.Loading,
-                    leadingIcon = {
-                        Icon(Icons.Filled.Email, contentDescription = "Ícone de E-mail ou Usuário")
-                    }
+                    testTag = "login_field",
+                    leadingIcon = Icons.Filled.Email
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                OutlinedTextField(
+                AppTextField(
                     value = password,
                     onValueChange = { password = it },
-                    label = { Text("Senha") },
-                    visualTransformation = PasswordVisualTransformation(),
+                    label = "Senha",
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = loginState !is LoginState.Loading,
-                    leadingIcon = {
-                        Icon(Icons.Filled.Lock, contentDescription = "Ícone de Senha")
-                    }
+                    testTag = "password_field",
+                    leadingIcon = Icons.Filled.Lock,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 
@@ -199,21 +199,12 @@ fun LoginScreen(
                     )
                 }
 
-                Button(
+                AppButton(
+                    text = "Entrar",
                     onClick = { viewModel.login(context, identifier, password, rememberMe) },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = loginState !is LoginState.Loading
-                ) {
-                    if (loginState is LoginState.Loading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Text("Entrar")
-                    }
-                }
+                    isLoading = loginState is LoginState.Loading,
+                    modifier = Modifier.fillMaxWidth()
+                )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
