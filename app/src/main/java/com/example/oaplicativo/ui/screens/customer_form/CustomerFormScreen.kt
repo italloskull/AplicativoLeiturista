@@ -49,6 +49,7 @@ fun CustomerFormScreen(
 ) {
     val customer = remember(customerId) { viewModel.getCustomer(customerId) }
     val userProfile by viewModel.currentUserProfile.collectAsState()
+    val isAdmin = userProfile?.isAdmin == true
 
     var nome by remember(customer) { mutableStateOf(customer?.name ?: "") }
     var matricula by remember(customer) { mutableStateOf(customer?.registrationNumber ?: "") }
@@ -88,8 +89,6 @@ fun CustomerFormScreen(
     val isMatriculaValid by remember { derivedStateOf { matricula.isNotEmpty() } }
     
     val isDataCensoredInitial = remember(customer) { PrivacyUtils.shouldMaskSensitiveData(customer?.createdAt) }
-    var isEditingCensoredData by remember { mutableStateOf(false) }
-    val shouldShowCensored = isDataCensoredInitial && !isEditingCensoredData
 
     var showDeleteDialog by remember { mutableStateOf(false) }
 
@@ -175,9 +174,9 @@ fun CustomerFormScreen(
                 label = "E-mail (Opcional)",
                 value = email,
                 onValueChange = { email = it },
-                isCensored = shouldShowCensored,
+                isCensoredInitial = isDataCensoredInitial,
                 censoredValue = PrivacyUtils.applyPartialEmailCensorship(email),
-                onEditClick = { isEditingCensoredData = true; email = "" },
+                isAdmin = isAdmin,
                 leadingIcon = Icons.Default.Email,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
             )
@@ -188,9 +187,9 @@ fun CustomerFormScreen(
                 label = "Telefone Fixo (Opcional)",
                 value = telefoneFixo,
                 onValueChange = { telefoneFixo = it },
-                isCensored = shouldShowCensored,
+                isCensoredInitial = isDataCensoredInitial,
                 censoredValue = PrivacyUtils.applyPartialPhoneCensorship(telefoneFixo),
-                onEditClick = { isEditingCensoredData = true; telefoneFixo = "" },
+                isAdmin = isAdmin,
                 leadingIcon = Icons.Default.Phone,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
             )
@@ -201,9 +200,9 @@ fun CustomerFormScreen(
                 label = "Celular (Opcional)",
                 value = celular,
                 onValueChange = { celular = it },
-                isCensored = shouldShowCensored,
+                isCensoredInitial = isDataCensoredInitial,
                 censoredValue = PrivacyUtils.applyPartialPhoneCensorship(celular),
-                onEditClick = { isEditingCensoredData = true; celular = "" },
+                isAdmin = isAdmin,
                 leadingIcon = Icons.Default.Smartphone,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
             )

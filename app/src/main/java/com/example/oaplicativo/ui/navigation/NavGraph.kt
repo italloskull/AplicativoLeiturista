@@ -11,7 +11,10 @@ import com.example.oaplicativo.data.repository.AuthRepositoryImpl
 import com.example.oaplicativo.domain.repository.AuthRepository
 import com.example.oaplicativo.ui.screens.customer_form.CustomerFormScreen
 import com.example.oaplicativo.ui.screens.customer_list.CustomerListScreen
+import com.example.oaplicativo.ui.screens.economy_update.EconomyUpdateListScreen
+import com.example.oaplicativo.ui.screens.economy_update.EconomyUpdateScreen
 import com.example.oaplicativo.ui.screens.login.LoginScreen
+import com.example.oaplicativo.ui.screens.menu.MenuScreen
 import com.example.oaplicativo.ui.screens.user_registration.UserRegistrationScreen
 import com.example.oaplicativo.util.SecurityUtils
 import kotlinx.coroutines.launch
@@ -28,11 +31,32 @@ fun SetupNavGraph(navController: NavHostController) {
     ) {
         composable(route = Screen.Login.route) {
             LoginScreen(onLoginSuccess = {
-                navController.navigate(Screen.CustomerList.route) {
+                navController.navigate(Screen.Menu.route) {
                     popUpTo(Screen.Login.route) { inclusive = true }
                 }
             })
         }
+        
+        composable(route = Screen.Menu.route) {
+            MenuScreen(
+                onNavigateToRecadastro = {
+                    navController.navigate(Screen.CustomerList.route)
+                },
+                onNavigateToEconomias = {
+                    navController.navigate(Screen.EconomyUpdateList.route)
+                },
+                onLogout = {
+                    scope.launch {
+                        authRepository.logout()
+                        SecurityUtils.clearCredentials(context)
+                        navController.navigate(Screen.Login.route) {
+                            popUpTo(Screen.Menu.route) { inclusive = true }
+                        }
+                    }
+                }
+            )
+        }
+
         composable(route = Screen.CustomerList.route) {
             CustomerListScreen(
                 onAddCustomer = {
@@ -45,16 +69,37 @@ fun SetupNavGraph(navController: NavHostController) {
                     navController.navigate(Screen.UserRegistration.route)
                 },
                 onLogout = {
-                    scope.launch {
-                        authRepository.logout()
-                        SecurityUtils.clearCredentials(context)
-                        navController.navigate(Screen.Login.route) {
-                            popUpTo(Screen.CustomerList.route) { inclusive = true }
-                        }
-                    }
+                    navController.popBackStack()
                 }
             )
         }
+
+        composable(route = Screen.EconomyUpdateList.route) {
+            EconomyUpdateListScreen(
+                onBack = { navController.popBackStack() },
+                onAddClick = { navController.navigate(Screen.EconomyUpdateForm.createRoute()) },
+                onItemClick = { itemId -> 
+                    navController.navigate(Screen.EconomyUpdateForm.createRoute(itemId))
+                }
+            )
+        }
+
+        composable(
+            route = Screen.EconomyUpdateForm.route,
+            arguments = listOf(navArgument("itemId") {
+                type = NavType.StringType
+                nullable = true
+                defaultValue = null
+            })
+        ) { backStackEntry ->
+            val itemId = backStackEntry.arguments?.getString("itemId")
+            EconomyUpdateScreen(
+                itemId = itemId,
+                onBack = { navController.popBackStack() },
+                onSaveSuccess = { navController.popBackStack() }
+            )
+        }
+
         composable(
             route = Screen.CustomerForm.route,
             arguments = listOf(navArgument("customerId") {
@@ -74,6 +119,7 @@ fun SetupNavGraph(navController: NavHostController) {
                 }
             )
         }
+
         composable(route = Screen.UserRegistration.route) {
             UserRegistrationScreen(
                 onRegistrationSuccess = {

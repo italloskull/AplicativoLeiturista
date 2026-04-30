@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
@@ -114,7 +115,12 @@ fun CustomerListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Clientes Recadastrados") },
+                title = { Text("RECADASTRO") },
+                navigationIcon = {
+                    IconButton(onClick = onLogout) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar ao Menu")
+                    }
+                },
                 actions = {
                     IconButton(onClick = { 
                         scope.launch { userLocation = locationHelper.getCurrentLocation() }
