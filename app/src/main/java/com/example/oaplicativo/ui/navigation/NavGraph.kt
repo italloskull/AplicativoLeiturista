@@ -15,6 +15,7 @@ import com.example.oaplicativo.ui.screens.economy_update.EconomyUpdateListScreen
 import com.example.oaplicativo.ui.screens.economy_update.EconomyUpdateScreen
 import com.example.oaplicativo.ui.screens.login.LoginScreen
 import com.example.oaplicativo.ui.screens.menu.MenuScreen
+import com.example.oaplicativo.ui.screens.recadastro.RecadastroFormScreen
 import com.example.oaplicativo.ui.screens.user_registration.UserRegistrationScreen
 import com.example.oaplicativo.util.SecurityUtils
 import kotlinx.coroutines.launch
@@ -41,6 +42,9 @@ fun SetupNavGraph(navController: NavHostController) {
             MenuScreen(
                 onNavigateToRecadastro = {
                     navController.navigate(Screen.CustomerList.route)
+                },
+                onNavigateToNovoRecadastro = {
+                    navController.navigate(Screen.RecadastroForm.route)
                 },
                 onNavigateToEconomias = {
                     navController.navigate(Screen.EconomyUpdateList.route)
@@ -126,6 +130,16 @@ fun SetupNavGraph(navController: NavHostController) {
                     navController.popBackStack()
                 },
                 onBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        composable(route = Screen.RecadastroForm.route) {
+            RecadastroFormScreen(
+                onBack = { navController.popBackStack() },
+                onSave = { 
+                    // To be implemented: save logic
                     navController.popBackStack()
                 }
             )

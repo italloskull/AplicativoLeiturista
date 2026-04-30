@@ -12,4 +12,5 @@ sealed class Screen(val route: String) {
         fun createRoute(itemId: String? = null) = if (itemId != null) "economy_update_form?itemId=$itemId" else "economy_update_form"
     }
     object UserRegistration : Screen("user_registration")
+    object RecadastroForm : Screen("recadastro_form")
 }

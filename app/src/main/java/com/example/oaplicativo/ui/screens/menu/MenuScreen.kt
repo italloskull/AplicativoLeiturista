@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun MenuScreen(
     onNavigateToRecadastro: () -> Unit,
+    onNavigateToNovoRecadastro: () -> Unit,
     onNavigateToEconomias: () -> Unit,
     onLogout: () -> Unit
 ) {
@@ -41,15 +42,23 @@ fun MenuScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             MenuButton(
-                text = "RECADASTRO",
+                text = "LISTA DE RECADASTRO",
                 icon = Icons.Default.PersonAdd,
                 onClick = onNavigateToRecadastro
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            MenuButton(
+                text = "NOVO RECADASTRO",
+                icon = Icons.Default.GroupAdd,
+                onClick = onNavigateToNovoRecadastro
             )
             
             Spacer(modifier = Modifier.height(16.dp))
             
             MenuButton(
-                text = "Atualização de economias Prediais",
+                text = "ATUALIZAÇÃO DE ECONOMIAS",
                 icon = Icons.Default.Apartment,
                 onClick = onNavigateToEconomias
             )

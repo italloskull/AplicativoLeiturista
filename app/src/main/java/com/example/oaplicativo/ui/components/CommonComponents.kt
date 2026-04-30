@@ -24,6 +24,7 @@ fun AppFormTextField(
     modifier: Modifier = Modifier,
     error: String? = null,
     leadingIcon: ImageVector? = null,
+    trailingIcon: @Composable (() -> Unit)? = null,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     visualTransformation: VisualTransformation = VisualTransformation.None,
     maxLength: Int = 100,
@@ -40,9 +41,13 @@ fun AppFormTextField(
             enabled = enabled,
             readOnly = readOnly,
             leadingIcon = leadingIcon?.let { { Icon(it, contentDescription = null) } },
-            trailingIcon = if (error != null) {
-                { Icon(Icons.Default.Error, contentDescription = "Erro de validação", tint = MaterialTheme.colorScheme.error) }
-            } else null,
+            trailingIcon = when {
+                error != null -> {
+                    { Icon(Icons.Default.Error, contentDescription = "Erro de validação", tint = MaterialTheme.colorScheme.error) }
+                }
+                trailingIcon != null -> trailingIcon
+                else -> null
+            },
             keyboardOptions = keyboardOptions,
             visualTransformation = visualTransformation,
             singleLine = true
