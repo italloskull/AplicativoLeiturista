@@ -3,7 +3,6 @@ package com.example.oaplicativo.data.sync
 import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
-import androidx.work.ListenableWorker
 import androidx.work.WorkerParameters
 import com.example.oaplicativo.data.local.LocalDatabase
 import com.example.oaplicativo.data.repository.CustomerRepositoryImpl
@@ -19,7 +18,7 @@ import java.time.format.DateTimeFormatter
 class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
     CoroutineWorker(appContext, workerParams) {
 
-    override suspend fun doWork(): ListenableWorker.Result = withContext(Dispatchers.IO) {
+    override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val db = LocalDatabase(applicationContext)
         val repository: CustomerRepository = CustomerRepositoryImpl.getInstance()
         
@@ -29,12 +28,12 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
             db.getPendingCustomers()
         } catch (e: Exception) {
             Log.e("SyncWorker", "Erro ao acessar DB local: ${e.message}")
-            return@withContext ListenableWorker.Result.retry()
+            return@withContext Result.retry()
         }
 
         if (pendingCustomers.isEmpty()) {
             Log.d("SyncWorker", "Fila vazia. Nada para sincronizar.")
-            return@withContext ListenableWorker.Result.success()
+            return@withContext Result.success()
         }
 
         Log.d("SyncWorker", "Processando ${pendingCustomers.size} registros...")
@@ -70,9 +69,9 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
         Log.d("SyncWorker", "Finalizado. Sucesso: $totalSuccess | Falhas: $totalFails")
         
         return@withContext if (totalFails == 0) {
-            ListenableWorker.Result.success()
+            Result.success()
         } else {
-            ListenableWorker.Result.retry()
+            Result.retry()
         }
     }
 }

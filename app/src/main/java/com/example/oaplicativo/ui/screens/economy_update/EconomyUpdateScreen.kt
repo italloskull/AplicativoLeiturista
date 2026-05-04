@@ -1,20 +1,34 @@
 package com.example.oaplicativo.ui.screens.economy_update
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.oaplicativo.model.EconomyUpdate
-import com.example.oaplicativo.ui.components.AppFormTextField
-import com.example.oaplicativo.ui.components.LoadingActionButton
+import com.example.oaplicativo.ui.components.AppTextField
+import com.example.oaplicativo.ui.components.AppButton
+import com.example.oaplicativo.ui.components.AppCard
+import com.example.oaplicativo.util.LocationHelper
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,8 +47,26 @@ fun EconomyUpdateScreen(
     var economiesCount by remember(existingItem) { mutableStateOf(existingItem?.economiesCount?.toString() ?: "") }
     var floorsCount by remember(existingItem) { mutableStateOf(existingItem?.floorsCount?.toString() ?: "") }
     var electricityMeter by remember(existingItem) { mutableStateOf(existingItem?.electricityMeterNumber ?: "") }
+    
+    var latitude by remember(existingItem) { mutableStateOf(existingItem?.latitude) }
+    var longitude by remember(existingItem) { mutableStateOf(existingItem?.longitude) }
 
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val locationHelper = remember { LocationHelper(context) }
     val state by viewModel.state.collectAsState()
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
+            scope.launch {
+                val loc = locationHelper.getCurrentLocation()
+                latitude = loc?.latitude
+                longitude = loc?.longitude
+            }
+        }
+    }
 
     LaunchedEffect(state) {
         if (state is EconomyUpdateState.Success) {
@@ -45,12 +77,10 @@ fun EconomyUpdateScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (itemId == null) "Nova Atualização Predial" else "Editar Atualização Predial") },
+            CenterAlignedTopAppBar(
+                title = { Text("ATUALIZAÇÃO PREDIAL", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Voltar")
-                    }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar") }
                 }
             )
         }
@@ -58,77 +88,158 @@ fun EconomyUpdateScreen(
         Column(
             modifier = Modifier
                 .padding(paddingValues)
-                .padding(16.dp)
+                .padding(horizontal = 20.dp)
                 .verticalScroll(rememberScrollState())
+                .fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            AppFormTextField(
-                value = hdNumber,
-                onValueChange = { hdNumber = it },
-                label = "Número HD"
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            AppFormTextField(
-                value = buildingName,
-                onValueChange = { buildingName = it },
-                label = "Nome Edifício"
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            AppFormTextField(
-                value = constructionCompany,
-                onValueChange = { constructionCompany = it },
-                label = "Nome da Construtora"
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            AppFormTextField(
-                value = economiesCount,
-                onValueChange = { if (it.all { c -> c.isDigit() }) economiesCount = it },
-                label = "Economias Ativas",
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            AppFormTextField(
-                value = floorsCount,
-                onValueChange = { if (it.all { c -> c.isDigit() }) floorsCount = it },
-                label = "Número de Pavimentos",
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            AppFormTextField(
-                value = electricityMeter,
-                onValueChange = { electricityMeter = it },
-                label = "Quantidade de padrões de luz"
-            )
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
             if (state is EconomyUpdateState.Error) {
-                Text(
-                    text = (state as EconomyUpdateState.Error).message,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(bottom = 8.dp)
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = (state as EconomyUpdateState.Error).message,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+
+            AppCard(title = "Empreendimento", icon = Icons.Default.Business) {
+                AppTextField(
+                    value = buildingName, 
+                    onValueChange = { buildingName = it }, 
+                    label = "Nome do Edifício / Condomínio",
+                    leadingIcon = Icons.Default.Apartment
+                )
+                Spacer(Modifier.height(12.dp))
+                AppTextField(
+                    value = constructionCompany, 
+                    onValueChange = { constructionCompany = it }, 
+                    label = "Empresa Construtora",
+                    leadingIcon = Icons.Default.CorporateFare
                 )
             }
 
-            LoadingActionButton(
-                text = "Salvar",
-                onClick = {
-                    val economies = economiesCount.toIntOrNull() ?: 0
-                    val floors = floorsCount.toIntOrNull() ?: 0
-                    viewModel.saveEconomyUpdate(
-                        EconomyUpdate(
-                            id = existingItem?.id,
-                            hdNumber = hdNumber,
-                            buildingName = buildingName,
-                            constructionCompany = constructionCompany,
-                            economiesCount = economies,
-                            floorsCount = floors,
-                            electricityMeterNumber = electricityMeter
+            AppCard(title = "Técnico", icon = Icons.Default.SettingsInputComponent) {
+                AppTextField(
+                    value = hdNumber, 
+                    onValueChange = { hdNumber = it }, 
+                    label = "Nº Hidrômetro (HD)",
+                    leadingIcon = Icons.Default.WaterDrop,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+                Spacer(Modifier.height(12.dp))
+                AppTextField(
+                    value = electricityMeter, 
+                    onValueChange = { electricityMeter = it }, 
+                    label = "Nº Medidor de Energia",
+                    leadingIcon = Icons.Default.ElectricBolt
+                )
+            }
+
+            AppCard(title = "Quantitativos", icon = Icons.Default.Analytics) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(Modifier.weight(1f)) {
+                        AppTextField(
+                            value = economiesCount, 
+                            onValueChange = { if (it.all { c -> c.isDigit() }) economiesCount = it }, 
+                            label = "Econ. Ativas",
+                            leadingIcon = Icons.Default.HomeWork,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                         )
-                    )
+                    }
+                    Box(Modifier.weight(1f)) {
+                        AppTextField(
+                            value = floorsCount, 
+                            onValueChange = { if (it.all { c -> c.isDigit() }) floorsCount = it }, 
+                            label = "Pavimentos",
+                            leadingIcon = Icons.Default.Layers,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
+                    }
+                }
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (latitude != null) Color(0xFFE8F5E9) else Color(0xFFFFEBEE)
+                ),
+                shape = MaterialTheme.shapes.large
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = if (latitude != null) Icons.Default.GpsFixed else Icons.Default.GpsOff,
+                            contentDescription = null,
+                            tint = if (latitude != null) Color(0xFF2E7D32) else Color(0xFFC62828)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            text = if (latitude != null) "Localização Vinculada" else "GPS Pendente",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = if (latitude != null) Color(0xFF2E7D32) else Color(0xFFC62828)
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Button(
+                        onClick = {
+                            val fineLoc = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+                            if (fineLoc == PackageManager.PERMISSION_GRANTED) {
+                                scope.launch {
+                                    val loc = locationHelper.getCurrentLocation()
+                                    latitude = loc?.latitude
+                                    longitude = loc?.longitude
+                                }
+                            } else {
+                                locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = if (latitude != null) Color(0xFF2E7D32) else MaterialTheme.colorScheme.primary)
+                    ) {
+                        Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Capturar GPS do Edifício")
+                    }
+                }
+            }
+            
+            AppButton(
+                text = "SALVAR ATUALIZAÇÃO",
+                onClick = {
+                    scope.launch {
+                        if (latitude == null) {
+                            val loc = locationHelper.getCurrentLocation()
+                            latitude = loc?.latitude
+                            longitude = loc?.longitude
+                        }
+                        
+                        viewModel.saveEconomyUpdate(
+                            EconomyUpdate(
+                                id = existingItem?.id,
+                                hdNumber = hdNumber.trim(),
+                                buildingName = buildingName.trim(),
+                                constructionCompany = constructionCompany.trim(),
+                                economiesCount = economiesCount.toIntOrNull() ?: 0,
+                                floorsCount = floorsCount.toIntOrNull() ?: 0,
+                                electricityMeterNumber = electricityMeter.trim(),
+                                latitude = latitude,
+                                longitude = longitude
+                            )
+                        )
+                    }
                 },
                 isLoading = state is EconomyUpdateState.Loading,
-                enabled = hdNumber.isNotEmpty()
+                enabled = hdNumber.isNotEmpty() && buildingName.isNotEmpty()
             )
+            
+            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }

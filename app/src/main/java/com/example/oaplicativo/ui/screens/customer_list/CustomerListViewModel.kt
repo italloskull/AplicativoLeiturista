@@ -31,7 +31,6 @@ class CustomerListViewModel(
     private val localDb = LocalDatabase(application)
 
     init {
-        // Realiza a faxina LGPD de dados com mais de 1 ano
         viewModelScope.launch {
             localDb.purgeOldRecords()
         }
@@ -40,10 +39,11 @@ class CustomerListViewModel(
         startPeriodicRefresh()
     }
 
-    private fun loadData() {
+    // Função pública para ser chamada quando a tela ganha foco (ex: volta do formulário)
+    fun loadData() {
         viewModelScope.launch {
             updateLocalData()
-            refreshCustomers()
+            customerRepository.fetchCustomers()
         }
     }
 
@@ -55,7 +55,7 @@ class CustomerListViewModel(
     private fun startPeriodicRefresh() {
         viewModelScope.launch {
             while (isActive) {
-                delay(5 * 60 * 1000)
+                delay(5 * 60 * 1000) // 5 min
                 updateLocalData()
                 customerRepository.fetchCustomers()
             }

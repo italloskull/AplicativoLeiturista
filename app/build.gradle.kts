@@ -54,6 +54,13 @@ android {
     }
 }
 
+secrets {
+    // Optionally specify a different file name containing your secrets.
+    // The default is "local.properties"
+    propertiesFileName = "local.properties"
+    defaultPropertiesFileName = "local.defaults.properties"
+}
+
 dependencies {
     implementation(libs.androidx.security.crypto)
     implementation(platform(libs.androidx.compose.bom))

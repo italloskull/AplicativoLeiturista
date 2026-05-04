@@ -3,52 +3,78 @@ package com.example.oaplicativo.util
 import android.annotation.SuppressLint
 import android.content.Context
 import android.location.Location
+import android.util.Log
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
-import kotlin.math.*
 
 class LocationHelper(context: Context) {
     private val fusedLocationClient: FusedLocationProviderClient =
         LocationServices.getFusedLocationProviderClient(context)
 
-    @SuppressLint("MissingPermission")
-    suspend fun getCurrentLocation(): Location? = suspendCancellableCoroutine { continuation ->
-        val cancellationTokenSource = CancellationTokenSource()
-        
-        fusedLocationClient.getCurrentLocation(
-            Priority.PRIORITY_HIGH_ACCURACY,
-            cancellationTokenSource.token
-        ).addOnSuccessListener { location ->
-            continuation.resume(location)
-        }.addOnFailureListener {
-            continuation.resume(null)
-        }
+    private val sharedPrefs = context.getSharedPreferences("location_cache", Context.MODE_PRIVATE)
 
-        continuation.invokeOnCancellation {
-            cancellationTokenSource.cancel()
+    @SuppressLint("MissingPermission")
+    suspend fun getCurrentLocation(): Location? {
+        return suspendCancellableCoroutine { continuation ->
+            try {
+                fusedLocationClient.getCurrentLocation(
+                    Priority.PRIORITY_HIGH_ACCURACY,
+                    CancellationTokenSource().token
+                ).addOnSuccessListener { location: Location? ->
+                    if (location != null) {
+                        cacheLocation(location)
+                        continuation.resume(location)
+                    } else {
+                        continuation.resume(getCachedLocation())
+                    }
+                }.addOnFailureListener {
+                    continuation.resume(getCachedLocation())
+                }
+            } catch (e: Exception) {
+                Log.e("LocationHelper", "Erro ao obter GPS: ${e.message}")
+                continuation.resume(getCachedLocation())
+            }
         }
     }
 
-    /**
-     * Calcula a distância em metros entre dois pontos GPS.
-     */
+    private fun cacheLocation(location: Location) {
+        sharedPrefs.edit().apply {
+            putFloat("last_lat", location.latitude.toFloat())
+            putFloat("last_long", location.longitude.toFloat())
+            putLong("last_time", System.currentTimeMillis())
+            apply()
+        }
+    }
+
+    fun getCachedLocation(): Location? {
+        val lat = sharedPrefs.getFloat("last_lat", 0f).toDouble()
+        val lng = sharedPrefs.getFloat("last_long", 0f).toDouble()
+        val timeStamp = sharedPrefs.getLong("last_time", 0L)
+
+        if (lat == 0.0 && lng == 0.0) return null
+
+        val cachedLoc = Location("cached")
+        cachedLoc.latitude = lat
+        cachedLoc.longitude = lng
+        cachedLoc.time = timeStamp
+        return cachedLoc
+    }
+
     fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Float {
         val results = FloatArray(1)
         Location.distanceBetween(lat1, lon1, lat2, lon2, results)
         return results[0]
     }
 
-    /**
-     * Formata a distância para exibição amigável.
-     */
     fun formatDistance(meters: Float): String {
-        return when {
-            meters < 1000 -> "${meters.toInt()}m"
-            else -> String.format("%.1fkm", meters / 1000f)
+        return if (meters < 1000) {
+            "${meters.toInt()}m"
+        } else {
+            "%.1f km".format(meters / 1000)
         }
     }
 }

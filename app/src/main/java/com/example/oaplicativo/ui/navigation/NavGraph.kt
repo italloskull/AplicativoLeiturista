@@ -17,6 +17,7 @@ import com.example.oaplicativo.ui.screens.login.LoginScreen
 import com.example.oaplicativo.ui.screens.menu.MenuScreen
 import com.example.oaplicativo.ui.screens.recadastro.RecadastroFormScreen
 import com.example.oaplicativo.ui.screens.user_registration.UserRegistrationScreen
+import com.example.oaplicativo.ui.screens.visitas.VisitasScreen
 import com.example.oaplicativo.util.SecurityUtils
 import kotlinx.coroutines.launch
 
@@ -43,11 +44,11 @@ fun SetupNavGraph(navController: NavHostController) {
                 onNavigateToRecadastro = {
                     navController.navigate(Screen.CustomerList.route)
                 },
-                onNavigateToNovoRecadastro = {
-                    navController.navigate(Screen.RecadastroForm.route)
-                },
                 onNavigateToEconomias = {
                     navController.navigate(Screen.EconomyUpdateList.route)
+                },
+                onNavigateToVisitas = {
+                    navController.navigate(Screen.VisitasDashboard.route)
                 },
                 onLogout = {
                     scope.launch {
@@ -64,7 +65,7 @@ fun SetupNavGraph(navController: NavHostController) {
         composable(route = Screen.CustomerList.route) {
             CustomerListScreen(
                 onAddCustomer = {
-                    navController.navigate(Screen.CustomerForm.createRoute())
+                    navController.navigate(Screen.RecadastroForm.route)
                 },
                 onCustomerClick = { customer ->
                     navController.navigate(Screen.CustomerForm.createRoute(customer.id))
@@ -75,6 +76,12 @@ fun SetupNavGraph(navController: NavHostController) {
                 onLogout = {
                     navController.popBackStack()
                 }
+            )
+        }
+
+        composable(route = Screen.VisitasDashboard.route) {
+            VisitasScreen(
+                onBack = { navController.popBackStack() }
             )
         }
 
@@ -138,8 +145,7 @@ fun SetupNavGraph(navController: NavHostController) {
         composable(route = Screen.RecadastroForm.route) {
             RecadastroFormScreen(
                 onBack = { navController.popBackStack() },
-                onSave = { 
-                    // To be implemented: save logic
+                onSaveSuccess = {
                     navController.popBackStack()
                 }
             )

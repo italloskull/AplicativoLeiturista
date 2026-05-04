@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
@@ -14,7 +15,6 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -22,12 +22,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
 import com.example.oaplicativo.model.Customer
-import com.example.oaplicativo.data.sync.SyncWorker
 import com.example.oaplicativo.presentation.components.DistanceBadge
 import com.example.oaplicativo.presentation.components.SyncIndicator
 import com.example.oaplicativo.util.navigation.NavigationUtils
@@ -35,6 +33,10 @@ import com.example.oaplicativo.util.LocationHelper
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+/**
+ * 🚀 OTIMIZAÇÃO DE PERFORMANCE: CustomerListScreen
+ * Estratégia: Memoização de filtragem e re-composição inteligente.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CustomerListScreen(
@@ -73,6 +75,7 @@ fun CustomerListScreen(
     }
 
     LaunchedEffect(Unit) {
+        viewModel.loadData()
         locationPermissionLauncher.launch(
             arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
         )
@@ -82,18 +85,20 @@ fun CustomerListScreen(
         }
     }
 
-    val filteredCustomers by remember(customers, searchQuery, userLocation) {
+    // 🔥 OTIMIZAÇÃO 1: Memoização da lista filtrada via derivedStateOf
+    // Evita recalcular o sort de GPS e o filtro de texto em cada frame de animação.
+    val filteredCustomers by remember {
         derivedStateOf {
             val baseList = if (searchQuery.isBlank()) {
                 customers
             } else {
                 customers.filter {
-                    (it.name?.contains(searchQuery, ignoreCase = true) ?: false) ||
-                            (it.registrationNumber?.contains(searchQuery, ignoreCase = true) ?: false)
+                    (it.name?.contains(searchQuery, ignoreCase = true) == true) ||
+                            (it.registrationNumber?.contains(searchQuery, ignoreCase = true) == true)
                 }
             }
 
-            val sortedList = if (userLocation != null) {
+            if (userLocation != null) {
                 baseList.sortedBy { customer ->
                     if (customer.latitude != null && customer.longitude != null) {
                         locationHelper.calculateDistance(
@@ -103,39 +108,27 @@ fun CustomerListScreen(
                     } else {
                         Float.MAX_VALUE
                     }
-                }
+                }.take(10)
             } else {
-                baseList
+                baseList.take(10)
             }
-
-            sortedList.take(10)
         }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("RECADASTRO") },
+                title = { Text("Recadastro de Clientes", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onLogout) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar ao Menu")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
                     }
                 },
                 actions = {
-                    IconButton(onClick = { 
-                        scope.launch { userLocation = locationHelper.getCurrentLocation() }
-                    }) {
-                        Icon(Icons.Default.MyLocation, contentDescription = "Minha Localização", tint = if (userLocation != null) MaterialTheme.colorScheme.primary else LocalContentColor.current)
-                    }
-                    IconButton(onClick = { 
-                        // Força a sincronização ao clicar no refresh
-                        val syncRequest = OneTimeWorkRequestBuilder<SyncWorker>().build()
-                        WorkManager.getInstance(context).enqueue(syncRequest)
-                        viewModel.refreshCustomers() 
-                    }) {
+                    IconButton(onClick = { viewModel.refreshCustomers() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Atualizar")
                     }
-                    IconButton(onClick = { showMenu = !showMenu }) {
+                    IconButton(onClick = { showMenu = true }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "Menu")
                     }
                     DropdownMenu(
@@ -144,7 +137,7 @@ fun CustomerListScreen(
                     ) {
                         if (userProfile?.isAdmin == true) {
                             DropdownMenuItem(
-                                text = { Text("Cadastrar Usuário") },
+                                text = { Text("Gerenciar Usuários") },
                                 onClick = {
                                     showMenu = false
                                     onNavigateToUserRegistration()
@@ -170,59 +163,98 @@ fun CustomerListScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = onAddCustomer) {
+            FloatingActionButton(
+                onClick = onAddCustomer,
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            ) {
                 Icon(Icons.Default.Add, contentDescription = "Adicionar Cliente")
             }
         }
     ) { paddingValues ->
-        PullToRefreshBox(
-            isRefreshing = isRefreshing,
-            onRefresh = { viewModel.refreshCustomers() },
-            modifier = Modifier.padding(paddingValues)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
         ) {
-            Column {
-                TextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    label = { Text("Pesquisar por nome ou matrícula") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Pesquisar") }
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("Pesquisar por nome ou matrícula...") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                shape = MaterialTheme.shapes.medium,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
                 )
-                
-                if (filteredCustomers.isNotEmpty()) {
-                    Text(
-                        text = "Mostrando os 10 clientes mais próximos",
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                    )
-                }
+            )
 
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 80.dp)
-                ) {
-                    items(
-                        items = filteredCustomers,
-                        key = { it.id ?: it.registrationNumber ?: it.name ?: "" },
-                        contentType = { "customer_item" }
-                    ) { customer ->
-                        CustomerListItem(
-                            customer = customer,
-                            userLocation = userLocation,
-                            locationHelper = locationHelper,
-                            onCustomerClick = onCustomerClick,
-                            onNavigateClick = {
-                                NavigationUtils.openNavigation(context, it.latitude, it.longitude)
-                            }
-                        )
-                        HorizontalDivider()
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = { viewModel.refreshCustomers() },
+                modifier = Modifier.fillMaxSize()
+            ) {
+                if (filteredCustomers.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Nenhum registro encontrado.", style = MaterialTheme.typography.bodyMedium)
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 88.dp)
+                    ) {
+                        item {
+                            Text(
+                                text = "Clientes Próximos (Top 10)",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+                        }
+                        // 🔥 OTIMIZAÇÃO 2: Uso de Keys estáveis
+                        // Evita que o Compose re-desenhe a lista inteira quando apenas 1 item muda.
+                        items(
+                            items = filteredCustomers,
+                            key = { it.id ?: it.registrationNumber ?: it.name ?: "" }
+                        ) { customer ->
+                            CustomerListItem(
+                                customer = customer,
+                                userLocation = userLocation,
+                                locationHelper = locationHelper,
+                                onCustomerClick = onCustomerClick,
+                                onNavigateClick = {
+                                    NavigationUtils.openNavigation(context, it.latitude, it.longitude)
+                                }
+                            )
+                        }
                     }
                 }
             }
         }
+    }
+
+    if (showAboutDialog) {
+        AlertDialog(
+            onDismissRequest = { showAboutDialog = false },
+            title = { Text("Sobre o Aplicativo") },
+            text = {
+                Column {
+                    Text("Recadastre.IA", fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Versão: ${com.example.oaplicativo.BuildConfig.VERSION_NAME}")
+                    Text("Engenharia: Mathey e Itallo")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAboutDialog = false }) {
+                    Text("Fechar")
+                }
+            }
+        )
     }
 }
 
@@ -234,7 +266,8 @@ fun CustomerListItem(
     onCustomerClick: (Customer) -> Unit,
     onNavigateClick: (Customer) -> Unit
 ) {
-    val distance = remember(customer, userLocation) {
+    // 🔥 OTIMIZAÇÃO 3: Memoização de cálculos internos do item
+    val distance = remember(customer.id, userLocation) {
         if (userLocation != null && customer.latitude != null && customer.longitude != null) {
             val meters = locationHelper.calculateDistance(
                 userLocation.latitude, userLocation.longitude,
@@ -245,9 +278,10 @@ fun CustomerListItem(
     }
 
     ListItem(
+        modifier = Modifier.clickable { onCustomerClick(customer) },
         headlineContent = { 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(customer.name ?: "Sem Nome")
+                Text(customer.name ?: "Titular não identificado", fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.width(8.dp))
                 SyncIndicator(isSynced = customer.isSynced)
             }
@@ -261,18 +295,28 @@ fun CustomerListItem(
                 }
             }
         },
-        leadingContent = { Icon(Icons.Default.Person, contentDescription = null) },
+        leadingContent = { 
+            Surface(
+                color = MaterialTheme.colorScheme.primaryContainer,
+                shape = CircleShape,
+                modifier = Modifier.size(40.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                }
+            }
+        },
         trailingContent = {
             if (customer.latitude != null && customer.longitude != null) {
                 IconButton(onClick = { onNavigateClick(customer) }) {
                     Icon(
                         imageVector = Icons.Default.Navigation, 
-                        contentDescription = "Ir até o local",
+                        contentDescription = "Traçar rota",
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
             }
-        },
-        modifier = Modifier.clickable { onCustomerClick(customer) }
+        }
     )
+    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp)
 }
