@@ -9,12 +9,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 
 /**
  * Reusable and accessible Text Field for forms.
- * Encapsulates error handling and length limiting.
  */
 @Composable
 fun AppFormTextField(
@@ -95,36 +95,37 @@ fun LoadingActionButton(
 }
 
 /**
- * Container that manages Loading, Empty and Error states for lists.
+ * Modern Card container for grouping form sections.
  */
 @Composable
-fun <T> AsyncDataContainer(
-    items: List<T>,
-    isLoading: Boolean,
-    error: String?,
-    onRetry: () -> Unit,
-    emptyMessage: String = "Nenhum registro encontrado.",
-    content: @Composable (List<T>) -> Unit
+fun FormSectionCard(
+    title: String,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
 ) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        when {
-            isLoading && items.isEmpty() -> {
-                CircularProgressIndicator()
-            }
-            error != null -> {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Erro: $error", color = MaterialTheme.colorScheme.error)
-                    Button(onClick = onRetry, modifier = Modifier.padding(top = 8.dp)) {
-                        Text("Tentar Novamente")
-                    }
-                }
-            }
-            items.isEmpty() -> {
-                Text(emptyMessage, style = MaterialTheme.typography.bodyMedium)
-            }
-            else -> {
-                content(items)
-            }
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+        ),
+        shape = MaterialTheme.shapes.large
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = title.uppercase(),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+            HorizontalDivider(
+                modifier = Modifier.padding(bottom = 16.dp),
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outlineVariant
+            )
+            content()
         }
     }
 }
@@ -143,9 +144,13 @@ fun <T> SpinnerOption(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp)
+            .padding(vertical = 4.dp)
     ) {
-        Text(text = label, style = MaterialTheme.typography.bodyMedium)
+        Text(
+            text = label, 
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         ExposedDropdownMenuBox(
             expanded = expanded,
             onExpandedChange = { expanded = !expanded },
@@ -159,7 +164,8 @@ fun <T> SpinnerOption(
                 modifier = Modifier
                     .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                     .fillMaxWidth(),
-                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
+                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                shape = MaterialTheme.shapes.medium
             )
             ExposedDropdownMenu(
                 expanded = expanded,
@@ -189,29 +195,30 @@ fun <T> SpinnerOption(
 
 @Composable
 fun BooleanOption(label: String, checked: Boolean?, onCheckedChange: (Boolean?) -> Unit) {
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(text = label, style = MaterialTheme.typography.bodyMedium)
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(top = 4.dp)
-        ) {
-            Checkbox(
-                checked = checked == true,
-                onCheckedChange = { if (it) onCheckedChange(true) else onCheckedChange(null) }
+        Text(
+            text = label, 
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.weight(1f)
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            FilterChip(
+                selected = checked == true,
+                onClick = { onCheckedChange(if (checked == true) null else true) },
+                label = { Text("Sim") }
             )
-            Text(text = "Sim", style = MaterialTheme.typography.bodySmall)
-            
-            Spacer(modifier = Modifier.width(24.dp))
-            
-            Checkbox(
-                checked = checked == false,
-                onCheckedChange = { if (it) onCheckedChange(false) else onCheckedChange(null) }
+            Spacer(modifier = Modifier.width(8.dp))
+            FilterChip(
+                selected = checked == false,
+                onClick = { onCheckedChange(if (checked == false) null else false) },
+                label = { Text("Não") }
             )
-            Text(text = "Não", style = MaterialTheme.typography.bodySmall)
         }
     }
 }

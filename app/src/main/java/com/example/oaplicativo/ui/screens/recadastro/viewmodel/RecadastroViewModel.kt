@@ -63,15 +63,41 @@ class RecadastroViewModel : ViewModel() {
     var possuiHidrometro by mutableStateOf(false)
     var numeroHidrometro by mutableStateOf("")
     var localInstalacao by mutableStateOf<String?>(null)
-    var acessibilidade by mutableStateOf("")
+    var acessibilidade by mutableStateOf<String?>(null)
     var economias by mutableStateOf("")
-    var qualidadeCadastrado by mutableStateOf<String?>(null)
+    
+    // REMOVIDO: qualidadeCadastrado não é mais editável pelo usuário
+    // var qualidadeCadastrado by mutableStateOf<String?>(null)
 
     // SEÇÃO 7: Finalização
     var observacao by mutableStateOf("")
     var nomePrestadorInformacoes by mutableStateOf("")
 
     private var cepJob: Job? = null
+
+    /**
+     * Calcula automaticamente a qualidade do cadastro com base no preenchimento.
+     * Métricas: +90% = Boa, 50% a 90% = Regular, -50% = Ruim.
+     */
+    fun calculateDataQuality(): String {
+        val fields = listOf(
+            matricula, lote, nomeCompleto, cpfCnpj, nomeMae, dataNascimento, sexo,
+            email, telefone, celular1, logradouro, numero, bairro, cidade, uf, cep,
+            numeroMoradores, pavimentoRua, pavimentoCalcada, fonteAbastecimento,
+            categoria1, situacaoImovel, situacaoAgua, localInstalacao,
+            nomePrestadorInformacoes
+        )
+        
+        val filledCount = fields.count { it?.toString()?.isNotBlank() == true }
+        val totalCount = fields.size
+        val percentage = (filledCount.toFloat() / totalCount.toFloat()) * 100
+
+        return when {
+            percentage >= 90f -> "Boa"
+            percentage >= 50f -> "Regular"
+            else -> "Ruim"
+        }
+    }
 
     fun onCepChange(newCep: String) {
         val cleanCep = newCep.filter { it.isDigit() }

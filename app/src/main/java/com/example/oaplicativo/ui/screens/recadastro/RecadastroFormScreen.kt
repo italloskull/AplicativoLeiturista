@@ -27,6 +27,7 @@ fun RecadastroFormScreen(
     viewModel: RecadastroViewModel = viewModel()
 ) {
     Scaffold(
+        modifier = Modifier.fillMaxSize(),
         topBar = {
             TopAppBar(
                 title = { Text("Novo Recadastro") },
@@ -38,11 +39,20 @@ fun RecadastroFormScreen(
             )
         },
         bottomBar = {
-            Surface(tonalElevation = 8.dp, shadowElevation = 8.dp) {
+            Surface(
+                tonalElevation = 8.dp, 
+                shadowElevation = 8.dp,
+                modifier = Modifier.navigationBarsPadding() 
+            ) {
                 Box(modifier = Modifier.padding(16.dp)) {
                     LoadingActionButton(
                         text = "Salvar Recadastro",
-                        onClick = onSave,
+                        onClick = {
+                            // QUALIDADE AUTOMÁTICA: O valor é calculado aqui antes de salvar
+                            val quality = viewModel.calculateDataQuality()
+                            println("Qualidade do Cadastro: $quality")
+                            onSave()
+                        },
                         isLoading = false 
                     )
                 }
@@ -204,12 +214,23 @@ fun RecadastroFormScreen(
                         AppFormTextField(value = viewModel.numeroHidrometro, onValueChange = { viewModel.numeroHidrometro = it }, label = "Nº Hidrômetro")
                     }
                     
-                    SpinnerOption(label = "Local Instalação", options = listOf("Calçada", "Interno", "Muro"), selectedOption = viewModel.localInstalacao, onOptionSelected = { viewModel.localInstalacao = it })
-                    AppFormTextField(value = viewModel.acessibilidade, onValueChange = { viewModel.acessibilidade = it }, label = "Acessibilidade/Não Padronizada")
+                    SpinnerOption(
+                        label = "Local Instalação", 
+                        options = listOf("CAIXA PADRÃO", "INTERNO", "CAVALETE EXTERNO"), 
+                        selectedOption = viewModel.localInstalacao, 
+                        onOptionSelected = { viewModel.localInstalacao = it }
+                    )
                     
+                    SpinnerOption(
+                        label = "Acessibilidade/Não Padronizada", 
+                        options = listOf("Facil Acesso", "Dificil Acesso"), 
+                        selectedOption = viewModel.acessibilidade, 
+                        onOptionSelected = { viewModel.acessibilidade = it }
+                    )
+                    
+                    // CAMPO QUALIDADE REMOVIDO DA INTERFACE
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Box(Modifier.weight(1f)) { AppFormTextField(value = viewModel.economias, onValueChange = { if (it.all { c -> c.isDigit() }) viewModel.economias = it }, label = "ECONOMIAS", keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)) }
-                        Box(Modifier.weight(1f)) { SpinnerOption(label = "QUALIDADE", options = listOf("Boa", "Regular", "Ruim"), selectedOption = viewModel.qualidadeCadastrado, onOptionSelected = { viewModel.qualidadeCadastrado = it }) }
                     }
                 }
             }
@@ -229,7 +250,7 @@ fun RecadastroFormScreen(
                 }
             }
 
-            item { Spacer(Modifier.height(100.dp)) }
+            item { Spacer(Modifier.height(32.dp)) }
         }
     }
 }

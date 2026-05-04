@@ -4,21 +4,21 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.Smartphone
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -27,6 +27,7 @@ import com.example.oaplicativo.model.Customer
 import com.example.oaplicativo.presentation.components.CensoredDataField
 import com.example.oaplicativo.ui.components.BooleanOption
 import com.example.oaplicativo.ui.components.SpinnerOption
+import com.example.oaplicativo.ui.components.FormSectionCard
 import com.example.oaplicativo.util.LocationHelper
 import com.example.oaplicativo.util.privacy.PrivacyUtils
 import kotlinx.coroutines.launch
@@ -49,7 +50,6 @@ fun CustomerFormScreen(
 ) {
     val customer = remember(customerId) { viewModel.getCustomer(customerId) }
     val userProfile by viewModel.currentUserProfile.collectAsState()
-    val isAdmin = userProfile?.isAdmin == true
 
     var nome by remember(customer) { mutableStateOf(customer?.name ?: "") }
     var matricula by remember(customer) { mutableStateOf(customer?.registrationNumber ?: "") }
@@ -73,9 +73,7 @@ fun CustomerFormScreen(
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-            permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-        ) {
+        if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
             scope.launch {
                 val loc = locationHelper.getCurrentLocation()
                 latitude = loc?.latitude
@@ -85,27 +83,26 @@ fun CustomerFormScreen(
     }
 
     val formState by viewModel.state.collectAsState()
-
     val isMatriculaValid by remember { derivedStateOf { matricula.isNotEmpty() } }
-    
     val isDataCensoredInitial = remember(customer) { PrivacyUtils.shouldMaskSensitiveData(customer?.createdAt) }
 
     var showDeleteDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(formState) {
-        if (formState is CustomerFormState.Success) {
-            onSaveSuccess()
-        }
+        if (formState is CustomerFormState.Success) onSaveSuccess()
     }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (customer == null) "Cadastrar Cliente" else "Atualizar Cliente") },
+            LargeTopAppBar(
+                title = { Text(if (customer == null) "Novo Recadastro" else "Editar Cliente", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar") }
+                },
                 actions = {
                     if (customer != null) {
                         IconButton(onClick = { showDeleteDialog = true }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Excluir Cliente", tint = MaterialTheme.colorScheme.error)
+                            Icon(Icons.Default.Delete, contentDescription = "Excluir", tint = MaterialTheme.colorScheme.error)
                         }
                     }
                 }
@@ -115,218 +112,174 @@ fun CustomerFormScreen(
         if (showDeleteDialog) {
             AlertDialog(
                 onDismissRequest = { showDeleteDialog = false },
-                title = { Text("Excluir Cliente") },
-                text = { Text("Tem certeza que deseja excluir este cliente? Esta ação não pode ser desfeita e é um direito garantido pela LGPD.") },
+                title = { Text("Excluir Registro") },
+                text = { Text("Esta ação removerá o cadastro permanentemente. Deseja continuar?") },
                 confirmButton = {
-                    TextButton(
-                        onClick = {
-                            customer?.id?.let { viewModel.deleteCustomer(it) }
-                            showDeleteDialog = false
-                        },
-                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                    ) {
-                        Text("Excluir")
+                    Button(onClick = { customer?.id?.let { viewModel.deleteCustomer(it) }; showDeleteDialog = false }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) {
+                        Text("Confirmar Exclusão")
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showDeleteDialog = false }) {
-                        Text("Cancelar")
-                    }
+                    TextButton(onClick = { showDeleteDialog = false }) { Text("Cancelar") }
                 }
             )
         }
+
         Column(
             modifier = Modifier
                 .padding(paddingValues)
-                .padding(16.dp)
+                .padding(horizontal = 20.dp)
                 .verticalScroll(rememberScrollState())
+                .fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            OutlinedTextField(
-                value = nome,
-                onValueChange = { if (it.length <= 100) nome = it },
-                label = { Text("Nome (Opcional)") },
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+            FormSectionCard(title = "Identificação") {
                 OutlinedTextField(
-                    value = matricula,
-                    onValueChange = { if (it.all { char -> char.isDigit() } && it.length <= 30) matricula = it },
-                    label = { Text("Matrícula") },
-                    modifier = Modifier.weight(1f),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    value = nome,
+                    onValueChange = { if (it.length <= 100) nome = it },
+                    label = { Text("Nome Completo do Titular") },
+                    modifier = Modifier.fillMaxWidth(),
+                    leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                    shape = MaterialTheme.shapes.large
                 )
-                OutlinedTextField(
-                    value = digitoMatricula,
-                    onValueChange = { if (it.all { char -> char.isDigit() } && it.length <= 2) digitoMatricula = it },
-                    label = { Text("Díg.") },
-                    modifier = Modifier.width(80.dp),
+                Spacer(modifier = Modifier.height(16.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = matricula,
+                        onValueChange = { if (it.all { c -> c.isDigit() } && it.length <= 30) matricula = it },
+                        label = { Text("Nº Matrícula") },
+                        modifier = Modifier.weight(1f),
+                        leadingIcon = { Icon(Icons.Default.Fingerprint, contentDescription = null) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        shape = MaterialTheme.shapes.large
+                    )
+                    OutlinedTextField(
+                        value = digitoMatricula,
+                        onValueChange = { if (it.all { c -> c.isDigit() } && it.length <= 2) digitoMatricula = it },
+                        label = { Text("Díg.") },
+                        modifier = Modifier.width(90.dp),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        shape = MaterialTheme.shapes.large
+                    )
+                }
+            }
+
+            FormSectionCard(title = "Informações de Contato") {
+                CensoredDataField(
+                    label = "E-mail Principal",
+                    value = email,
+                    onValueChange = { email = it },
+                    isCensoredInitial = isDataCensoredInitial,
+                    censoredValue = PrivacyUtils.applyPartialEmailCensorship(email),
+                    isAdmin = userProfile?.isAdmin ?: false,
+                    leadingIcon = Icons.Default.AlternateEmail,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                CensoredDataField(
+                    label = "Telefone para Contato",
+                    value = celular,
+                    onValueChange = { celular = it },
+                    isCensoredInitial = isDataCensoredInitial,
+                    censoredValue = PrivacyUtils.applyPartialPhoneCensorship(celular),
+                    isAdmin = userProfile?.isAdmin ?: false,
+                    leadingIcon = Icons.Default.PhoneIphone,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                 )
             }
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            CensoredDataField(
-                label = "E-mail (Opcional)",
-                value = email,
-                onValueChange = { email = it },
-                isCensoredInitial = isDataCensoredInitial,
-                censoredValue = PrivacyUtils.applyPartialEmailCensorship(email),
-                isAdmin = isAdmin,
-                leadingIcon = Icons.Default.Email,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
-            )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            CensoredDataField(
-                label = "Telefone Fixo (Opcional)",
-                value = telefoneFixo,
-                onValueChange = { telefoneFixo = it },
-                isCensoredInitial = isDataCensoredInitial,
-                censoredValue = PrivacyUtils.applyPartialPhoneCensorship(telefoneFixo),
-                isAdmin = isAdmin,
-                leadingIcon = Icons.Default.Phone,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-            )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            CensoredDataField(
-                label = "Celular (Opcional)",
-                value = celular,
-                onValueChange = { celular = it },
-                isCensoredInitial = isDataCensoredInitial,
-                censoredValue = PrivacyUtils.applyPartialPhoneCensorship(celular),
-                isAdmin = isAdmin,
-                leadingIcon = Icons.Default.Smartphone,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-            )
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            BooleanOption(label = "Caixa de medição é padrão?", checked = isCaixaPadrao) { isCaixaPadrao = it }
-            BooleanOption(label = "Lacres padronizados?", checked = isLacresPadronizados) { isLacresPadronizados = it }
-            BooleanOption(label = "HD acessível?", checked = isHdAcessivel) { isHdAcessivel = it }
-            BooleanOption(label = "Veranista?", checked = isVeranista) { isVeranista = it }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            SpinnerOption(
-                label = "Situação do Local",
-                options = listOf("Residencial", "Comercial", "Lote Vazio", "Demolido", "Edifício"),
-                selectedOption = situacaoLocal,
-                onOptionSelected = { situacaoLocal = it }
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            SpinnerOption(
-                label = "Quantidade de Economias",
-                options = (1..50).map { it.toString() },
-                selectedOption = qtdEconomias?.toString(),
-                onOptionSelected = { it?.let { qtdEconomias = it.toIntOrNull() } }
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
+            FormSectionCard(title = "Hidrometria e Instalação") {
+                BooleanOption(label = "Caixa de medição padrão?", checked = isCaixaPadrao) { isCaixaPadrao = it }
+                BooleanOption(label = "Lacres em bom estado?", checked = isLacresPadronizados) { isLacresPadronizados = it }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                SpinnerOption(
+                    label = "Ocorrência no Local",
+                    options = listOf("Residencial", "Comercial", "Lote Vazio", "Demolido", "Edifício"),
+                    selectedOption = situacaoLocal,
+                    onOptionSelected = { situacaoLocal = it }
+                )
+            }
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                colors = CardDefaults.cardColors(
+                    containerColor = if (latitude == null) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f) 
+                                     else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.1f)
+                ),
+                shape = MaterialTheme.shapes.extraLarge,
+                border = if (latitude == null) BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)) else null
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Localização GPS", style = MaterialTheme.typography.titleMedium)
-                    if (latitude != null && longitude != null) {
-                        Text("Lat: $latitude", style = MaterialTheme.typography.bodyMedium)
-                        Text("Long: $longitude", style = MaterialTheme.typography.bodyMedium)
-                    } else {
-                        Text("Nenhuma localização capturada", style = MaterialTheme.typography.bodyMedium)
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = if (latitude != null) Icons.Default.GpsFixed else Icons.Default.GpsOff,
+                            contentDescription = null,
+                            tint = if (latitude != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text("Coleta de Geometria", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "A localização é coletada apenas para fins de registro da visita técnica conforme a LGPD.",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    AnimatedContent(targetState = latitude != null, label = "GPS_Status") { hasLat ->
+                        if (hasLat) {
+                            Text("Localização vinculada com sucesso ao imóvel.", style = MaterialTheme.typography.bodySmall)
+                        } else {
+                            Text("Atenção: A captura do GPS é obrigatória para validar a visita.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
                     Button(
                         onClick = {
                             val fineLoc = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
-                            val coarseLoc = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION)
-                            
-                            if (fineLoc == PackageManager.PERMISSION_GRANTED || coarseLoc == PackageManager.PERMISSION_GRANTED) {
+                            if (fineLoc == PackageManager.PERMISSION_GRANTED) {
                                 scope.launch {
                                     val loc = locationHelper.getCurrentLocation()
                                     latitude = loc?.latitude
                                     longitude = loc?.longitude
                                 }
                             } else {
-                                locationPermissionLauncher.launch(
-                                    arrayOf(
-                                        Manifest.permission.ACCESS_FINE_LOCATION,
-                                        Manifest.permission.ACCESS_COARSE_LOCATION
-                                    )
-                                )
+                                locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
                             }
                         },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                        shape = MaterialTheme.shapes.medium
                     ) {
-                        Icon(Icons.Default.LocationOn, contentDescription = null)
+                        Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Capturar Localização")
+                        Text("Atualizar Coordenadas")
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            if (formState is CustomerFormState.Error) {
-                Text(
-                    text = (formState as CustomerFormState.Error).message,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-            }
-
             Spacer(modifier = Modifier.height(24.dp))
+            
             Button(
                 onClick = {
                     if (isMatriculaValid) {
                         scope.launch {
-                            // AUTOMAÇÃO DE GPS PRECISO: 
                             var finalLat = latitude
                             var finalLong = longitude
 
                             if (finalLat == null || finalLong == null) {
                                 val fineLoc = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
-                                
                                 if (fineLoc == PackageManager.PERMISSION_GRANTED) {
-                                    // Temos permissão, captura agora com alta precisão
                                     val loc = locationHelper.getCurrentLocation()
                                     finalLat = loc?.latitude
                                     finalLong = loc?.longitude
                                 } else {
-                                    // NÃO temos permissão, pedimos agora
-                                    locationPermissionLauncher.launch(
-                                        arrayOf(
-                                            Manifest.permission.ACCESS_FINE_LOCATION,
-                                            Manifest.permission.ACCESS_COARSE_LOCATION
-                                        )
-                                    )
-                                    // Após o pedido, o usuário precisará clicar em Salvar de novo 
-                                    // para garantir que a captura ocorra com a nova permissão.
-                                    return@launch
+                                    locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
+                                    return@launch 
                                 }
                             }
 
                             val fullNow = ZonedDateTime.now()
-                            val timestampIso = fullNow.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-                            val simplifiedDate = fullNow.format(DateTimeFormatter.ofPattern("yyyy/MM/dd"))
-
                             viewModel.saveCustomer(
                                 Customer(
                                     id = customer?.id,
@@ -344,37 +297,28 @@ fun CustomerFormScreen(
                                     economiesCount = qtdEconomias,
                                     latitude = finalLat,
                                     longitude = finalLong,
-                                    
-                                    // CAMPOS DE AUDITORIA
-                                    addedBy = userProfile?.fullName ?: userProfile?.username ?: "Usuário Desconhecido",
-                                    capturedAt = timestampIso,
-                                    createdAt = timestampIso,
-                                    date = simplifiedDate
+                                    addedBy = userProfile?.fullName ?: userProfile?.username ?: "Usuário",
+                                    capturedAt = fullNow.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+                                    createdAt = fullNow.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+                                    date = fullNow.format(DateTimeFormatter.ofPattern("yyyy/MM/dd"))
                                 )
                             )
                         }
                     }
                 },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = formState !is CustomerFormState.Loading
+                modifier = Modifier.fillMaxWidth().height(64.dp),
+                enabled = formState !is CustomerFormState.Loading,
+                shape = MaterialTheme.shapes.large,
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
             ) {
                 if (formState is CustomerFormState.Loading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        strokeWidth = 2.dp
-                    )
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.onPrimary)
                 } else {
-                    Text("Salvar")
+                    Text("FINALIZAR RECADASTRO", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
                 }
             }
-            TextButton(
-                onClick = { onBack() },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = formState !is CustomerFormState.Loading
-            ) {
-                Text("Voltar")
-            }
+            
+            Spacer(modifier = Modifier.height(40.dp))
         }
     }
 }

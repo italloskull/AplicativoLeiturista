@@ -11,7 +11,6 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -62,9 +61,9 @@ fun EconomyUpdateListScreen(
                 isLoading = state is EconomyUpdateState.Loading,
                 error = (state as? EconomyUpdateState.Error)?.message,
                 onRetry = { viewModel.fetchEconomyUpdates() }
-            ) { data ->
+            ) { data: List<EconomyUpdate> ->
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(data) { item ->
+                    items(data) { item: EconomyUpdate ->
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
