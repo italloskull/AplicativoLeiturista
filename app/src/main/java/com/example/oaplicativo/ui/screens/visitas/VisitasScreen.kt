@@ -8,9 +8,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
-import androidx.compose.material.icons.filled.EmojiEvents
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -22,21 +20,26 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VisitasScreen(
     onBack: () -> Unit,
-    viewModel: VisitasViewModel = viewModel()
+    viewModel: VisitasViewModel = viewModel(factory = androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner.current?.let {
+        androidx.lifecycle.viewmodel.viewModelFactory {
+            addInitializer(VisitasViewModel::class) {
+                VisitasViewModel(application = (this[androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY] as android.app.Application))
+            }
+        }
+    } ?: androidx.lifecycle.viewmodel.viewModelFactory { })
 ) {
     val stats by viewModel.stats.collectAsState()
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("MEU DESEMPENHO", fontWeight = FontWeight.Black, letterSpacing = 1.sp) },
+            CenterAlignedTopAppBar(
+                title = { Text("MEU DESEMPENHO", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
@@ -58,7 +61,7 @@ fun VisitasScreen(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // --- CARD DE RECORDE (GAMIFICAÇÃO) ---
+            // --- HEADER: RECORDE ---
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.extraLarge,
@@ -80,7 +83,7 @@ fun VisitasScreen(
                     Spacer(Modifier.width(20.dp))
                     Column {
                         Text("SEU RECORDE DIÁRIO", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f))
-                        Text("${stats.recordePessoal} Recadastros", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onPrimary)
+                        Text("${stats.recordePessoal} Cadastros", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onPrimary)
                         Text("Apenas cadastros úteis (Boa/Regular)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f))
                     }
                 }
@@ -107,36 +110,38 @@ fun VisitasScreen(
             // --- RESUMO DE QUALIDADE ---
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.large
+                shape = MaterialTheme.shapes.large,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Star, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(8.dp))
-                        Text("RESUMO DE QUALIDADE (HOJE)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                    }
+                    Text("Qualidade das Visitas", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(16.dp))
                     
-                    Spacer(Modifier.height(24.dp))
-                    
-                    QualityProgressBar(label = "Boa (+90%)", percentage = stats.percentualBoa, color = Color(0xFF4CAF50))
-                    Spacer(Modifier.height(16.dp))
-                    QualityProgressBar(label = "Regular (50%-90%)", percentage = stats.percentualRegular, color = Color(0xFFFFC107))
-                    Spacer(Modifier.height(16.dp))
-                    QualityProgressBar(label = "Ruim (-50%)", percentage = stats.percentualRuim, color = Color(0xFFF44336))
+                    QualityProgressBar(label = "Qualidade BOA", percentage = stats.percentualBoa, color = Color(0xFF4CAF50))
+                    Spacer(modifier = Modifier.height(12.dp))
+                    QualityProgressBar(label = "Qualidade REGULAR", percentage = stats.percentualRegular, color = Color(0xFFFFC107))
+                    Spacer(modifier = Modifier.height(12.dp))
+                    QualityProgressBar(label = "Qualidade RUIM", percentage = stats.percentualRuim, color = Color(0xFFF44336))
                 }
             }
+            
+            Spacer(modifier = Modifier.height(40.dp))
         }
     }
 }
 
 @Composable
 fun StatsMiniCard(modifier: Modifier, title: String, value: String, icon: ImageVector, color: Color) {
-    Card(modifier = modifier, shape = MaterialTheme.shapes.large) {
+    Card(
+        modifier = modifier,
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.1f))
+    ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.height(12.dp))
-            Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text(title, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(24.dp))
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(text = value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, color = color)
+            Text(text = title, style = MaterialTheme.typography.labelSmall, color = color.copy(alpha = 0.7f))
         }
     }
 }
@@ -145,10 +150,10 @@ fun StatsMiniCard(modifier: Modifier, title: String, value: String, icon: ImageV
 fun QualityProgressBar(label: String, percentage: Float, color: Color) {
     Column {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(label, style = MaterialTheme.typography.labelMedium)
-            Text("${(percentage * 100).toInt()}%", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+            Text(label, style = MaterialTheme.typography.labelSmall)
+            Text("${(percentage * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(4.dp))
         LinearProgressIndicator(
             progress = { percentage },
             modifier = Modifier.fillMaxWidth().height(8.dp),

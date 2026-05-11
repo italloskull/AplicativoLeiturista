@@ -41,9 +41,9 @@ class EconomyUpdateViewModel(application: Application) : AndroidViewModel(applic
         viewModelScope.launch {
             _state.value = EconomyUpdateState.Loading
             try {
-                val list = client.postgrest["economy_updates"]
+                val list = client.postgrest["atualizacao_economias"]
                     .select {
-                        order("created_at", order = Order.DESCENDING)
+                        order("criado_em", order = Order.DESCENDING)
                     }
                     .decodeList<EconomyUpdate>()
                 _items.value = list
@@ -71,12 +71,10 @@ class EconomyUpdateViewModel(application: Application) : AndroidViewModel(applic
 
                 Log.d("EconomyUpdateVM", "Iniciando inserção no Supabase...")
 
-                client.postgrest["economy_updates"].insert(finalUpdate)
+                client.postgrest["atualizacao_economias"].insert(finalUpdate)
                 
                 Log.d("EconomyUpdateVM", "Inserção concluída. Atualizando lista local...")
                 
-                // --- ATUALIZAÇÃO INSTANTÂNEA ---
-                // Adicionamos o novo item no topo da lista local imediatamente para feedback visual instantâneo
                 val currentList = _items.value.toMutableList()
                 currentList.add(0, finalUpdate)
                 _items.value = currentList

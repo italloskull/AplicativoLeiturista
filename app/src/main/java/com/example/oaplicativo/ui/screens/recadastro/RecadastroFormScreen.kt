@@ -1,22 +1,26 @@
 package com.example.oaplicativo.ui.screens.recadastro
 
-import androidx.compose.animation.*
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Comment
-import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.oaplicativo.ui.components.AppTextField
 import com.example.oaplicativo.ui.components.AppButton
@@ -25,6 +29,7 @@ import com.example.oaplicativo.ui.components.SpinnerOption
 import com.example.oaplicativo.ui.components.BooleanOption
 import com.example.oaplicativo.ui.screens.recadastro.viewmodel.RecadastroViewModel
 import com.example.oaplicativo.util.*
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,6 +38,23 @@ fun RecadastroFormScreen(
     onSaveSuccess: () -> Unit,
     viewModel: RecadastroViewModel = viewModel()
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val locationHelper = remember { LocationHelper(context) }
+    var isCapturingGpsOnSave by remember { mutableStateOf(false) }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
+            scope.launch {
+                val loc = locationHelper.getCurrentLocation()
+                viewModel.latitude = loc?.latitude
+                viewModel.longitude = loc?.longitude
+            }
+        }
+    }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
@@ -53,10 +75,31 @@ fun RecadastroFormScreen(
             ) {
                 Box(modifier = Modifier.padding(20.dp)) {
                     AppButton(
-                        text = "Salvar Recadastro",
-                        icon = Icons.Default.CloudUpload,
+                        text = if (isCapturingGpsOnSave) "Capturando GPS..." else "Salvar Recadastro",
+                        icon = if (isCapturingGpsOnSave) null else Icons.Default.CloudUpload,
+                        isLoading = isCapturingGpsOnSave,
                         onClick = {
-                            viewModel.saveRecadastro(onSuccess = onSaveSuccess)
+                            scope.launch {
+                                // OBRIGATORIEDADE DE GPS: Se não tiver capturado, captura agora antes de salvar.
+                                if (viewModel.latitude == null || viewModel.longitude == null) {
+                                    isCapturingGpsOnSave = true
+                                    
+                                    val fineLoc = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+                                    if (fineLoc == PackageManager.PERMISSION_GRANTED) {
+                                        val loc = locationHelper.getCurrentLocation()
+                                        viewModel.latitude = loc?.latitude
+                                        viewModel.longitude = loc?.longitude
+                                    } else {
+                                        locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
+                                        isCapturingGpsOnSave = false
+                                        return@launch // Aguarda permissão
+                                    }
+                                    isCapturingGpsOnSave = false
+                                }
+                                
+                                // Prossegue com o salvamento
+                                viewModel.saveRecadastro(onSuccess = onSaveSuccess)
+                            }
                         }
                     )
                 }
@@ -113,7 +156,18 @@ fun RecadastroFormScreen(
                                 )
                             }
                             Button(
-                                onClick = { /* Lógica GPS */ },
+                                onClick = { 
+                                    val fineLoc = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+                                    if (fineLoc == PackageManager.PERMISSION_GRANTED) {
+                                        scope.launch {
+                                            val loc = locationHelper.getCurrentLocation()
+                                            viewModel.latitude = loc?.latitude
+                                            viewModel.longitude = loc?.longitude
+                                        }
+                                    } else {
+                                        locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+                                    }
+                                },
                                 modifier = Modifier.padding(top = 12.dp).fillMaxWidth(),
                                 shape = MaterialTheme.shapes.medium,
                                 colors = ButtonDefaults.buttonColors(
@@ -207,6 +261,8 @@ fun RecadastroFormScreen(
                 AppCard(title = "Canais de Contato do Morador", icon = Icons.Default.ContactPhone) {
                     AppTextField(value = viewModel.email, onValueChange = { viewModel.email = it }, label = "E-mail Principal do Morador", leadingIcon = Icons.Default.Email, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email))
                     Spacer(Modifier.height(12.dp))
+                    AppTextField(value = viewModel.telefone, onValueChange = { viewModel.telefone = it }, label = "Telefone Fixo", leadingIcon = Icons.Default.Phone)
+                    Spacer(Modifier.height(12.dp))
                     AppTextField(value = viewModel.celular1, onValueChange = { if (it.length <= 11) viewModel.celular1 = it }, label = "Celular Principal (WhatsApp)", leadingIcon = Icons.Default.PhoneIphone, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), visualTransformation = PhoneVisualTransformation())
                     Spacer(Modifier.height(12.dp))
                     AppTextField(value = viewModel.celular2, onValueChange = { if (it.length <= 11) viewModel.celular2 = it }, label = "Telefone Secundário / Recado", leadingIcon = Icons.Default.ContactPhone, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), visualTransformation = PhoneVisualTransformation())
@@ -249,6 +305,8 @@ fun RecadastroFormScreen(
                     AppTextField(value = viewModel.numeroMoradores, onValueChange = { if (it.all { c -> c.isDigit() }) viewModel.numeroMoradores = it }, label = "Quantidade de Moradores", leadingIcon = Icons.Default.Group, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                     Spacer(Modifier.height(12.dp))
                     SpinnerOption(label = "Tipo de Pavimento da Rua", options = listOf("Asfalto", "Paralelepípedo", "Terra", "Outro"), selectedOption = viewModel.pavimentoRua, onOptionSelected = { viewModel.pavimentoRua = it })
+                    Spacer(Modifier.height(12.dp))
+                    SpinnerOption(label = "Tipo de Pavimento da Calçada", options = listOf("Asfalto", "Paver", "Concreto", "Terra", "Outro"), selectedOption = viewModel.pavimentoCalcada, onOptionSelected = { viewModel.pavimentoCalcada = it })
                 }
             }
 
@@ -263,8 +321,6 @@ fun RecadastroFormScreen(
                     if (viewModel.possuiHidrometro) {
                         Spacer(Modifier.height(12.dp))
                         AppTextField(value = viewModel.numeroHidrometro, onValueChange = { viewModel.numeroHidrometro = it }, label = "Nº de Série do Hidrômetro", leadingIcon = Icons.Default.Pin)
-                        Spacer(Modifier.height(12.dp))
-                        AppTextField(value = viewModel.modeloHidrometro, onValueChange = { viewModel.modeloHidrometro = it }, label = "Marca / Modelo do Hidrômetro", leadingIcon = Icons.AutoMirrored.Filled.Label)
                     }
                     Spacer(Modifier.height(12.dp))
                     SpinnerOption(label = "Local da Instalação", options = listOf("CAIXA PADRÃO", "INTERNO", "CAVALETE EXTERNO"), selectedOption = viewModel.localInstalacao, onOptionSelected = { viewModel.localInstalacao = it })

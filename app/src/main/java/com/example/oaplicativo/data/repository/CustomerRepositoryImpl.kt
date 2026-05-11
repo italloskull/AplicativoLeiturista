@@ -22,8 +22,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 
 class CustomerRepositoryImpl private constructor() : CustomerRepository {
     private val client = SupabaseClient.client
@@ -47,17 +45,16 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
 
     private fun setupRealtime() {
         scope.launch {
-            while (true) { // Loop de reconexão automática resiliente (SRE)
+            while (true) {
                 try {
-                    // Limpa canal anterior se existir para evitar vazamento de memória
                     realtimeChannel?.unsubscribe()
                     
                     client.realtime.connect()
-                    val myChannel = client.realtime.channel("public_customers")
+                    val myChannel = client.realtime.channel("public_clientes")
                     realtimeChannel = myChannel
                     
                     myChannel.postgresChangeFlow<PostgresAction>(schema = "public") {
-                        table = "customers"
+                        table = "clientes"
                     }.collect {
                         Log.d("CustomerRepositoryImpl", "Realtime: Mudança detectada no servidor.")
                         delay(800)
@@ -66,9 +63,9 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
                     
                     myChannel.subscribe()
                     Log.d("CustomerRepositoryImpl", "Realtime: Conectado e Subscrito.")
-                    break // Sai do loop se conectar com sucesso
+                    break
                 } catch (e: Exception) {
-                    Log.e("CustomerRepositoryImpl", "Realtime: Falha na conexão. Tentando em 10s... Erro: ${e.message}")
+                    Log.e("CustomerRepositoryImpl", "Realtime Error: ${e.message}")
                     delay(10000)
                 }
             }
@@ -79,9 +76,9 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
         refreshMutex.withLock {
             try {
                 val list = withContext(Dispatchers.IO) {
-                    client.postgrest["customers"]
+                    client.postgrest["clientes"]
                         .select {
-                            order("created_at", order = Order.DESCENDING)
+                            order("criado_em", order = Order.DESCENDING)
                             limit(100)
                         }.decodeList<Customer>()
                 }
@@ -112,7 +109,7 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
 
     override suspend fun addCustomer(customer: Customer) {
         try {
-            client.postgrest["customers"].insert(customer)
+            client.postgrest["clientes"].insert(customer)
             Log.d("CustomerRepositoryImpl", "Sucesso no upload.")
             fetchCustomers()
         } catch (e: Exception) {
@@ -123,24 +120,7 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
 
     override suspend fun updateCustomer(customer: Customer) {
         withContext(Dispatchers.IO) {
-            client.postgrest["customers"].update(
-                buildJsonObject {
-                    put("name", customer.name)
-                    put("registration_number", customer.registrationNumber)
-                    put("registration_digit", customer.registrationDigit)
-                    put("email", customer.email)
-                    put("landline", customer.landline)
-                    put("cell_phone", customer.cellPhone)
-                    put("is_standard_measurement_box", customer.isStandardMeasurementBox)
-                    put("is_standardized_seals", customer.isStandardizedSeals)
-                    put("is_hd_accessible", customer.isHdAccessible)
-                    put("is_vacationer", customer.isVacationer)
-                    put("latitude", customer.latitude)
-                    put("longitude", customer.longitude)
-                }
-            ) {
-                filter { eq("id", customer.id ?: "") }
-            }
+            client.postgrest["clientes"].insert(customer)
             fetchCustomers()
         }
     }
@@ -151,7 +131,7 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
 
     override suspend fun deleteCustomer(id: String) {
         withContext(Dispatchers.IO) {
-            client.postgrest["customers"].delete {
+            client.postgrest["clientes"].delete {
                 filter { eq("id", id) }
             }
             fetchCustomers()

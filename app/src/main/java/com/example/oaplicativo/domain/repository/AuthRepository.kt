@@ -7,6 +7,13 @@ interface AuthRepository {
     val currentUserProfile: StateFlow<UserProfile?>
     suspend fun login(identifier: String, password: String)
     suspend fun fetchProfile()
-    suspend fun registerUser(name: String, email: String, password: String, sector: String, role: String)
+    suspend fun registerUser(
+        name: String,
+        email: String,
+        password: String,
+        sector: String,
+        role: String,
+        cidadeId: String
+    )
     suspend fun logout()
 }

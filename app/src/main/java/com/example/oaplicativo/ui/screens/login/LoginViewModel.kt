@@ -22,10 +22,19 @@ class LoginViewModel(
             try {
                 authRepository.login(identifier, pass)
                 SecurityUtils.saveCredentials(context, identifier, pass, rememberMe)
+                // FIX: Pre-fetch profile inside VM to ensure it's ready for navigation
+                authRepository.fetchProfile()
                 _loginState.value = LoginState.Success
             } catch (e: Exception) {
                 _loginState.value = LoginState.Error(e.message ?: "Erro desconhecido")
             }
+        }
+    }
+
+    // Proxy for repository fetch
+    fun fetchProfile() {
+        viewModelScope.launch {
+            authRepository.fetchProfile()
         }
     }
 }

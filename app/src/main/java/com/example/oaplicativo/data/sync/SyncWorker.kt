@@ -45,6 +45,7 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
             try {
                 if (customer.registrationNumber.isNullOrBlank()) continue
 
+                // --- CARIMBO DE SINCRONIZAÇÃO FINAL ---
                 val syncTimestamp = ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
                 val syncedCustomer = customer.copy(syncedAt = syncTimestamp)
                 

@@ -9,6 +9,7 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 
 class LocationHelper(context: Context) {
@@ -17,28 +18,34 @@ class LocationHelper(context: Context) {
 
     private val sharedPrefs = context.getSharedPreferences("location_cache", Context.MODE_PRIVATE)
 
+    /**
+     * 🔥 FIX DE DEPURAÇÃO: Adicionado Timeout de 10s.
+     * Evita que o app trave infinitamente se não houver sinal de satélite.
+     */
     @SuppressLint("MissingPermission")
     suspend fun getCurrentLocation(): Location? {
-        return suspendCancellableCoroutine { continuation ->
-            try {
-                fusedLocationClient.getCurrentLocation(
-                    Priority.PRIORITY_HIGH_ACCURACY,
-                    CancellationTokenSource().token
-                ).addOnSuccessListener { location: Location? ->
-                    if (location != null) {
-                        cacheLocation(location)
-                        continuation.resume(location)
-                    } else {
+        return withTimeoutOrNull(10000L) { // Timeout de segurança de 10 segundos
+            suspendCancellableCoroutine { continuation ->
+                try {
+                    fusedLocationClient.getCurrentLocation(
+                        Priority.PRIORITY_HIGH_ACCURACY,
+                        CancellationTokenSource().token
+                    ).addOnSuccessListener { location: Location? ->
+                        if (location != null) {
+                            cacheLocation(location)
+                            continuation.resume(location)
+                        } else {
+                            continuation.resume(getCachedLocation())
+                        }
+                    }.addOnFailureListener {
                         continuation.resume(getCachedLocation())
                     }
-                }.addOnFailureListener {
+                } catch (e: Exception) {
+                    Log.e("LocationHelper", "Erro ao obter GPS: ${e.message}")
                     continuation.resume(getCachedLocation())
                 }
-            } catch (e: Exception) {
-                Log.e("LocationHelper", "Erro ao obter GPS: ${e.message}")
-                continuation.resume(getCachedLocation())
             }
-        }
+        } ?: getCachedLocation() // Se der timeout, retorna o cache
     }
 
     private fun cacheLocation(location: Location) {

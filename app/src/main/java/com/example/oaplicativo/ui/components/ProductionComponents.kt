@@ -7,6 +7,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -131,6 +132,45 @@ fun AppCard(
             }
             Spacer(Modifier.height(20.dp))
             content()
+        }
+    }
+}
+
+@Composable
+fun AppStatusBadge(
+    status: String?,
+    modifier: Modifier = Modifier
+) {
+    val (color, label) = when (status) {
+        "Boa" -> Color(0xFF4CAF50) to "Boa"
+        "Regular" -> Color(0xFFFFC107) to "Regular"
+        "Ruim" -> Color(0xFFF44336) to "Ruim"
+        else -> MaterialTheme.colorScheme.outline to "Indefinida"
+    }
+
+    Surface(
+        color = color.copy(alpha = 0.12f),
+        contentColor = color,
+        shape = MaterialTheme.shapes.extraSmall,
+        border = BorderStroke(0.5.dp, color.copy(alpha = 0.5f)),
+        modifier = modifier
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Star,
+                contentDescription = null,
+                modifier = Modifier.size(10.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = label.uppercase(),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Black,
+                letterSpacing = 0.5.sp
+            )
         }
     }
 }

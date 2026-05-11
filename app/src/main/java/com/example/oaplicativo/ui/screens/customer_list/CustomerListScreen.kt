@@ -1,3 +1,4 @@
+@file:Suppress("SpellCheckingInspection")
 package com.example.oaplicativo.ui.screens.customer_list
 
 import android.Manifest
@@ -28,14 +29,15 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.oaplicativo.model.Customer
 import com.example.oaplicativo.presentation.components.DistanceBadge
 import com.example.oaplicativo.presentation.components.SyncIndicator
+import com.example.oaplicativo.ui.components.AppStatusBadge
 import com.example.oaplicativo.util.navigation.NavigationUtils
 import com.example.oaplicativo.util.LocationHelper
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * 🚀 OTIMIZAÇÃO DE PERFORMANCE: CustomerListScreen
- * Estratégia: Memoização de filtragem e re-composição inteligente.
+ * CUSTOMER LIST SCREEN
+ * Optimized for performance using memoization and stable keys.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,19 +59,19 @@ fun CustomerListScreen(
     val userProfile by viewModel.currentUserProfile.collectAsState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val locationHelper = remember { LocationHelper(context) }
+    val locationHelper = remember(context) { LocationHelper(context) }
     
-    var userLocation by remember { mutableStateOf<android.location.Location?>(null) }
-    var showMenu by remember { mutableStateOf(false) }
-    var showAboutDialog by remember { mutableStateOf(false) }
-    var searchQuery by remember { mutableStateOf("") }
+    val userLocationState = remember { mutableStateOf<android.location.Location?>(null) }
+    val showMenuState = remember { mutableStateOf(false) }
+    val searchQueryState = remember { mutableStateOf("") }
+    val showAboutDialogState = remember { mutableStateOf(false) }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         if (permissions.values.any { it }) {
             scope.launch {
-                userLocation = locationHelper.getCurrentLocation()
+                userLocationState.value = locationHelper.getCurrentLocation()
             }
         }
     }
@@ -80,29 +82,28 @@ fun CustomerListScreen(
             arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
         )
         while (true) {
-            userLocation = locationHelper.getCurrentLocation()
+            userLocationState.value = locationHelper.getCurrentLocation()
             delay(30000)
         }
     }
 
-    // 🔥 OTIMIZAÇÃO 1: Memoização da lista filtrada via derivedStateOf
-    // Evita recalcular o sort de GPS e o filtro de texto em cada frame de animação.
-    val filteredCustomers by remember {
+    // MEMOIZED FILTERED LIST
+    val filteredCustomers by remember(customers, searchQueryState.value, userLocationState.value) {
         derivedStateOf {
-            val baseList = if (searchQuery.isBlank()) {
+            val baseList = if (searchQueryState.value.isBlank()) {
                 customers
             } else {
                 customers.filter {
-                    (it.name?.contains(searchQuery, ignoreCase = true) == true) ||
-                            (it.registrationNumber?.contains(searchQuery, ignoreCase = true) == true)
+                    (it.name?.contains(searchQueryState.value, ignoreCase = true) == true) ||
+                            (it.registrationNumber?.contains(searchQueryState.value, ignoreCase = true) == true)
                 }
             }
 
-            if (userLocation != null) {
+            if (userLocationState.value != null) {
                 baseList.sortedBy { customer ->
                     if (customer.latitude != null && customer.longitude != null) {
                         locationHelper.calculateDistance(
-                            userLocation!!.latitude, userLocation!!.longitude,
+                            userLocationState.value!!.latitude, userLocationState.value!!.longitude,
                             customer.latitude, customer.longitude
                         )
                     } else {
@@ -128,18 +129,20 @@ fun CustomerListScreen(
                     IconButton(onClick = { viewModel.refreshCustomers() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Atualizar")
                     }
-                    IconButton(onClick = { showMenu = true }) {
+                    IconButton(onClick = { showMenuState.value = true }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "Menu")
                     }
                     DropdownMenu(
-                        expanded = showMenu,
-                        onDismissRequest = { showMenu = false }
+                        expanded = showMenuState.value,
+                        onDismissRequest = { showMenuState.value = false }
                     ) {
-                        if (userProfile?.isAdmin == true) {
+                        // FIX: Ensure isAdmin logic is strictly evaluated
+                        val isAdmin = userProfile?.isAdmin ?: false
+                        if (isAdmin) {
                             DropdownMenuItem(
                                 text = { Text("Gerenciar Usuários") },
                                 onClick = {
-                                    showMenu = false
+                                    showMenuState.value = false
                                     onNavigateToUserRegistration()
                                 }
                             )
@@ -147,14 +150,14 @@ fun CustomerListScreen(
                         DropdownMenuItem(
                             text = { Text("Sobre") },
                             onClick = {
-                                showMenu = false
-                                showAboutDialog = true
+                                showMenuState.value = false
+                                showAboutDialogState.value = true
                             }
                         )
                         DropdownMenuItem(
                             text = { Text("Sair") },
                             onClick = {
-                                showMenu = false
+                                showMenuState.value = false
                                 onLogout()
                             }
                         )
@@ -178,8 +181,8 @@ fun CustomerListScreen(
                 .padding(paddingValues)
         ) {
             OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
+                value = searchQueryState.value,
+                onValueChange = { searchQueryState.value = it },
                 placeholder = { Text("Pesquisar por nome ou matrícula...") },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -215,15 +218,13 @@ fun CustomerListScreen(
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                             )
                         }
-                        // 🔥 OTIMIZAÇÃO 2: Uso de Keys estáveis
-                        // Evita que o Compose re-desenhe a lista inteira quando apenas 1 item muda.
                         items(
                             items = filteredCustomers,
                             key = { it.id ?: it.registrationNumber ?: it.name ?: "" }
                         ) { customer ->
                             CustomerListItem(
                                 customer = customer,
-                                userLocation = userLocation,
+                                userLocation = userLocationState.value,
                                 locationHelper = locationHelper,
                                 onCustomerClick = onCustomerClick,
                                 onNavigateClick = {
@@ -237,9 +238,9 @@ fun CustomerListScreen(
         }
     }
 
-    if (showAboutDialog) {
+    if (showAboutDialogState.value) {
         AlertDialog(
-            onDismissRequest = { showAboutDialog = false },
+            onDismissRequest = { showAboutDialogState.value = false },
             title = { Text("Sobre o Aplicativo") },
             text = {
                 Column {
@@ -250,7 +251,7 @@ fun CustomerListScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showAboutDialog = false }) {
+                TextButton(onClick = { showAboutDialogState.value = false }) {
                     Text("Fechar")
                 }
             }
@@ -266,7 +267,6 @@ fun CustomerListItem(
     onCustomerClick: (Customer) -> Unit,
     onNavigateClick: (Customer) -> Unit
 ) {
-    // 🔥 OTIMIZAÇÃO 3: Memoização de cálculos internos do item
     val distance = remember(customer.id, userLocation) {
         if (userLocation != null && customer.latitude != null && customer.longitude != null) {
             val meters = locationHelper.calculateDistance(
@@ -284,6 +284,9 @@ fun CustomerListItem(
                 Text(customer.name ?: "Titular não identificado", fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.width(8.dp))
                 SyncIndicator(isSynced = customer.isSynced)
+                Spacer(modifier = Modifier.width(8.dp))
+                // NEW: Quality Badge
+                AppStatusBadge(status = customer.quality)
             }
         },
         supportingContent = { 

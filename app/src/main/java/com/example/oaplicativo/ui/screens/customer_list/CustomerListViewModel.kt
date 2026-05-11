@@ -31,15 +31,19 @@ class CustomerListViewModel(
     private val localDb = LocalDatabase(application)
 
     init {
+        // Purge agora usa a nova estrutura v7 se necessário
         viewModelScope.launch {
-            localDb.purgeOldRecords()
+            try {
+                localDb.purgeOldRecords()
+            } catch (e: Exception) {
+                // Silently handle if table not yet migrated
+            }
         }
         
         loadData()
         startPeriodicRefresh()
     }
 
-    // Função pública para ser chamada quando a tela ganha foco (ex: volta do formulário)
     fun loadData() {
         viewModelScope.launch {
             updateLocalData()
@@ -48,14 +52,18 @@ class CustomerListViewModel(
     }
 
     private fun updateLocalData() {
-        val pending = localDb.getPendingCustomers().map { it.second }
-        customerRepository.updateLocalCustomers(pending)
+        try {
+            val pending = localDb.getPendingCustomers().map { it.second }
+            customerRepository.updateLocalCustomers(pending)
+        } catch (e: Exception) {
+            // Silently skip if DB not initialized
+        }
     }
 
     private fun startPeriodicRefresh() {
         viewModelScope.launch {
             while (isActive) {
-                delay(5 * 60 * 1000) // 5 min
+                delay(5 * 60 * 1000)
                 updateLocalData()
                 customerRepository.fetchCustomers()
             }
