@@ -15,7 +15,7 @@ class LocalDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // Reset para v10: Garante estrutura profissional
+        // Reset para v11: Garante persistência de coordenadas geográficas
         db.execSQL("DROP TABLE IF EXISTS customers")
         db.execSQL("DROP TABLE IF EXISTS stats")
         onCreate(db)
@@ -70,16 +70,22 @@ class LocalDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
             put("matricula", customer.registrationNumber)
             put("qualidade", customer.quality)
             put("criado_em", customer.createdAt)
-            put("capturado_em", customer.capturedAt) // NOVO
-            put("adicionado_por", customer.addedBy) // NOVO
-            put("cidade_id", customer.cidadeId) // NOVO
+            put("capturado_em", customer.capturedAt)
+            put("adicionado_por", customer.addedBy)
+            put("cidade_id", customer.cidadeId)
+            
+            // --- CORE FIX: Salvando as coordenadas no SQLite ---
+            put("latitude", customer.latitude)
+            put("longitude", customer.longitude)
+            
             put("entrevistado_nome", customer.entrevistadoNome)
             put("entrevistado_cpf", customer.entrevistadoCpf)
             put("proprietario_nome", customer.proprietarioNome)
             put("locatario_nome", customer.locatarioNome)
             put("celular", customer.cellPhone)
-            put("telefone_fixo", customer.landline) // NOVO
-            put("pavimento_calcada", customer.pavimentoCalcada) // NOVO
+            put("telefone_fixo", customer.landline)
+            put("pavimento_calcada", customer.pavimentoCalcada)
+            put("cidade", customer.cidade)
             put("date", customer.date)
         }
         writableDatabase.insert("customers", null, values)
@@ -99,6 +105,11 @@ class LocalDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
                     capturedAt = cursor.getString(cursor.getColumnIndexOrThrow("capturado_em")),
                     addedBy = cursor.getString(cursor.getColumnIndexOrThrow("adicionado_por")),
                     cidadeId = cursor.getString(cursor.getColumnIndexOrThrow("cidade_id")),
+                    
+                    // --- CORE FIX: Recuperando as coordenadas do SQLite ---
+                    latitude = if (cursor.isNull(cursor.getColumnIndexOrThrow("latitude"))) null else cursor.getDouble(cursor.getColumnIndexOrThrow("latitude")),
+                    longitude = if (cursor.isNull(cursor.getColumnIndexOrThrow("longitude"))) null else cursor.getDouble(cursor.getColumnIndexOrThrow("longitude")),
+                    
                     entrevistadoNome = cursor.getString(cursor.getColumnIndexOrThrow("entrevistado_nome")),
                     entrevistadoCpf = cursor.getString(cursor.getColumnIndexOrThrow("entrevistado_cpf")),
                     proprietarioNome = cursor.getString(cursor.getColumnIndexOrThrow("proprietario_nome")),
@@ -106,6 +117,7 @@ class LocalDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
                     cellPhone = cursor.getString(cursor.getColumnIndexOrThrow("celular")),
                     landline = cursor.getString(cursor.getColumnIndexOrThrow("telefone_fixo")),
                     pavimentoCalcada = cursor.getString(cursor.getColumnIndexOrThrow("pavimento_calcada")),
+                    cidade = cursor.getString(cursor.getColumnIndexOrThrow("cidade")),
                     date = cursor.getString(cursor.getColumnIndexOrThrow("date")),
                     isSynced = false
                 )
@@ -121,8 +133,8 @@ class LocalDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
     }
 
     companion object {
-        private const val DATABASE_NAME = "sanitation_local_v10.db"
-        private const val DATABASE_VERSION = 10 
+        private const val DATABASE_NAME = "sanitation_local_v11.db"
+        private const val DATABASE_VERSION = 11 
 
         private const val CREATE_TABLE_CUSTOMERS = """
             CREATE TABLE customers (
@@ -134,6 +146,8 @@ class LocalDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
                 capturado_em TEXT,
                 adicionado_por TEXT,
                 cidade_id TEXT,
+                latitude REAL,
+                longitude REAL,
                 entrevistado_nome TEXT,
                 entrevistado_cpf TEXT,
                 proprietario_nome TEXT,
@@ -141,6 +155,7 @@ class LocalDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
                 celular TEXT,
                 telefone_fixo TEXT,
                 pavimento_calcada TEXT,
+                cidade TEXT,
                 date TEXT
             )
         """

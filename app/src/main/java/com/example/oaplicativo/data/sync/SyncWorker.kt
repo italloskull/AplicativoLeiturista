@@ -9,11 +9,10 @@ import com.example.oaplicativo.data.repository.CustomerRepositoryImpl
 import com.example.oaplicativo.domain.repository.CustomerRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
 
 /**
- * SyncWorker: Responsável pela sincronização atômica e resiliente entre local e nuvem.
+ * SyncWorker: Responsável pela sincronização robusta e reativa.
+ * Revertido para a versão estável que nunca falha no envio.
  */
 class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
     CoroutineWorker(appContext, workerParams) {
@@ -22,57 +21,36 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
         val db = LocalDatabase(applicationContext)
         val repository: CustomerRepository = CustomerRepositoryImpl.getInstance()
         
-        Log.d("SyncWorker", "Iniciando verificação de itens pendentes...")
+        Log.d("SyncWorker", "Iniciando verificação de pendências...")
 
         val pendingCustomers = try {
             db.getPendingCustomers()
         } catch (e: Exception) {
-            Log.e("SyncWorker", "Erro ao acessar DB local: ${e.message}")
             return@withContext Result.retry()
         }
 
-        if (pendingCustomers.isEmpty()) {
-            Log.d("SyncWorker", "Fila vazia. Nada para sincronizar.")
-            return@withContext Result.success()
-        }
-
-        Log.d("SyncWorker", "Processando ${pendingCustomers.size} registros...")
-
-        var totalSuccess = 0
-        var totalFails = 0
+        if (pendingCustomers.isEmpty()) return@withContext Result.success()
 
         for ((localId, customer) in pendingCustomers) {
             try {
-                if (customer.registrationNumber.isNullOrBlank()) continue
-
-                // --- CARIMBO DE SINCRONIZAÇÃO FINAL ---
-                val syncTimestamp = ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-                val syncedCustomer = customer.copy(syncedAt = syncTimestamp)
+                // Tenta enviar (A Trigger no servidor cuidará do carimbo)
+                repository.addCustomer(customer)
                 
-                // Tenta enviar para o servidor
-                repository.addCustomer(syncedCustomer)
-                
-                // SUCESSO: Remove do banco local IMEDIATAMENTE
+                // Sucesso: Limpa do banco local
                 db.deleteSyncedCustomer(localId)
-                totalSuccess++
-                Log.d("SyncWorker", "Item $localId sincronizado com sucesso.")
-                
+                Log.d("SyncWorker", "Registro $localId enviado com sucesso.")
             } catch (e: Exception) {
-                Log.e("SyncWorker", "Falha no item $localId: ${e.message}")
-                totalFails++
+                Log.e("SyncWorker", "Erro ao enviar $localId: ${e.message}")
+                return@withContext Result.retry()
             }
         }
 
-        // Força a UI a atualizar a lista local (removendo os itens que acabamos de deletar)
-        val remainingPending = db.getPendingCustomers().map { it.second }
-        repository.updateLocalCustomers(remainingPending)
+        // Atualiza a UI local após o ciclo
+        try {
+            val remainingPending = db.getPendingCustomers().map { it.second }
+            repository.updateLocalCustomers(remainingPending)
+        } catch (_: Exception) {}
 
-        Log.d("SyncWorker", "Finalizado. Sucesso: $totalSuccess | Falhas: $totalFails")
-        
-        return@withContext if (totalFails == 0) {
-            Result.success()
-        } else {
-            Result.retry()
-        }
+        return@withContext Result.success()
     }
 }

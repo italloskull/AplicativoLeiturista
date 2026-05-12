@@ -8,15 +8,22 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.*
+import com.example.oaplicativo.data.SupabaseClient
 import com.example.oaplicativo.data.remote.viacep.RetrofitClient
 import com.example.oaplicativo.data.repository.AuthRepositoryImpl
 import com.example.oaplicativo.data.repository.CustomerRepositoryImpl
 import com.example.oaplicativo.data.local.LocalDatabase
+import com.example.oaplicativo.data.sync.SyncWorker
 import com.example.oaplicativo.model.Customer
+import com.example.oaplicativo.model.Cidade
+import com.example.oaplicativo.util.LocationHelper
+import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.TimeUnit
 
 class RoleData {
     var nomeCompleto by mutableStateOf("")
@@ -32,10 +39,13 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
     private val repository = CustomerRepositoryImpl.getInstance()
     private val authRepository = AuthRepositoryImpl.getInstance()
     private val localDb = LocalDatabase(application)
+    private val locationHelper = LocationHelper(application)
+    private val client = SupabaseClient.client
 
     var matricula by mutableStateOf("")
     var latitude by mutableStateOf<Double?>(null)
     var longitude by mutableStateOf<Double?>(null)
+    var isCapturingLocation by mutableStateOf(false)
 
     var currentRole by mutableStateOf("Entrevistado")
     var entrevistadoVinculo by mutableStateOf("Outro")
@@ -89,19 +99,61 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
 
     private var cepJob: Job? = null
 
-    fun saveRecadastro(onSuccess: () -> Unit) {
+    private suspend fun getLeituristaCidadeNome(cidadeId: String?): String? {
+        if (cidadeId == null) return null
+        return try {
+            val res = client.postgrest["cidades"]
+                .select { filter { eq("id", cidadeId) } }
+                .decodeSingleOrNull<Cidade>()
+            res?.nome
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun saveRecadastro(onSuccess: () -> Unit, onError: (String) -> Unit) {
         viewModelScope.launch {
             try {
-                val quality = calculateDataQuality()
-                val fullNow = ZonedDateTime.now()
-                val timestampStr = fullNow.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-                
+                // 1. GPS FORCE
+                if (latitude == null || longitude == null) {
+                    isCapturingLocation = true
+                    val location = locationHelper.getCurrentLocation() ?: locationHelper.getCachedLocation()
+                    if (location != null) {
+                        latitude = location.latitude
+                        longitude = location.longitude
+                    }
+                    isCapturingLocation = false
+                }
+
+                if (latitude == null || longitude == null) {
+                    onError("Localização obrigatória! Por favor, ative o GPS.")
+                    return@launch
+                }
+
                 val user = authRepository.currentUserProfile.value
-                val leituristaNome = user?.fullName ?: user?.username ?: "Leiturista"
-                val leituristaCidadeId = user?.cidadeId
+                if (user == null) {
+                    onError("Sessão expirada. Faça login novamente.")
+                    return@launch
+                }
+
+                val leituristaNome = user.fullName ?: user.username ?: "Leiturista"
+                val leituristaCidadeId = user.cidadeId
+                
+                var finalCidade = cidade
+                if (finalCidade.isBlank()) {
+                    val fallback = getLeituristaCidadeNome(leituristaCidadeId)
+                    if (fallback != null) {
+                        finalCidade = fallback
+                        cidade = fallback
+                    }
+                }
+
+                val quality = calculateDataQuality()
+                val now = ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
 
                 val customer = Customer(
                     cidadeId = leituristaCidadeId,
+                    cidade = finalCidade,
                     name = entrevistadoData.nomeCompleto,
                     registrationNumber = matricula,
                     email = email,
@@ -110,13 +162,11 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
                     latitude = latitude,
                     longitude = longitude,
                     quality = quality,
-                    
-                    // --- PREENCHIMENTO AUTOMÁTICO DE METADADOS ---
                     addedBy = leituristaNome,
-                    capturedAt = timestampStr, 
-                    createdAt = timestampStr,
-                    date = fullNow.format(DateTimeFormatter.ofPattern("yyyy/MM/dd")),
-                    
+                    capturedAt = now, 
+                    createdAt = now,
+                    date = ZonedDateTime.now().format(DateTimeFormatter.ofPattern("yyyy/MM/dd")),
+                    syncedAt = null,
                     entrevistadoNome = entrevistadoData.nomeCompleto,
                     entrevistadoCpf = entrevistadoData.cpfCnpj,
                     entrevistadoMae = entrevistadoData.nomeMae,
@@ -132,7 +182,6 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
                     numero = numero,
                     complemento = complemento,
                     bairro = bairro,
-                    cidade = cidade,
                     uf = uf,
                     cep = cep,
                     existeRedeAgua = existeRedeAgua,
@@ -147,32 +196,42 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
 
                 localDb.saveCustomerOffline(customer)
 
+                // --- NOVO: GATILHO ATIVO DE SINCRONIZAÇÃO ---
+                // Enfileira um trabalho que dispara ASSIM QUE a internet voltar.
+                val constraints = Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build()
+
+                val syncRequest = OneTimeWorkRequestBuilder<SyncWorker>()
+                    .setConstraints(constraints)
+                    .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+                    .addTag("SyncWorkerTag")
+                    .build()
+
+                WorkManager.getInstance(getApplication()).enqueueUniqueWork(
+                    "immediate_sync_after_save",
+                    ExistingWorkPolicy.REPLACE,
+                    syncRequest
+                )
+
                 try {
                     repository.addCustomer(customer)
-                    Log.d("RecadastroVM", "Sincronizado com Supabase.")
-                } catch (_: Exception) {
-                    Log.e("RecadastroVM", "Offline: registro aguardando conexão.")
-                }
+                } catch (_: Exception) { }
 
                 onSuccess()
             } catch (e: Exception) {
-                Log.e("RecadastroVM", "CRITICAL SAVE ERROR", e)
+                Log.e("RecadastroVM", "SAVE ERROR", e)
+                onError("Erro interno ao salvar.")
             }
         }
     }
 
     fun calculateDataQuality(): String {
-        val fields = mutableListOf<String>()
-        fields.addAll(listOf(matricula, email, logradouro, numero, cep, numeroMoradores))
-        fields.addAll(listOf(pavimentoRua ?: "", localInstalacao ?: "", acessibilidade ?: ""))
-        if (possuiHidrometro) fields.add(numeroHidrometro)
-        fields.add(entrevistadoData.nomeCompleto)
-        fields.add(entrevistadoData.cpfCnpj)
-        val filledCount = fields.count { it.isNotBlank() }
-        val percentage = (filledCount.toFloat() / fields.size.toFloat()) * 100
+        val fields = listOf(matricula, email, logradouro, numero, cep, entrevistadoData.nomeCompleto)
+        val filled = fields.count { it.isNotBlank() }
         return when {
-            percentage >= 90f -> "Boa"
-            percentage >= 50f -> "Regular"
+            filled >= 5 -> "Boa"
+            filled >= 3 -> "Regular"
             else -> "Ruim"
         }
     }

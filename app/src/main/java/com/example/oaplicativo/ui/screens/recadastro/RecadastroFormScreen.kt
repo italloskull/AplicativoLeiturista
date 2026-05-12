@@ -2,6 +2,7 @@ package com.example.oaplicativo.ui.screens.recadastro
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -97,8 +98,13 @@ fun RecadastroFormScreen(
                                     isCapturingGpsOnSave = false
                                 }
                                 
-                                // Prossegue com o salvamento
-                                viewModel.saveRecadastro(onSuccess = onSaveSuccess)
+                                // Prossegue com o salvamento blindado
+                                viewModel.saveRecadastro(
+                                    onSuccess = onSaveSuccess,
+                                    onError = { msg ->
+                                        Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                    }
+                                )
                             }
                         }
                     )

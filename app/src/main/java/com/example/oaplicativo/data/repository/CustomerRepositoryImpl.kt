@@ -1,3 +1,4 @@
+@file:Suppress("SpellCheckingInspection")
 package com.example.oaplicativo.data.repository
 
 import android.util.Log
@@ -48,7 +49,6 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
             while (true) {
                 try {
                     realtimeChannel?.unsubscribe()
-                    
                     client.realtime.connect()
                     val myChannel = client.realtime.channel("public_clientes")
                     realtimeChannel = myChannel
@@ -56,16 +56,13 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
                     myChannel.postgresChangeFlow<PostgresAction>(schema = "public") {
                         table = "clientes"
                     }.collect {
-                        Log.d("CustomerRepositoryImpl", "Realtime: Mudança detectada no servidor.")
                         delay(800)
                         fetchCustomers()
                     }
                     
                     myChannel.subscribe()
-                    Log.d("CustomerRepositoryImpl", "Realtime: Conectado e Subscrito.")
                     break
                 } catch (e: Exception) {
-                    Log.e("CustomerRepositoryImpl", "Realtime Error: ${e.message}")
                     delay(10000)
                 }
             }
@@ -97,12 +94,10 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
 
     private fun combineAndEmit() {
         val remoteKeys = remoteCustomers.mapNotNull { it.registrationNumber }.toSet()
-        
         val uniqueLocal = localPendingCustomers.filter { local ->
             val key = local.registrationNumber
             key != null && !remoteKeys.contains(key)
         }
-
         val combined = uniqueLocal + remoteCustomers
         _customers.value = combined
     }
@@ -110,7 +105,6 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
     override suspend fun addCustomer(customer: Customer) {
         try {
             client.postgrest["clientes"].insert(customer)
-            Log.d("CustomerRepositoryImpl", "Sucesso no upload.")
             fetchCustomers()
         } catch (e: Exception) {
             Log.e("CustomerRepositoryImpl", "Falha no upload: ${e.message}")

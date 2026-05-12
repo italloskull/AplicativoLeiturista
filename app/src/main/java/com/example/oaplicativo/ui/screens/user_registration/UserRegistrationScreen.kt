@@ -92,7 +92,7 @@ fun UserRegistrationScreen(
                     readOnly = true,
                     label = { Text("Cidade de Atuação") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showCidadeMenu) },
-                    modifier = Modifier.fillMaxWidth().menuAnchor(),
+                    modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
                     shape = MaterialTheme.shapes.medium,
                     colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
                 )

@@ -31,7 +31,7 @@ data class Customer(
     @SerialName("criado_em") val createdAt: String? = null,
     @SerialName("adicionado_por") val addedBy: String? = null,
     @SerialName("capturado_em") val capturedAt: String? = null,
-    @SerialName("sincronizado_em") val syncedAt: String? = null,
+    @Transient val syncedAt: String? = null,
     val date: String? = null,
 
     @SerialName("qualidade") val quality: String? = null,
@@ -66,7 +66,7 @@ data class Customer(
     val numero: String? = null,
     val complemento: String? = null,
     val bairro: String? = null,
-    val cidade: String? = null,
+    @SerialName("cidade") val cidade: String? = null, // <--- MAPEAMENTO OBRIGATÓRIO
     val uf: String? = null,
     val cep: String? = null,
     
