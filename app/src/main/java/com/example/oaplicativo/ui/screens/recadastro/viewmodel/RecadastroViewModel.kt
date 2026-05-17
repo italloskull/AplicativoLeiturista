@@ -10,7 +10,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.*
 import com.example.oaplicativo.data.SupabaseClient
+import android.location.Geocoder
 import com.example.oaplicativo.data.remote.viacep.RetrofitClient
+import java.util.Locale
 import com.example.oaplicativo.data.repository.AuthRepositoryImpl
 import com.example.oaplicativo.data.repository.CustomerRepositoryImpl
 import com.example.oaplicativo.data.local.LocalDatabase
@@ -18,7 +20,9 @@ import com.example.oaplicativo.data.sync.SyncWorker
 import com.example.oaplicativo.model.Customer
 import com.example.oaplicativo.model.Cidade
 import com.example.oaplicativo.util.LocationHelper
+import com.example.oaplicativo.util.GeoFencingHelper
 import io.github.jan.supabase.postgrest.postgrest
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.time.ZonedDateTime
@@ -32,13 +36,20 @@ class RoleData {
     var nomeMae by mutableStateOf("")
     var dataNascimento by mutableStateOf("")
     var sexo by mutableStateOf<String?>(null)
-    var apresentouDoc by mutableStateOf(false)
+    var apresentouDoc by mutableStateOf<Boolean?>(null)
     var qualDoc by mutableStateOf("")
+
+    // VALIDAÇÕES REATIVAS
+    val isDocValid: Boolean
+        get() = cpfCnpj.isBlank() || com.example.oaplicativo.util.ValidationUtils.isValidDoc(cpfCnpj)
+    
+    val isBirthDateValid: Boolean
+        get() = dataNascimento.isBlank() || com.example.oaplicativo.util.ValidationUtils.isValidBirthDate(dataNascimento)
 }
 
 class RecadastroViewModel(application: Application) : AndroidViewModel(application) {
-    // private val repository = CustomerRepositoryImpl.getInstance()
     private val authRepository = AuthRepositoryImpl.getInstance()
+    private val customerRepository: com.example.oaplicativo.domain.repository.CustomerRepository = CustomerRepositoryImpl.getInstance()
     private val localDb = LocalDatabase(application)
     private val locationHelper = LocationHelper(application)
     private val client = SupabaseClient.client
@@ -51,16 +62,16 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
     var isCapturingLocation by mutableStateOf(false)
 
     var currentRole by mutableStateOf("Entrevistado")
-    var entrevistadoVinculo by mutableStateOf("Outro")
+    var entrevistadoVinculo by mutableStateOf("Proprietário")
 
-    val entrevistadoData = RoleData()
-    val proprietarioData = RoleData()
-    val locatarioData = RoleData()
+    var entrevistadoData = RoleData()
+    var proprietarioData = RoleData()
+    var locatarioData = RoleData()
 
     val activeRoleData: RoleData
         get() = when (currentRole) {
-            "Proprietario" -> if (entrevistadoVinculo == "Proprietário") entrevistadoData else proprietarioData
-            "Locatario" -> if (entrevistadoVinculo == "Locatário") entrevistadoData else locatarioData
+            "Proprietario" -> proprietarioData
+            "Locatario" -> locatarioData
             else -> entrevistadoData
         }
 
@@ -69,8 +80,15 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
                 (currentRole == "Locatario" && entrevistadoVinculo == "Locatário")
 
     var email by mutableStateOf("")
+    val isEmailValid: Boolean
+        get() = email.isBlank() || android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()
     var telefone by mutableStateOf("")
     var celular1 by mutableStateOf("")
+    val isCelular1Valid: Boolean
+        get() {
+            val digits = celular1.filter { it.isDigit() }
+            return digits.isBlank() || digits.length == 11 || digits.length == 10
+        }
     var celular2 by mutableStateOf("")
 
     var logradouro by mutableStateOf("")
@@ -103,15 +121,42 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
     var observacao by mutableStateOf("")
 
     private var cepJob: Job? = null
+    private var lastResolvedLat: Double = 0.0
+    private var lastResolvedLng: Double = 0.0
+    private val geocoder: Geocoder by lazy { Geocoder(application, Locale("pt", "BR")) }
+
+    // OTIMIZAÇÃO: Progresso agora é um estado derivado estável
+    val registrationProgress: Float
+        get() {
+            // Lista estática para evitar alocações repetitivas no cálculo
+            val filledCount = countFilledFields()
+            return filledCount.toFloat() / 11f // 11 é o número total de campos peso
+        }
+
+    private fun countFilledFields(): Int {
+        var count = 0
+        if (matricula.isNotBlank()) count++
+        if (latitude != null) count++
+        if (cep.isNotBlank()) count++
+        if (logradouro.isNotBlank()) count++
+        if (numero.isNotBlank()) count++
+        if (entrevistadoData.nomeCompleto.isNotBlank()) count++
+        if (entrevistadoData.cpfCnpj.isNotBlank()) count++
+        if (celular1.isNotBlank()) count++
+        if (beneficiarioSocial != null) count++
+        if (usaAguaVizinho != null) count++
+        if (possuiHidrometro != null) count++
+        return count
+    }
 
     private suspend fun getLeituristaCidadeNome(cidadeId: String?): String? {
         if (cidadeId == null) return null
         return try {
-            val res = client.postgrest["cidades"]
+            val response = client.postgrest["cidades"]
                 .select { filter { eq("id", cidadeId) } }
                 .decodeSingleOrNull<Cidade>()
-            res?.nome
-        } catch (_: Exception) {
+            response?.nome
+        } catch (e: Exception) {
             null
         }
     }
@@ -119,7 +164,6 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
     fun saveRecadastro(onSuccess: () -> Unit, onError: (String) -> Unit) {
         viewModelScope.launch {
             try {
-                // 1. GPS FORCE
                 if (latitude == null || longitude == null) {
                     isCapturingLocation = true
                     val location = locationHelper.getCurrentLocation() ?: locationHelper.getCachedLocation()
@@ -135,7 +179,6 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
                     return@launch
                 }
 
-                // 2. PROFILE CHECK: leiturista_id e cidade_id
                 val user = authRepository.currentUserProfile.value
                 if (user == null) {
                     onError("Sessão expirada.")
@@ -151,7 +194,7 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
 
                 val customer = Customer(
                     cidadeId = user.cidadeId,
-                    leituristaId = user.id, // --- NOVO: Vínculo relacional ---
+                    leituristaId = user.id,
                     cidade = finalCidade,
                     name = entrevistadoData.nomeCompleto,
                     registrationNumber = matricula,
@@ -195,34 +238,24 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
                     pavimentoCalcada = pavimentoCalcada,
                     fonteAbastecimento = fonteAbastecimento,
                     observacao = observacao,
+                    grupoSugerido = GeoFencingHelper.findSuggestedGroup(finalCidade, latitude, longitude),
                     isSynced = false
                 )
 
-                // 3. SALVAMENTO OFFLINE IMEDIATO (Prioridade Máxima)
                 localDb.saveCustomerOffline(customer)
 
-                // 4. DISPARA SINCRONIZAÇÃO EM SEGUNDO PLANO (Não bloqueante)
-                val constraints = Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
-                    .build()
-                
-                val syncRequest = OneTimeWorkRequestBuilder<SyncWorker>()
-                    .setConstraints(constraints)
-                    .addTag("SyncWorkerTag")
-                    .build()
-                
-                WorkManager.getInstance(getApplication()).enqueueUniqueWork(
-                    "immediate_sync",
-                    ExistingWorkPolicy.REPLACE,
-                    syncRequest
-                )
+                // FORÇA ATUALIZAÇÃO DA LISTA: Notifica o repositório sobre o novo dado local
+                customerRepository.updateLocalCustomers(localDb.getPendingCustomers().map { it.second })
 
-                // Sucesso retornado imediatamente à UI após salvar localmente
+                val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+                val syncRequest = OneTimeWorkRequestBuilder<SyncWorker>().setConstraints(constraints).addTag("SyncWorkerTag").build()
+                WorkManager.getInstance(getApplication()).enqueueUniqueWork("immediate_sync", ExistingWorkPolicy.REPLACE, syncRequest)
+
                 onSuccess()
 
             } catch (e: Exception) {
-                Log.e("RecadastroVM", "Erro ao salvar: ${e.message}")
-                onError("Erro ao salvar localmente. Verifique os dados.")
+                Log.e("RecadastroVM", "ERRO AO SALVAR: ${e.message}", e)
+                onError("Erro técnico: ${e.message ?: "Falha no SQLite"}")
             }
         }
     }
@@ -245,12 +278,12 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    private fun fetchAddress(cep: String) {
+    private fun fetchAddress(cepIn: String) {
         cepJob?.cancel()
         cepJob = viewModelScope.launch {
             isCepLoading = true
             try {
-                val response = RetrofitClient.viaCepService.getAddressByCep(cep)
+                val response = RetrofitClient.viaCepService.getAddressByCep(cepIn)
                 if (response.isSuccessful && response.body()?.erro != true) {
                     val address = response.body()!!
                     logradouro = address.logradouro
@@ -262,5 +295,161 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
                 isCepLoading = false
             }
         }
+    }
+
+    fun fetchAddressFromLocation(lat: Double, lng: Double) {
+        // OTIMIZAÇÃO: Só dispara busca se o leiturista se mover mais de 5 metros
+        val distance = locationHelper.calculateDistance(lastResolvedLat, lastResolvedLng, lat, lng)
+        if (distance < 5.0 && lastResolvedLat != 0.0) {
+            Log.d("RecadastroVM", "Distância insignificante ($distance m). Pulando busca de endereço.")
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                lastResolvedLat = lat
+                lastResolvedLng = lng
+
+                // TENTATIVA 1: OSM Nominatim
+                val osmResponse = RetrofitClient.nominatimService.reverseGeocode(lat, lng)
+                if (osmResponse.isSuccessful && osmResponse.body()?.address != null) {
+                    val addr = osmResponse.body()!!.address!!
+                    
+                    kotlinx.coroutines.withContext(Dispatchers.Main) {
+                        updateAddressFields(
+                            newLogradouro = addr.road,
+                            newBairro = addr.suburb,
+                            newCidade = addr.city ?: addr.town,
+                            newUf = addr.state,
+                            newCep = null 
+                        )
+                        val osmCepStr = addr.postcode?.filter { it.isDigit() } ?: ""
+                        if (osmCepStr.endsWith("000") || osmCepStr.isBlank()) {
+                            refineCepWithViaCep(addr.state, addr.city ?: addr.town, addr.road)
+                        } else {
+                            if (cep.isBlank() || cep.endsWith("000")) cep = osmCepStr
+                        }
+                    }
+                    return@launch
+                }
+
+                // TENTATIVA 2: Google Geocoder
+                if (!Geocoder.isPresent()) return@launch
+                val geocoder = Geocoder(getApplication(), Locale("pt", "BR"))
+                if (android.os.Build.VERSION.SDK_INT >= 33) {
+                    geocoder.getFromLocation(lat, lng, 5) { addresses ->
+                        if (addresses.isNotEmpty()) {
+                            val best = addresses.find { !it.thoroughfare.isNullOrBlank() } ?: addresses[0]
+                            viewModelScope.launch(Dispatchers.Main) {
+                                handleGoogleAddress(best)
+                            }
+                        }
+                    }
+                } else {
+                    @Suppress("DEPRECATION")
+                    val addresses = geocoder.getFromLocation(lat, lng, 5)
+                    if (!addresses.isNullOrEmpty()) {
+                        val best = addresses.find { !it.thoroughfare.isNullOrBlank() } ?: addresses[0]
+                        kotlinx.coroutines.withContext(Dispatchers.Main) {
+                            handleGoogleAddress(best)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("RecadastroVM", "Erro na Geocodificação: ${e.message}")
+            }
+        }
+    }
+
+    private fun handleGoogleAddress(bestAddr: android.location.Address) {
+        updateAddressFields(
+            newLogradouro = bestAddr.thoroughfare,
+            newBairro = bestAddr.subLocality,
+            newCidade = bestAddr.locality,
+            newUf = bestAddr.adminArea,
+            newCep = null
+        )
+        refineCepWithViaCep(bestAddr.adminArea, bestAddr.locality, bestAddr.thoroughfare)
+    }
+
+    private fun refineCepWithViaCep(ufIn: String?, cidadeIn: String?, logradouroIn: String?) {
+        if (ufIn.isNullOrBlank() || cidadeIn.isNullOrBlank() || logradouroIn.isNullOrBlank()) return
+        
+        val stateMap = mapOf(
+            "Acre" to "AC", "Alagoas" to "AL", "Amapá" to "AP", "Amazonas" to "AM", "Bahia" to "BA",
+            "Ceará" to "CE", "Distrito Federal" to "DF", "Espírito Santo" to "ES", "Goiás" to "GO",
+            "Maranhão" to "MA", "Mato Grosso" to "MT", "Mato Grosso do Sul" to "MS", "Minas Gerais" to "MG",
+            "Pará" to "PA", "Paraíba" to "PB", "Paraná" to "PR", "Pernambuco" to "PE", "Piauí" to "PI",
+            "Rio de Janeiro" to "RJ", "Rio Grande do Norte" to "RN", "Rio Grande do Sul" to "RS",
+            "Rondônia" to "RO", "Roraima" to "RR", "Santa Catarina" to "SC", "São Paulo" to "SP",
+            "Sergipe" to "SE", "Tocantins" to "TO"
+        )
+        
+        val cleanUf = stateMap[ufIn.trim()] ?: if (ufIn.length == 2) ufIn.uppercase() else "SC"
+        val cleanStreet = logradouroIn.replace(Regex("\\d+"), "").trim()
+
+        if (cleanStreet.length < 3) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val response = RetrofitClient.viaCepService.getCepByAddress(cleanUf, cidadeIn.trim(), cleanStreet)
+                if (response.isSuccessful) {
+                    val list = response.body()
+                    if (!list.isNullOrEmpty()) {
+                        val match = list.find { it.logradouro.contains(cleanStreet, ignoreCase = true) } ?: list[0]
+                        val refinedCep = match.cep.filter { it.isDigit() }
+                        
+                        kotlinx.coroutines.withContext(Dispatchers.Main) {
+                            if (cep.isBlank() || cep.endsWith("000")) {
+                                cep = refinedCep
+                                if (logradouro.isBlank() || logradouro.length < match.logradouro.length) {
+                                    logradouro = match.logradouro
+                                    bairro = match.bairro
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("RecadastroVM", "Erro ViaCEP: ${e.message}")
+            }
+        }
+    }
+
+    private fun updateAddressFields(
+        newLogradouro: String?, 
+        newBairro: String?, 
+        newCidade: String?, 
+        newUf: String?, 
+        newCep: String?
+    ) {
+        // SEGURANÇA SÊNIOR: Se o usuário já interagiu com o campo, a IA NUNCA sobrescreve.
+        if (logradouro.isBlank() && !newLogradouro.isNullOrBlank()) logradouro = newLogradouro.trim()
+        if (bairro.isBlank() && !newBairro.isNullOrBlank()) bairro = newBairro.trim()
+        if (cidade.isBlank() && !newCidade.isNullOrBlank()) cidade = newCidade.trim()
+        if (uf.isBlank() && !newUf.isNullOrBlank()) {
+            val stateMap = mapOf("Santa Catarina" to "SC", "Paraná" to "PR", "Rio Grande do Sul" to "RS", "São Paulo" to "SP")
+            uf = stateMap[newUf.trim()] ?: newUf.trim().take(2).uppercase()
+        }
+
+        // TRAVA DE QUALIDADE DE CEP: Bloqueia lixo (-000) e preserva dados manuais
+        val cleanCep = newCep?.filter { it.isDigit() } ?: ""
+        if (cep.isBlank() && cleanCep.length == 8 && !cleanCep.endsWith("000")) {
+            cep = cleanCep
+        }
+    }
+
+    /**
+     * Normaliza strings para busca em APIs brasileiras (ViaCEP)
+     */
+    private fun String.normalizeForSearch(): String {
+        return this.lowercase()
+            .replace(Regex("[áàâã]"), "a")
+            .replace(Regex("[éèê]"), "e")
+            .replace(Regex("[íìî]"), "i")
+            .replace(Regex("[óòôõ]"), "o")
+            .replace(Regex("[úùû]"), "u")
+            .replace("ç", "c")
+            .trim()
     }
 }

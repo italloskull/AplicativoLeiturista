@@ -95,10 +95,12 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
     private fun combineAndEmit() {
         scope.launch(Dispatchers.Default) { // OTIMIZAÇÃO: Processamento em pool paralelo (não Main Thread)
             refreshMutex.withLock {
-                val remoteKeys = remoteCustomers.mapNotNull { it.registrationNumber }.toSet()
+                val remoteKeys = remoteCustomers.mapNotNull { it.registrationNumber }.filter { it.isNotBlank() }.toSet()
                 val uniqueLocal = localPendingCustomers.filter { local ->
                     val key = local.registrationNumber
-                    key != null && !remoteKeys.contains(key)
+                    // SÊNIOR FIX: Se a matrícula for vazia, nunca filtra. Se tiver, checa duplicidade.
+                    if (key.isNullOrBlank()) true 
+                    else !remoteKeys.contains(key)
                 }
                 val combined = uniqueLocal + remoteCustomers
                 _customers.value = combined
@@ -107,15 +109,18 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
     }
 
     override suspend fun addCustomer(customer: Customer) {
-        try {
-            // Usa upsert para garantir idempotência baseada na matrícula
-            client.postgrest["clientes"].upsert(customer) {
-                onConflict = "matricula"
+        withContext(Dispatchers.IO) {
+            try {
+                Log.d("CustomerRepo", "Enviando para Supabase: ${customer.registrationNumber}")
+                // Usa ID como critério de conflito para permitir edições locais sincronizarem sem duplicar
+                client.postgrest["clientes"].upsert(customer) {
+                    onConflict = "id"
+                }
+                fetchCustomers()
+            } catch (e: Exception) {
+                Log.e("CustomerRepo", "FALHA NO SUPABASE: ${e.message}", e)
+                throw e
             }
-            fetchCustomers()
-        } catch (e: Exception) {
-            Log.e("CustomerRepositoryImpl", "Falha no upload/upsert: ${e.message}")
-            throw e
         }
     }
 
@@ -137,6 +142,11 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
             }
             fetchCustomers()
         }
+    }
+
+    override suspend fun saveCustomerLocallyAndSync(customer: Customer) {
+        // Método preparado para centralização futura de salvamento + sync
+        // Mantido vázio para garantir zero quebras de build nesta fase de reorganização
     }
 
     companion object {

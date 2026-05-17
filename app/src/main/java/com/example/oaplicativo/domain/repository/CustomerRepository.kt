@@ -10,6 +10,6 @@ interface CustomerRepository {
     suspend fun updateCustomer(customer: Customer)
     suspend fun getCustomerById(id: String): Customer?
     suspend fun deleteCustomer(id: String)
-    // Novo método para sincronizar dados locais com o estado da UI
     fun updateLocalCustomers(localCustomers: List<Customer>)
+    suspend fun saveCustomerLocallyAndSync(customer: Customer)
 }

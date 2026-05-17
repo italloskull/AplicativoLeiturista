@@ -83,6 +83,7 @@ data class Customer(
     @SerialName("existe_rede_agua") val existeRedeAgua: Boolean? = null,
     
     val observacao: String? = null,
+    @SerialName("grupo_sugerido") val grupoSugerido: String? = null,
 
     @Transient val isSynced: Boolean = true
 )

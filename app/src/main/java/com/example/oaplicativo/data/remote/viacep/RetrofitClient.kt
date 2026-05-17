@@ -24,4 +24,13 @@ object RetrofitClient {
             .build()
             .create(ViaCepService::class.java)
     }
+
+    val nominatimService: com.example.oaplicativo.data.remote.osm.NominatimService by lazy {
+        Retrofit.Builder()
+            .baseUrl("https://nominatim.openstreetmap.org/")
+            .addConverterFactory(GsonConverterFactory.create())
+            .client(httpClient)
+            .build()
+            .create(com.example.oaplicativo.data.remote.osm.NominatimService::class.java)
+    }
 }

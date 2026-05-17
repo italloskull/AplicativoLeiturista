@@ -3,6 +3,7 @@ package com.example.oaplicativo.ui.components
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -10,6 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
@@ -20,7 +22,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * 🚀 BIBLIOTECA DE COMPONENTES DE ELITE (PRODUÇÃO)
+ * 🚀 DESIGN SYSTEM DE ELITE - COMPONENTES DE NÍVEL DE PRODUÇÃO
+ * Foco: Resiliência, Acessibilidade e Performance.
  */
 
 @Composable
@@ -101,7 +104,51 @@ fun AppTextField(
             singleLine = true
         )
         AnimatedVisibility(visible = error != null) {
-            Text(text = error ?: "", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 16.dp, top = 4.dp))
+            Text(
+                text = error ?: "", 
+                color = MaterialTheme.colorScheme.error, 
+                style = MaterialTheme.typography.bodySmall, 
+                modifier = Modifier.padding(start = 16.dp, top = 4.dp)
+            )
+        }
+    }
+}
+
+@Composable
+fun AppCard(
+    title: String,
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f), 
+                    shape = MaterialTheme.shapes.small, 
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) { 
+                        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary) 
+                    }
+                }
+                Spacer(Modifier.width(16.dp))
+                Text(
+                    text = title.uppercase(), 
+                    style = MaterialTheme.typography.labelLarge, 
+                    fontWeight = FontWeight.ExtraBold, 
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.height(20.dp))
+            content()
         }
     }
 }
@@ -113,7 +160,6 @@ fun GpsStatusCard(
     onUpdateClick: () -> Unit,
     isLoading: Boolean = false
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
     val hasLocation = latitude != null && longitude != null
     
     Card(
@@ -167,34 +213,6 @@ fun GpsStatusCard(
 }
 
 @Composable
-fun AppCard(
-    title: String,
-    icon: ImageVector,
-    modifier: Modifier = Modifier,
-    content: @Composable ColumnScope.() -> Unit
-) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-    ) {
-        Column(modifier = Modifier.padding(20.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f), shape = MaterialTheme.shapes.small, modifier = Modifier.size(36.dp)) {
-                    Box(contentAlignment = Alignment.Center) { Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary) }
-                }
-                Spacer(Modifier.width(16.dp))
-                Text(text = title.uppercase(), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Spacer(Modifier.height(20.dp))
-            content()
-        }
-    }
-}
-
-@Composable
 fun AppStatusBadge(
     status: String?,
     modifier: Modifier = Modifier
@@ -217,11 +235,7 @@ fun AppStatusBadge(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
         ) {
-            Icon(
-                imageVector = Icons.Default.Star,
-                contentDescription = null,
-                modifier = Modifier.size(10.dp)
-            )
+            Icon(imageVector = Icons.Default.Star, contentDescription = null, modifier = Modifier.size(10.dp))
             Spacer(modifier = Modifier.width(4.dp))
             Text(
                 text = label.uppercase(),
@@ -231,12 +245,6 @@ fun AppStatusBadge(
             )
         }
     }
-}
-
-// ALIAS PARA COMPATIBILIDADE
-@Composable
-fun FormSectionCard(title: String, icon: ImageVector = Icons.Default.CheckCircle, content: @Composable ColumnScope.() -> Unit) {
-    AppCard(title = title, icon = icon, content = content)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -251,7 +259,11 @@ fun <T> SpinnerOption(
     var expanded by remember { mutableStateOf(false) }
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Text(text = label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }, modifier = Modifier.padding(top = 4.dp)) {
+        ExposedDropdownMenuBox(
+            expanded = expanded, 
+            onExpandedChange = { expanded = !expanded }, 
+            modifier = Modifier.padding(top = 4.dp)
+        ) {
             OutlinedTextField(
                 value = selectedOption?.let { optionToString(it) } ?: "Selecione...",
                 onValueChange = {},
@@ -273,12 +285,24 @@ fun <T> SpinnerOption(
 
 @Composable
 fun BooleanOption(label: String, checked: Boolean?, onCheckedChange: (Boolean?) -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), 
+        verticalAlignment = Alignment.CenterVertically, 
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
         Text(text = label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         Row {
-            FilterChip(selected = checked == true, onClick = { onCheckedChange(if (checked == true) null else true) }, label = { Text("Sim") })
+            FilterChip(
+                selected = checked == true, 
+                onClick = { onCheckedChange(if (checked == true) null else true) }, 
+                label = { Text("Sim") }
+            )
             Spacer(Modifier.width(8.dp))
-            FilterChip(selected = checked == false, onClick = { onCheckedChange(if (checked == false) null else false) }, label = { Text("Não") })
+            FilterChip(
+                selected = checked == false, 
+                onClick = { onCheckedChange(if (checked == false) null else false) }, 
+                label = { Text("Não") }
+            )
         }
     }
 }
