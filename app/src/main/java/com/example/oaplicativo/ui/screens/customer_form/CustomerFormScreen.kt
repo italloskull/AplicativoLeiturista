@@ -25,11 +25,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.oaplicativo.model.Customer
 import com.example.oaplicativo.presentation.components.CensoredDataField
-import com.example.oaplicativo.ui.components.BooleanOption
-import com.example.oaplicativo.ui.components.SpinnerOption
-import com.example.oaplicativo.ui.components.AppCard
-import com.example.oaplicativo.ui.components.AppTextField
-import com.example.oaplicativo.ui.components.AppButton
+import com.example.oaplicativo.ui.components.*
 import com.example.oaplicativo.util.LocationHelper
 import com.example.oaplicativo.util.privacy.PrivacyUtils
 import kotlinx.coroutines.launch
@@ -202,61 +198,22 @@ fun CustomerFormScreen(
                 )
             }
 
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (latitude == null) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f) 
-                                     else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.1f)
-                ),
-                shape = MaterialTheme.shapes.extraLarge,
-                border = if (latitude == null) BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)) else null
-            ) {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = if (latitude != null) Icons.Default.GpsFixed else Icons.Default.GpsOff,
-                            contentDescription = null,
-                            tint = if (latitude != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text("Coleta de Geometria", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
-                    }
-                    
-                    Spacer(modifier = Modifier.height(12.dp))
-                    
-                    AnimatedContent(targetState = latitude != null, label = "GPS_Status") { hasLat ->
-                        if (hasLat) {
-                            Text("Localização vinculada com sucesso ao imóvel.", style = MaterialTheme.typography.bodySmall)
-                        } else {
-                            Text("Atenção: A captura do GPS é obrigatória para validar a visita.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+            GpsStatusCard(
+                latitude = latitude,
+                longitude = longitude,
+                onUpdateClick = {
+                    val fineLoc = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+                    if (fineLoc == PackageManager.PERMISSION_GRANTED) {
+                        scope.launch {
+                            val loc = locationHelper.getCurrentLocation()
+                            latitude = loc?.latitude
+                            longitude = loc?.longitude
                         }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    Button(
-                        onClick = {
-                            val fineLoc = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
-                            if (fineLoc == PackageManager.PERMISSION_GRANTED) {
-                                scope.launch {
-                                    val loc = locationHelper.getCurrentLocation()
-                                    latitude = loc?.latitude
-                                    longitude = loc?.longitude
-                                }
-                            } else {
-                                locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth().height(48.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        shape = MaterialTheme.shapes.medium
-                    ) {
-                        Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Atualizar Coordenadas")
+                    } else {
+                        locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
                     }
                 }
-            }
+            )
 
             Spacer(modifier = Modifier.height(24.dp))
             

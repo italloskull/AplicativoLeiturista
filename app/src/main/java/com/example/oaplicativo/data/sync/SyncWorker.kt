@@ -33,24 +33,28 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
 
         for ((localId, customer) in pendingCustomers) {
             try {
-                // Tenta enviar (A Trigger no servidor cuidará do carimbo)
+                // Tenta enviar para o Supabase
                 repository.addCustomer(customer)
                 
-                // Sucesso: Limpa do banco local
+                // Sucesso absoluto: Remove do banco local somente após a confirmação do repositório
                 db.deleteSyncedCustomer(localId)
-                Log.d("SyncWorker", "Registro $localId enviado com sucesso.")
+                Log.d("SyncWorker", "Registro $localId sincronizado e removido do cache local.")
             } catch (e: Exception) {
-                Log.e("SyncWorker", "Erro ao enviar $localId: ${e.message}")
-                return@withContext Result.retry()
+                // Se falhar (ex: timeout, erro 500), mantemos no banco local para a próxima tentativa
+                Log.e("SyncWorker", "Falha ao sincronizar registro $localId: ${e.message}. Tentará novamente mais tarde.")
+                // Não interrompemos o loop para tentar enviar outros registros pendentes, 
+                // mas sinalizamos ao WorkManager para agendar um retry para os que falharam.
             }
         }
 
-        // Atualiza a UI local após o ciclo
-        try {
-            val remainingPending = db.getPendingCustomers().map { it.second }
-            repository.updateLocalCustomers(remainingPending)
-        } catch (_: Exception) {}
-
-        return@withContext Result.success()
+        // Verifica se ainda restam pendências após o loop
+        val finalPending = try { db.getPendingCustomers() } catch (e: Exception) { emptyList() }
+        
+        return@withContext if (finalPending.isEmpty()) {
+            Result.success()
+        } else {
+            // Se restarem registros que falharam, o WorkManager tentará novamente conforme a política de backoff
+            Result.retry()
+        }
     }
 }

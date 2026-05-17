@@ -11,7 +11,7 @@ interface AuthRepository {
         name: String,
         email: String,
         password: String,
-        sector: String,
+        username: String,
         role: String,
         cidadeId: String
     )

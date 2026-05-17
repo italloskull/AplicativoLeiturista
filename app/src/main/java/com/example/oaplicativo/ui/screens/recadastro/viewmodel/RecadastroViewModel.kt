@@ -22,6 +22,7 @@ import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.time.ZonedDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 
@@ -36,13 +37,15 @@ class RoleData {
 }
 
 class RecadastroViewModel(application: Application) : AndroidViewModel(application) {
-    private val repository = CustomerRepositoryImpl.getInstance()
+    // private val repository = CustomerRepositoryImpl.getInstance()
     private val authRepository = AuthRepositoryImpl.getInstance()
     private val localDb = LocalDatabase(application)
     private val locationHelper = LocationHelper(application)
     private val client = SupabaseClient.client
 
     var matricula by mutableStateOf("")
+    var setor by mutableStateOf("")
+    var quadra by mutableStateOf("")
     var latitude by mutableStateOf<Double?>(null)
     var longitude by mutableStateOf<Double?>(null)
     var isCapturingLocation by mutableStateOf(false)
@@ -88,8 +91,10 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
     var existeRedeAgua by mutableStateOf<Boolean?>(null)
     var possuiPiscina by mutableStateOf<Boolean?>(null)
     var possuiCaixaAgua by mutableStateOf<String?>(null)
+    var beneficiarioSocial by mutableStateOf<Boolean?>(null)
+    var usaAguaVizinho by mutableStateOf<Boolean?>(null)
 
-    var possuiHidrometro by mutableStateOf(false)
+    var possuiHidrometro by mutableStateOf<Boolean?>(null)
     var numeroHidrometro by mutableStateOf("")
     var localInstalacao by mutableStateOf<String?>(null)
     var acessibilidade by mutableStateOf<String?>(null)
@@ -125,47 +130,43 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
                     isCapturingLocation = false
                 }
 
-                if (latitude == null || longitude == null) {
-                    onError("Localização obrigatória! Por favor, ative o GPS.")
+                if (latitude == null) {
+                    onError("Localização obrigatória!")
                     return@launch
                 }
 
+                // 2. PROFILE CHECK: leiturista_id e cidade_id
                 val user = authRepository.currentUserProfile.value
                 if (user == null) {
-                    onError("Sessão expirada. Faça login novamente.")
+                    onError("Sessão expirada.")
                     return@launch
                 }
 
-                val leituristaNome = user.fullName ?: user.username ?: "Leiturista"
-                val leituristaCidadeId = user.cidadeId
-                
                 var finalCidade = cidade
                 if (finalCidade.isBlank()) {
-                    val fallback = getLeituristaCidadeNome(leituristaCidadeId)
-                    if (fallback != null) {
-                        finalCidade = fallback
-                        cidade = fallback
-                    }
+                    finalCidade = getLeituristaCidadeNome(user.cidadeId) ?: ""
                 }
 
-                val quality = calculateDataQuality()
-                val now = ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+                val now = ZonedDateTime.now(ZoneId.of("UTC")).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
 
                 val customer = Customer(
-                    cidadeId = leituristaCidadeId,
+                    cidadeId = user.cidadeId,
+                    leituristaId = user.id, // --- NOVO: Vínculo relacional ---
                     cidade = finalCidade,
                     name = entrevistadoData.nomeCompleto,
                     registrationNumber = matricula,
+                    setor = setor,
+                    quadra = quadra,
                     email = email,
                     landline = telefone,
                     cellPhone = celular1,
                     latitude = latitude,
                     longitude = longitude,
-                    quality = quality,
-                    addedBy = leituristaNome,
+                    quality = calculateDataQuality(),
+                    addedBy = user.fullName ?: user.username,
                     capturedAt = now, 
                     createdAt = now,
-                    date = ZonedDateTime.now().format(DateTimeFormatter.ofPattern("yyyy/MM/dd")),
+                    date = ZonedDateTime.now(ZoneId.of("America/Sao_Paulo")).format(DateTimeFormatter.ofPattern("yyyy/MM/dd")),
                     syncedAt = null,
                     entrevistadoNome = entrevistadoData.nomeCompleto,
                     entrevistadoCpf = entrevistadoData.cpfCnpj,
@@ -184,6 +185,9 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
                     bairro = bairro,
                     uf = uf,
                     cep = cep,
+                    beneficiarioSocial = beneficiarioSocial,
+                    usaAguaVizinho = usaAguaVizinho,
+                    possuiHidrometro = possuiHidrometro,
                     existeRedeAgua = existeRedeAgua,
                     possuiPiscina = possuiPiscina,
                     possuiCaixaAgua = possuiCaixaAgua,
@@ -194,34 +198,31 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
                     isSynced = false
                 )
 
+                // 3. SALVAMENTO OFFLINE IMEDIATO (Prioridade Máxima)
                 localDb.saveCustomerOffline(customer)
 
-                // --- NOVO: GATILHO ATIVO DE SINCRONIZAÇÃO ---
-                // Enfileira um trabalho que dispara ASSIM QUE a internet voltar.
+                // 4. DISPARA SINCRONIZAÇÃO EM SEGUNDO PLANO (Não bloqueante)
                 val constraints = Constraints.Builder()
                     .setRequiredNetworkType(NetworkType.CONNECTED)
                     .build()
-
+                
                 val syncRequest = OneTimeWorkRequestBuilder<SyncWorker>()
                     .setConstraints(constraints)
-                    .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
                     .addTag("SyncWorkerTag")
                     .build()
-
+                
                 WorkManager.getInstance(getApplication()).enqueueUniqueWork(
-                    "immediate_sync_after_save",
+                    "immediate_sync",
                     ExistingWorkPolicy.REPLACE,
                     syncRequest
                 )
 
-                try {
-                    repository.addCustomer(customer)
-                } catch (_: Exception) { }
-
+                // Sucesso retornado imediatamente à UI após salvar localmente
                 onSuccess()
+
             } catch (e: Exception) {
-                Log.e("RecadastroVM", "SAVE ERROR", e)
-                onError("Erro interno ao salvar.")
+                Log.e("RecadastroVM", "Erro ao salvar: ${e.message}")
+                onError("Erro ao salvar localmente. Verifique os dados.")
             }
         }
     }
@@ -240,7 +241,6 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
         val cleanCep = newCep.filter { it.isDigit() }
         if (cleanCep.length <= 8) {
             cep = cleanCep
-            cepError = false
             if (cleanCep.length == 8) fetchAddress(cleanCep)
         }
     }
@@ -257,13 +257,8 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
                     bairro = address.bairro
                     cidade = address.localidade
                     uf = address.uf
-                    cepError = false
-                } else {
-                    cepError = true
                 }
-            } catch (_: Exception) {
-                cepError = true
-            } finally {
+            } catch (_: Exception) { } finally {
                 isCepLoading = false
             }
         }

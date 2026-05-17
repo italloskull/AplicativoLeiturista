@@ -93,21 +93,28 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
     }
 
     private fun combineAndEmit() {
-        val remoteKeys = remoteCustomers.mapNotNull { it.registrationNumber }.toSet()
-        val uniqueLocal = localPendingCustomers.filter { local ->
-            val key = local.registrationNumber
-            key != null && !remoteKeys.contains(key)
+        scope.launch(Dispatchers.Default) { // OTIMIZAÇÃO: Processamento em pool paralelo (não Main Thread)
+            refreshMutex.withLock {
+                val remoteKeys = remoteCustomers.mapNotNull { it.registrationNumber }.toSet()
+                val uniqueLocal = localPendingCustomers.filter { local ->
+                    val key = local.registrationNumber
+                    key != null && !remoteKeys.contains(key)
+                }
+                val combined = uniqueLocal + remoteCustomers
+                _customers.value = combined
+            }
         }
-        val combined = uniqueLocal + remoteCustomers
-        _customers.value = combined
     }
 
     override suspend fun addCustomer(customer: Customer) {
         try {
-            client.postgrest["clientes"].insert(customer)
+            // Usa upsert para garantir idempotência baseada na matrícula
+            client.postgrest["clientes"].upsert(customer) {
+                onConflict = "matricula"
+            }
             fetchCustomers()
         } catch (e: Exception) {
-            Log.e("CustomerRepositoryImpl", "Falha no upload: ${e.message}")
+            Log.e("CustomerRepositoryImpl", "Falha no upload/upsert: ${e.message}")
             throw e
         }
     }

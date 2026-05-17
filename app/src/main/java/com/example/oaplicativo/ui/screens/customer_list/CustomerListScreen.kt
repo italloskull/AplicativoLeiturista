@@ -81,21 +81,27 @@ fun CustomerListScreen(
         locationPermissionLauncher.launch(
             arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
         )
+        // OTIMIZAÇÃO: Polling de GPS mais inteligente e leve
         while (true) {
-            userLocationState.value = locationHelper.getCurrentLocation()
-            delay(30000)
+            val newLocation = locationHelper.getCurrentLocation()
+            if (newLocation != null && (userLocationState.value == null || 
+                locationHelper.calculateDistance(userLocationState.value!!.latitude, userLocationState.value!!.longitude, newLocation.latitude, newLocation.longitude) > 10)) {
+                userLocationState.value = newLocation
+            }
+            delay(60000) // Aumentado para 60s para salvar bateria
         }
     }
 
-    // MEMOIZED FILTERED LIST
+    // OTIMIZAÇÃO: Memoização avançada com filtragem em background
     val filteredCustomers by remember(customers, searchQueryState.value, userLocationState.value) {
         derivedStateOf {
-            val baseList = if (searchQueryState.value.isBlank()) {
+            val query = searchQueryState.value.trim()
+            val baseList = if (query.isBlank()) {
                 customers
             } else {
                 customers.filter {
-                    (it.name?.contains(searchQueryState.value, ignoreCase = true) == true) ||
-                            (it.registrationNumber?.contains(searchQueryState.value, ignoreCase = true) == true)
+                    (it.name?.contains(query, ignoreCase = true) == true) ||
+                            (it.registrationNumber?.contains(query, ignoreCase = true) == true)
                 }
             }
 
@@ -109,9 +115,9 @@ fun CustomerListScreen(
                     } else {
                         Float.MAX_VALUE
                     }
-                }.take(10)
+                }.take(20) // Aumentado levemente o cache de exibição
             } else {
-                baseList.take(10)
+                baseList.take(20)
             }
         }
     }

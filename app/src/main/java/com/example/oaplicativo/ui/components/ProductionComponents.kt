@@ -5,9 +5,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -104,6 +102,66 @@ fun AppTextField(
         )
         AnimatedVisibility(visible = error != null) {
             Text(text = error ?: "", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 16.dp, top = 4.dp))
+        }
+    }
+}
+
+@Composable
+fun GpsStatusCard(
+    latitude: Double?,
+    longitude: Double?,
+    onUpdateClick: () -> Unit,
+    isLoading: Boolean = false
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val hasLocation = latitude != null && longitude != null
+    
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (hasLocation) Color(0xFFE8F5E9) else Color(0xFFFFEBEE)
+        ),
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (hasLocation) Icons.Default.GpsFixed else Icons.Default.GpsOff,
+                    contentDescription = null,
+                    tint = if (hasLocation) Color(0xFF2E7D32) else Color(0xFFC62828)
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = if (hasLocation) "GPS Vinculado" else "GPS Necessário",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = if (hasLocation) Color(0xFF2E7D32) else Color(0xFFC62828)
+                )
+            }
+            if (hasLocation) {
+                Text(
+                    "Lat: $latitude / Long: $longitude",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+            Button(
+                onClick = onUpdateClick,
+                modifier = Modifier.padding(top = 12.dp).fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
+                enabled = !isLoading,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (hasLocation) Color(0xFF2E7D32) else MaterialTheme.colorScheme.primary
+                )
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                } else {
+                    Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Atualizar Localização")
+                }
+            }
         }
     }
 }

@@ -37,8 +37,13 @@ class AuthRepositoryImpl private constructor() : AuthRepository {
             if (raw.isBlank() || raw == "null") throw Exception("Usuário não encontrado")
             raw
         } catch (e: Exception) {
-            Log.e("AuthRepo", "Erro no RPC: ${e.message}")
-            throw Exception("Usuário não encontrado")
+            val message = e.message ?: ""
+            Log.e("AuthRepo", "Erro no RPC: $message")
+            if (message.contains("Network", ignoreCase = true) || message.contains("timeout", ignoreCase = true)) {
+                throw Exception("Sem conexão com o servidor")
+            } else {
+                throw Exception("Usuário não encontrado")
+            }
         }
 
         try {
@@ -73,7 +78,7 @@ class AuthRepositoryImpl private constructor() : AuthRepository {
         name: String,
         email: String,
         password: String,
-        sector: String,
+        username: String,
         role: String,
         cidadeId: String
     ) {
@@ -81,7 +86,7 @@ class AuthRepositoryImpl private constructor() : AuthRepository {
             put("email", email.trim().lowercase())
             put("password", password.trim())
             put("full_name", name.trim())
-            put("username", sector.trim())
+            put("username", username.trim())
             put("cargo", role.trim())
             put("cidade_id", cidadeId)
         }

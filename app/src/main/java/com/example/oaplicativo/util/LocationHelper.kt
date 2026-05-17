@@ -64,6 +64,14 @@ class LocationHelper(context: Context) {
 
         if (lat == 0.0 && lng == 0.0) return null
 
+        // Validação de "Frescor" do Cache: 2 minutos (120.000ms)
+        // Se o leiturista se moveu há mais de 2 minutos, o cache é considerado obsoleto para garantir precisão.
+        val twoMinutesMillis = 2 * 60 * 1000L
+        if (System.currentTimeMillis() - timeStamp > twoMinutesMillis) {
+            Log.w("LocationHelper", "Cache de localização expirado (>2min).")
+            return null
+        }
+
         val cachedLoc = Location("cached")
         cachedLoc.latitude = lat
         cachedLoc.longitude = lng

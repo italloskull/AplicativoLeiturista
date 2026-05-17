@@ -49,7 +49,7 @@ class UserRegistrationViewModel(
                     name = fullName,
                     email = email,
                     password = pass,
-                    sector = username,
+                    username = username,
                     role = cargo,
                     cidadeId = cidadeId
                 )

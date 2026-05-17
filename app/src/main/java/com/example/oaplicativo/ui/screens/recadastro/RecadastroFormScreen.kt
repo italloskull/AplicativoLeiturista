@@ -23,11 +23,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.oaplicativo.ui.components.AppTextField
-import com.example.oaplicativo.ui.components.AppButton
-import com.example.oaplicativo.ui.components.AppCard
-import com.example.oaplicativo.ui.components.SpinnerOption
-import com.example.oaplicativo.ui.components.BooleanOption
+import com.example.oaplicativo.ui.components.*
 import com.example.oaplicativo.ui.screens.recadastro.viewmodel.RecadastroViewModel
 import com.example.oaplicativo.util.*
 import kotlinx.coroutines.launch
@@ -119,7 +115,7 @@ fun RecadastroFormScreen(
             contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 🏷️ IDENTIFICAÇÃO E LOCALIZAÇÃO
+            // 🏷️ 1º: IDENTIFICAÇÃO E LOCALIZAÇÃO
             item {
                 AppCard(title = "Localização do Imóvel", icon = Icons.Default.Map) {
                     AppTextField(
@@ -129,67 +125,78 @@ fun RecadastroFormScreen(
                         leadingIcon = Icons.Default.Numbers,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                     )
+
+                    Spacer(Modifier.height(16.dp))
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Box(Modifier.weight(1f)) {
+                            AppTextField(
+                                value = viewModel.setor,
+                                onValueChange = { viewModel.setor = it },
+                                label = "Setor",
+                                leadingIcon = Icons.Default.Map,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                            )
+                        }
+                        Box(Modifier.weight(1f)) {
+                            AppTextField(
+                                value = viewModel.quadra,
+                                onValueChange = { viewModel.quadra = it },
+                                label = "Quadra",
+                                leadingIcon = Icons.Default.GridOn,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                            )
+                        }
+                    }
                     
                     Spacer(Modifier.height(16.dp))
                     
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (viewModel.latitude != null) Color(0xFFE8F5E9) else Color(0xFFFFEBEE)
-                        ),
-                        shape = MaterialTheme.shapes.medium
-                    ) {
-                        Column(Modifier.padding(16.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = if (viewModel.latitude != null) Icons.Default.GpsFixed else Icons.Default.GpsOff,
-                                    contentDescription = null,
-                                    tint = if (viewModel.latitude != null) Color(0xFF2E7D32) else Color(0xFFC62828)
-                                )
-                                Spacer(Modifier.width(12.dp))
-                                Text(
-                                    text = if (viewModel.latitude != null) "GPS Vinculado" else "GPS Necessário",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (viewModel.latitude != null) Color(0xFF2E7D32) else Color(0xFFC62828)
-                                )
+                    GpsStatusCard(
+                        latitude = viewModel.latitude,
+                        longitude = viewModel.longitude,
+                        onUpdateClick = {
+                            val fineLoc = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+                            if (fineLoc == PackageManager.PERMISSION_GRANTED) {
+                                scope.launch {
+                                    val loc = locationHelper.getCurrentLocation()
+                                    viewModel.latitude = loc?.latitude
+                                    viewModel.longitude = loc?.longitude
+                                }
+                            } else {
+                                locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
                             }
-                            if (viewModel.latitude != null) {
-                                Text(
-                                    "Lat: ${viewModel.latitude} / Long: ${viewModel.longitude}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.padding(top = 4.dp)
-                                )
-                            }
-                            Button(
-                                onClick = { 
-                                    val fineLoc = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
-                                    if (fineLoc == PackageManager.PERMISSION_GRANTED) {
-                                        scope.launch {
-                                            val loc = locationHelper.getCurrentLocation()
-                                            viewModel.latitude = loc?.latitude
-                                            viewModel.longitude = loc?.longitude
-                                        }
-                                    } else {
-                                        locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
-                                    }
-                                },
-                                modifier = Modifier.padding(top = 12.dp).fillMaxWidth(),
-                                shape = MaterialTheme.shapes.medium,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (viewModel.latitude != null) Color(0xFF2E7D32) else MaterialTheme.colorScheme.primary
-                                )
-                            ) {
-                                Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Atualizar Localização")
-                            }
-                        }
-                    }
+                        },
+                        isLoading = viewModel.isCapturingLocation
+                    )
                 }
             }
 
-            // 👤 DADOS PESSOAIS
+            // 🏠 2º: ENDEREÇO (Movido para o topo e renomeado)
+            item {
+                AppCard(title = "Endereço", icon = Icons.Default.Home) {
+                    AppTextField(
+                        value = viewModel.cep, 
+                        onValueChange = { viewModel.onCepChange(it) }, 
+                        label = "CEP", 
+                        leadingIcon = Icons.Default.Map,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), 
+                        visualTransformation = CepVisualTransformation(), 
+                        error = if (viewModel.cepError) "CEP inválido ou não encontrado" else null, 
+                        trailingIcon = if (viewModel.isCepLoading) { { CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp) } } else null
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    AppTextField(value = viewModel.logradouro, onValueChange = { viewModel.logradouro = it }, label = "Rua / Avenida", leadingIcon = Icons.Default.Signpost)
+                    Spacer(Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Box(Modifier.weight(1f)) { AppTextField(value = viewModel.numero, onValueChange = { viewModel.numero = it }, label = "Número", leadingIcon = Icons.Default.HomeWork) }
+                        Box(Modifier.weight(1.5f)) { AppTextField(value = viewModel.complemento, onValueChange = { viewModel.complemento = it }, label = "Complemento", leadingIcon = Icons.Default.AddHome) }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    AppTextField(value = viewModel.bairro, onValueChange = { viewModel.bairro = it }, label = "Bairro", leadingIcon = Icons.Default.HolidayVillage)
+                }
+            }
+
+            // 👤 3º: DADOS PESSOAIS
             item {
                 AppCard(title = "Dados Pessoais", icon = Icons.Default.Badge) {
                     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth().padding(bottom = 20.dp)) {
@@ -262,7 +269,7 @@ fun RecadastroFormScreen(
                 }
             }
 
-            // 📞 CONTATO
+            // 📞 4º: CONTATO
             item {
                 AppCard(title = "Canais de Contato do Morador", icon = Icons.Default.ContactPhone) {
                     AppTextField(value = viewModel.email, onValueChange = { viewModel.email = it }, label = "E-mail Principal do Morador", leadingIcon = Icons.Default.Email, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email))
@@ -275,35 +282,12 @@ fun RecadastroFormScreen(
                 }
             }
 
-            // 🏠 ENDEREÇO
-            item {
-                AppCard(title = "Endereço Residencial", icon = Icons.Default.Home) {
-                    AppTextField(
-                        value = viewModel.cep, 
-                        onValueChange = { viewModel.onCepChange(it) }, 
-                        label = "CEP", 
-                        leadingIcon = Icons.Default.Map,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), 
-                        visualTransformation = CepVisualTransformation(), 
-                        error = if (viewModel.cepError) "CEP inválido ou não encontrado" else null, 
-                        trailingIcon = if (viewModel.isCepLoading) { { CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp) } } else null
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    AppTextField(value = viewModel.logradouro, onValueChange = { viewModel.logradouro = it }, label = "Rua / Avenida", leadingIcon = Icons.Default.Signpost)
-                    Spacer(Modifier.height(12.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Box(Modifier.weight(1f)) { AppTextField(value = viewModel.numero, onValueChange = { viewModel.numero = it }, label = "Número", leadingIcon = Icons.Default.HomeWork) }
-                        Box(Modifier.weight(1.5f)) { AppTextField(value = viewModel.complemento, onValueChange = { viewModel.complemento = it }, label = "Complemento", leadingIcon = Icons.Default.AddHome) }
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    AppTextField(value = viewModel.bairro, onValueChange = { viewModel.bairro = it }, label = "Bairro", leadingIcon = Icons.Default.HolidayVillage)
-                }
-            }
-
-            // 🏗️ INFRAESTRUTURA
+            // 🏗️ 5º: INFRAESTRUTURA
             item {
                 AppCard(title = "Infraestrutura e Consumo", icon = Icons.Default.Foundation) {
                     BooleanOption(label = "Rede de abastecimento ativa?", checked = viewModel.existeRedeAgua) { viewModel.existeRedeAgua = it }
+                    BooleanOption(label = "Beneficiário de Tarifa Social?", checked = viewModel.beneficiarioSocial) { viewModel.beneficiarioSocial = it ?: false }
+                    BooleanOption(label = "Consome água de vizinho?", checked = viewModel.usaAguaVizinho) { viewModel.usaAguaVizinho = it ?: false }
                     BooleanOption(label = "O imóvel possui piscina?", checked = viewModel.possuiPiscina) { viewModel.possuiPiscina = it }
                     Spacer(Modifier.height(8.dp))
                     SpinnerOption(label = "Possui reservatório (Caixa)?", options = listOf("Sim", "Não", "Não Visível"), selectedOption = viewModel.possuiCaixaAgua, onOptionSelected = { viewModel.possuiCaixaAgua = it })
@@ -316,15 +300,16 @@ fun RecadastroFormScreen(
                 }
             }
 
-            // 💧 HIDROMETRIA
+            // 💧 6º: HIDROMETRIA
             item {
                 AppCard(title = "Hidrometria Técnica", icon = Icons.Default.WaterDrop) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Switch(checked = viewModel.possuiHidrometro, onCheckedChange = { viewModel.possuiHidrometro = it })
-                        Spacer(Modifier.width(16.dp))
-                        Text("Medição via Hidrômetro?", style = MaterialTheme.typography.bodyMedium)
-                    }
-                    if (viewModel.possuiHidrometro) {
+                    BooleanOption(
+                        label = "Medição via Hidrômetro?", 
+                        checked = viewModel.possuiHidrometro,
+                        onCheckedChange = { viewModel.possuiHidrometro = it }
+                    )
+                    
+                    if (viewModel.possuiHidrometro == true) {
                         Spacer(Modifier.height(12.dp))
                         AppTextField(value = viewModel.numeroHidrometro, onValueChange = { viewModel.numeroHidrometro = it }, label = "Nº de Série do Hidrômetro", leadingIcon = Icons.Default.Pin)
                     }
@@ -337,7 +322,7 @@ fun RecadastroFormScreen(
                 }
             }
 
-            // 📝 FINALIZAÇÃO
+            // 📝 7º: FINALIZAÇÃO
             item {
                 AppCard(title = "Observações de Campo", icon = Icons.Default.NoteAlt) {
                     AppTextField(

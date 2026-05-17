@@ -8,10 +8,13 @@ import kotlinx.serialization.Transient
 data class Customer(
     val id: String? = null,
     @SerialName("cidade_id") val cidadeId: String? = null,
+    @SerialName("leiturista_id") val leituristaId: String? = null,
     val name: String? = null,
     @SerialName("matricula") val registrationNumber: String? = null,
     @SerialName("digito_matricula") val registrationDigit: String? = null,
     val email: String? = null,
+    val setor: String? = null,
+    val quadra: String? = null,
     @SerialName("telefone_fixo") val landline: String? = null,
     @SerialName("celular") val cellPhone: String? = null,
     
@@ -22,6 +25,9 @@ data class Customer(
     
     @SerialName("possui_piscina") val possuiPiscina: Boolean? = null,
     @SerialName("possui_caixa_agua") val possuiCaixaAgua: String? = null,
+    @SerialName("beneficiario_social") val beneficiarioSocial: Boolean? = null,
+    @SerialName("usa_agua_vizinho") val usaAguaVizinho: Boolean? = null,
+    @SerialName("possui_hidrometro") val possuiHidrometro: Boolean? = null,
     
     val latitude: Double? = null,
     val longitude: Double? = null,
@@ -72,6 +78,7 @@ data class Customer(
     
     @SerialName("pavimento_rua") val pavimentoRua: String? = null,
     @SerialName("pavimento_calcada") val pavimentoCalcada: String? = null,
+    @SerialName("hidrometro_proximo") val hidrometroProximo: String? = null,
     @SerialName("fonte_abastecimento") val fonteAbastecimento: String? = null,
     @SerialName("existe_rede_agua") val existeRedeAgua: Boolean? = null,
     
