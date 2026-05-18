@@ -1,40 +1,60 @@
 package com.example.oaplicativo.ui.screens.menu
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.oaplicativo.data.local.LocalDatabase
+import com.example.oaplicativo.data.repository.AuthRepositoryImpl
+import com.example.oaplicativo.ui.components.GlobalActionMenu
 import java.time.LocalTime
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MenuScreen(
+    isDarkTheme: Boolean,
+    onToggleTheme: () -> Unit,
     onNavigateToRecadastro: () -> Unit,
     onNavigateToEconomias: () -> Unit,
     onNavigateToVisitas: () -> Unit,
+    onNavigateToUserRegistration: () -> Unit,
     onLogout: () -> Unit
 ) {
+    val context = LocalContext.current
+    val localDb = remember { LocalDatabase(context) }
+    
+    // ESTADOS DINÂMICOS DAS ESTATÍSTICAS
+    var recadastroPending by remember { mutableStateOf(0) }
+    var economiasPending by remember { mutableStateOf(0) }
+
+    // Atualiza estatísticas ao entrar na tela
+    LaunchedEffect(Unit) {
+        recadastroPending = localDb.getRecadastroStats().second
+        economiasPending = localDb.getEconomyStats().second
+    }
+
     val greeting = when (LocalTime.now().hour) {
         in 5..11 -> "Bom dia"
         in 12..17 -> "Boa tarde"
         else -> "Boa noite"
     }
+
+    val authRepository = AuthRepositoryImpl.getInstance()
+    val userProfile by authRepository.currentUserProfile.collectAsState()
 
     Scaffold(
         topBar = {
@@ -49,17 +69,14 @@ fun MenuScreen(
                     ) 
                 },
                 actions = {
-                    IconButton(
-                        onClick = onLogout,
-                        modifier = Modifier.clip(CircleShape).background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f))
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.Logout, 
-                            contentDescription = "Sair",
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+                    GlobalActionMenu(
+                        isDarkTheme = isDarkTheme,
+                        isAdmin = userProfile?.isAdmin ?: false,
+                        onToggleTheme = onToggleTheme,
+                        onLogout = onLogout,
+                        onNavigateToUserRegistration = onNavigateToUserRegistration,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
@@ -112,8 +129,8 @@ fun MenuScreen(
                             color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
                         )
                         Text(
-                            text = "Leiturista de Campo",
-                            style = MaterialTheme.typography.headlineSmall,
+                            text = userProfile?.fullName?.split(" ")?.firstOrNull() ?: "Leiturista",
+                            style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimary
                         )
@@ -123,35 +140,37 @@ fun MenuScreen(
 
             Text(
                 text = "SERVIÇOS DISPONÍVEIS",
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
             )
 
-            // --- GRID: QUICK ACTIONS ---
+            // --- GRID DE SERVIÇOS ---
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
-                contentPadding = PaddingValues(24.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier.weight(1f)
             ) {
                 item {
                     DashboardCard(
                         title = "Recadastro Clientes",
-                        subtitle = "Sincronizado",
+                        subtitle = if (recadastroPending > 0) "$recadastroPending Pendentes" else "Sincronizado",
+                        statusColor = if (recadastroPending > 0) Color(0xFFF59E0B) else Color(0xFF10B981),
                         icon = Icons.Default.AssignmentInd,
-                        color = MaterialTheme.colorScheme.primaryContainer,
+                        color = Color(0xFF0052CC),
                         onClick = onNavigateToRecadastro
                     )
                 }
                 item {
                     DashboardCard(
                         title = "Atualização Economias",
-                        subtitle = "Pendente",
-                        icon = Icons.Default.Apartment,
-                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        subtitle = if (economiasPending > 0) "$economiasPending Pendentes" else "Sincronizado",
+                        statusColor = if (economiasPending > 0) Color(0xFFF59E0B) else Color(0xFF10B981),
+                        icon = Icons.Default.Business,
+                        color = Color(0xFF6B7280),
                         onClick = onNavigateToEconomias
                     )
                 }
@@ -159,8 +178,9 @@ fun MenuScreen(
                     DashboardCard(
                         title = "Minhas Visitas",
                         subtitle = "Meu Desempenho",
+                        statusColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         icon = Icons.Default.History,
-                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        color = Color(0xFFE11D48),
                         onClick = onNavigateToVisitas
                     )
                 }
@@ -168,9 +188,10 @@ fun MenuScreen(
                     DashboardCard(
                         title = "Apoio Técnico",
                         subtitle = "Suporte",
+                        statusColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         icon = Icons.Default.SupportAgent,
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        onClick = { /* Implementar */ }
+                        color = Color(0xFF10B981),
+                        onClick = { }
                     )
                 }
             }
@@ -181,9 +202,9 @@ fun MenuScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Recadastre.IA • Versão 1.0",
+                    text = "Recadastre.IA • Versão 0.9.2.6.4",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                 )
             }
         }
@@ -194,6 +215,7 @@ fun MenuScreen(
 fun DashboardCard(
     title: String,
     subtitle: String,
+    statusColor: Color,
     icon: ImageVector,
     color: Color,
     onClick: () -> Unit
@@ -201,37 +223,47 @@ fun DashboardCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(160.dp)
-            .clickable(onClick = onClick),
-        shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.15f)),
-        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.3f))
+            .height(160.dp),
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        onClick = onClick
     ) {
         Column(
-            modifier = Modifier.padding(16.dp).fillMaxSize(),
-            verticalArrangement = Arrangement.Center
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
             Surface(
                 modifier = Modifier.size(40.dp),
                 shape = MaterialTheme.shapes.medium,
-                color = color.copy(alpha = 0.4f)
+                color = color.copy(alpha = 0.1f)
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(24.dp))
+                    Icon(
+                        icon, 
+                        contentDescription = null, 
+                        tint = color,
+                        modifier = Modifier.size(24.dp)
+                    )
                 }
             }
-            Spacer(Modifier.height(16.dp))
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 18.sp
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            
+            Column {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = statusColor
+                )
+            }
         }
     }
 }

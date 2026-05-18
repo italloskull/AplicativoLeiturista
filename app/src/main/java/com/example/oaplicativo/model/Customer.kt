@@ -42,7 +42,7 @@ data class Customer(
 
     @SerialName("qualidade") val quality: String? = null,
 
-    // Campos Multi-Papel traduzidos
+    // Campos Multi-Papel
     @SerialName("entrevistado_nome") val entrevistadoNome: String? = null,
     @SerialName("entrevistado_cpf") val entrevistadoCpf: String? = null,
     @SerialName("entrevistado_mae") val entrevistadoMae: String? = null,
@@ -67,12 +67,12 @@ data class Customer(
     @SerialName("locatario_apresentou_doc") val locatarioApresentouDoc: Boolean? = null,
     @SerialName("locatario_qual_doc") val locatarioQualDoc: String? = null,
 
-    // Campos de Endereço traduzidos
+    // Campos de Endereço
     val logradouro: String? = null,
     val numero: String? = null,
     val complemento: String? = null,
     val bairro: String? = null,
-    @SerialName("cidade") val cidade: String? = null, // <--- MAPEAMENTO OBRIGATÓRIO
+    val cidade: String? = null,
     val uf: String? = null,
     val cep: String? = null,
     
@@ -84,6 +84,10 @@ data class Customer(
     
     val observacao: String? = null,
     @SerialName("grupo_sugerido") val grupoSugerido: String? = null,
+
+    @SerialName("local_instalacao") val localInstalacao: String? = null,
+    @SerialName("acessibilidade") val acessibilidade: String? = null,
+    @SerialName("numero_hidrometro") val numeroHidrometro: String? = null,
 
     @Transient val isSynced: Boolean = true
 )

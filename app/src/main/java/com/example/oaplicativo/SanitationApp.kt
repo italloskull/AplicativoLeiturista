@@ -2,17 +2,23 @@ package com.example.oaplicativo
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.compose.rememberNavController
 import androidx.work.*
 import com.example.oaplicativo.data.sync.SyncWorker
 import com.example.oaplicativo.ui.navigation.SetupNavGraph
+import com.example.oaplicativo.ui.theme.OAplicativoTheme
 import java.util.concurrent.TimeUnit
 
 @Composable
 fun SanitationApp() {
     val context = LocalContext.current
     val navController = rememberNavController()
+    
+    // GESTÃO DE TEMA GLOBAL (Ref. Item 4 das Diretrizes)
+    val isDarkTheme = remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         val workManager = WorkManager.getInstance(context)
@@ -46,5 +52,11 @@ fun SanitationApp() {
         )
     }
 
-    SetupNavGraph(navController = navController)
+    OAplicativoTheme(darkTheme = isDarkTheme.value) {
+        SetupNavGraph(
+            navController = navController,
+            isDarkTheme = isDarkTheme.value,
+            onToggleTheme = { isDarkTheme.value = !isDarkTheme.value }
+        )
+    }
 }

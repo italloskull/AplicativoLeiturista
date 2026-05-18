@@ -9,35 +9,33 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Blue80,
-    secondary = Teal80,
-    tertiary = Green80
+    primary = DarkPrimary,
+    background = DarkBackground,
+    surface = DarkSurface,
+    onPrimary = Color.White,
+    onBackground = Color.White,
+    onSurface = Color.White
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = Blue40,
-    secondary = Teal40,
-    tertiary = Green40
-
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
+    primary = CobaltBlue,
+    background = IceBlue,
+    surface = Color.White,
     onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
+    onBackground = DeepNavy,
+    onSurface = DeepNavy,
+    surfaceVariant = Color(0xFFF1F5F9),
+    outlineVariant = Color(0xFFE2E8F0)
 )
 
 @Composable
 fun OAplicativoTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
+    dynamicColor: Boolean = false, // Desativado para forçar a identidade visual da marca
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {
@@ -45,7 +43,6 @@ fun OAplicativoTheme(
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
-
         darkTheme -> DarkColorScheme
         else -> LightColorScheme
     }

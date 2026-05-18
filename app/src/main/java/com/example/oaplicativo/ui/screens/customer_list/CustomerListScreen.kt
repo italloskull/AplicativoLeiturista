@@ -11,7 +11,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Navigation
@@ -30,6 +29,7 @@ import com.example.oaplicativo.model.Customer
 import com.example.oaplicativo.presentation.components.DistanceBadge
 import com.example.oaplicativo.presentation.components.SyncIndicator
 import com.example.oaplicativo.ui.components.AppStatusBadge
+import com.example.oaplicativo.ui.components.GlobalActionMenu
 import com.example.oaplicativo.util.navigation.NavigationUtils
 import com.example.oaplicativo.util.LocationHelper
 import kotlinx.coroutines.delay
@@ -37,11 +37,12 @@ import kotlinx.coroutines.launch
 
 /**
  * CUSTOMER LIST SCREEN
- * Optimized for performance using memoization and stable keys.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CustomerListScreen(
+    isDarkTheme: Boolean,
+    onToggleTheme: () -> Unit,
     onAddCustomer: () -> Unit,
     onCustomerClick: (Customer) -> Unit,
     onNavigateToUserRegistration: () -> Unit,
@@ -56,13 +57,12 @@ fun CustomerListScreen(
 ) {
     val customers by viewModel.customers.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
-    val userProfile by viewModel.currentUserProfile.collectAsState()
+    val userProfile by viewModel.currentUserProfile.collectAsState() // Restaurado
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val locationHelper = remember(context) { LocationHelper(context) }
     
     val userLocationState = remember { mutableStateOf<android.location.Location?>(null) }
-    val showMenuState = remember { mutableStateOf(false) }
     val searchQueryState = remember { mutableStateOf("") }
     val showAboutDialogState = remember { mutableStateOf(false) }
 
@@ -81,21 +81,21 @@ fun CustomerListScreen(
         locationPermissionLauncher.launch(
             arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
         )
-        // OTIMIZAÇÃO: Polling de GPS mais inteligente e leve
         while (true) {
             val newLocation = locationHelper.getCurrentLocation()
             if (newLocation != null && (userLocationState.value == null || 
                 locationHelper.calculateDistance(userLocationState.value!!.latitude, userLocationState.value!!.longitude, newLocation.latitude, newLocation.longitude) > 10)) {
                 userLocationState.value = newLocation
             }
-            delay(60000) // Aumentado para 60s para salvar bateria
+            delay(60000)
         }
     }
 
-    // OTIMIZAÇÃO: Memoização avançada com filtragem em background
     val filteredCustomers by remember(customers, searchQueryState.value, userLocationState.value) {
         derivedStateOf {
             val query = searchQueryState.value.trim()
+            
+            // 1. FILTRAGEM INICIAL (Pesquisa ou Todos)
             val baseList = if (query.isBlank()) {
                 customers
             } else {
@@ -105,8 +105,9 @@ fun CustomerListScreen(
                 }
             }
 
+            // 2. INTELIGÊNCIA GEOGRÁFICA
             if (userLocationState.value != null) {
-                baseList.sortedBy { customer ->
+                val sortedList = baseList.sortedBy { customer ->
                     if (customer.latitude != null && customer.longitude != null) {
                         locationHelper.calculateDistance(
                             userLocationState.value!!.latitude, userLocationState.value!!.longitude,
@@ -115,8 +116,16 @@ fun CustomerListScreen(
                     } else {
                         Float.MAX_VALUE
                     }
-                }.take(20) // Aumentado levemente o cache de exibição
+                }
+                
+                // REGRA DE OURO: Mostrar apenas 10 se não estiver pesquisando
+                if (query.isBlank()) {
+                    sortedList.take(10)
+                } else {
+                    sortedList
+                }
             } else {
+                // Fallback se GPS estiver desligado: mostrar primeiros 20
                 baseList.take(20)
             }
         }
@@ -135,39 +144,14 @@ fun CustomerListScreen(
                     IconButton(onClick = { viewModel.refreshCustomers() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Atualizar")
                     }
-                    IconButton(onClick = { showMenuState.value = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "Menu")
-                    }
-                    DropdownMenu(
-                        expanded = showMenuState.value,
-                        onDismissRequest = { showMenuState.value = false }
-                    ) {
-                        // FIX: Ensure isAdmin logic is strictly evaluated
-                        val isAdmin = userProfile?.isAdmin ?: false
-                        if (isAdmin) {
-                            DropdownMenuItem(
-                                text = { Text("Gerenciar Usuários") },
-                                onClick = {
-                                    showMenuState.value = false
-                                    onNavigateToUserRegistration()
-                                }
-                            )
-                        }
-                        DropdownMenuItem(
-                            text = { Text("Sobre") },
-                            onClick = {
-                                showMenuState.value = false
-                                showAboutDialogState.value = true
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Sair") },
-                            onClick = {
-                                showMenuState.value = false
-                                onLogout()
-                            }
-                        )
-                    }
+                    GlobalActionMenu(
+                        isDarkTheme = isDarkTheme,
+                        isAdmin = userProfile?.isAdmin ?: false,
+                        onToggleTheme = onToggleTheme,
+                        onLogout = onLogout,
+                        onNavigateToUserRegistration = onNavigateToUserRegistration,
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
                 }
             )
         },
@@ -206,38 +190,18 @@ fun CustomerListScreen(
                 onRefresh = { viewModel.refreshCustomers() },
                 modifier = Modifier.fillMaxSize()
             ) {
-                if (filteredCustomers.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("Nenhum registro encontrado.", style = MaterialTheme.typography.bodyMedium)
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 88.dp)
-                    ) {
-                        item {
-                            Text(
-                                text = "Clientes Próximos (Top 10)",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                            )
-                        }
-                        items(
-                            items = filteredCustomers,
-                            key = { it.id ?: it.registrationNumber ?: it.name ?: "" }
-                        ) { customer ->
-                            CustomerListItem(
-                                customer = customer,
-                                userLocation = userLocationState.value,
-                                locationHelper = locationHelper,
-                                onCustomerClick = onCustomerClick,
-                                onNavigateClick = {
-                                    NavigationUtils.openNavigation(context, it.latitude, it.longitude)
-                                }
-                            )
-                        }
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 80.dp)
+                ) {
+                    items(filteredCustomers, key = { it.id ?: "" }) { customer ->
+                        CustomerListItem(
+                            customer = customer,
+                            userLocation = userLocationState.value,
+                            locationHelper = locationHelper,
+                            onCustomerClick = onCustomerClick,
+                            onNavigateClick = { NavigationUtils.openNavigation(context, it.latitude, it.longitude) }
+                        )
                     }
                 }
             }
@@ -247,18 +211,11 @@ fun CustomerListScreen(
     if (showAboutDialogState.value) {
         AlertDialog(
             onDismissRequest = { showAboutDialogState.value = false },
-            title = { Text("Sobre o Aplicativo") },
-            text = {
-                Column {
-                    Text("Recadastre.IA", fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("Versão: ${com.example.oaplicativo.BuildConfig.VERSION_NAME}")
-                    Text("Engenharia: Mathey e Itallo")
-                }
-            },
+            title = { Text("Sobre o Sistema") },
+            text = { Text("Recadastre.IA\nVersão 0.9.2.6.4\nSistema de Saneamento em Campo.") },
             confirmButton = {
                 TextButton(onClick = { showAboutDialogState.value = false }) {
-                    Text("Fechar")
+                    Text("OK")
                 }
             }
         )
@@ -273,59 +230,76 @@ fun CustomerListItem(
     onCustomerClick: (Customer) -> Unit,
     onNavigateClick: (Customer) -> Unit
 ) {
-    val distance = remember(customer.id, userLocation) {
-        if (userLocation != null && customer.latitude != null && customer.longitude != null) {
-            val meters = locationHelper.calculateDistance(
-                userLocation.latitude, userLocation.longitude,
-                customer.latitude, customer.longitude
-            )
-            locationHelper.formatDistance(meters)
-        } else null
-    }
-
-    ListItem(
-        modifier = Modifier.clickable { onCustomerClick(customer) },
-        headlineContent = { 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(customer.name ?: "Titular não identificado", fontWeight = FontWeight.SemiBold)
-                Spacer(modifier = Modifier.width(8.dp))
-                SyncIndicator(isSynced = customer.isSynced)
-                Spacer(modifier = Modifier.width(8.dp))
-                // NEW: Quality Badge
-                AppStatusBadge(status = customer.quality)
-            }
-        },
-        supportingContent = { 
-            Column {
-                Text("Matrícula: ${customer.registrationNumber ?: "N/A"}")
-                if (distance != null) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    DistanceBadge(distance = distance)
-                }
-            }
-        },
-        leadingContent = { 
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .clickable { onCustomerClick(customer) },
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Surface(
-                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.size(48.dp),
                 shape = CircleShape,
-                modifier = Modifier.size(40.dp)
+                color = MaterialTheme.colorScheme.primaryContainer
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                }
-            }
-        },
-        trailingContent = {
-            if (customer.latitude != null && customer.longitude != null) {
-                IconButton(onClick = { onNavigateClick(customer) }) {
                     Icon(
-                        imageVector = Icons.Default.Navigation, 
-                        contentDescription = "Traçar rota",
-                        tint = MaterialTheme.colorScheme.primary
+                        Icons.Default.Person,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                 }
             }
+
+            Spacer(Modifier.width(16.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = customer.name ?: "Sem Nome",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Matrícula: ${customer.registrationNumber ?: "N/A"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(top = 4.dp)
+                ) {
+                    AppStatusBadge(customer.quality)
+                    
+                    if (userLocation != null && customer.latitude != null && customer.longitude != null) {
+                        val dist = locationHelper.calculateDistance(
+                            userLocation.latitude, userLocation.longitude,
+                            customer.latitude, customer.longitude
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        DistanceBadge(String.format("%.1fm", dist))
+                    }
+                    
+                    Spacer(Modifier.weight(1f))
+                    SyncIndicator(customer.isSynced)
+                }
+            }
+
+            IconButton(onClick = { onNavigateClick(customer) }) {
+                Icon(
+                    Icons.Default.Navigation,
+                    contentDescription = "Navegar",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
         }
-    )
-    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp)
+    }
 }

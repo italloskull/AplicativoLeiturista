@@ -9,7 +9,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.example.oaplicativo.data.repository.AuthRepositoryImpl
 import com.example.oaplicativo.domain.repository.AuthRepository
-import com.example.oaplicativo.ui.screens.customer_form.CustomerFormScreen
 import com.example.oaplicativo.ui.screens.customer_list.CustomerListScreen
 import com.example.oaplicativo.ui.screens.economy_update.EconomyUpdateListScreen
 import com.example.oaplicativo.ui.screens.economy_update.EconomyUpdateScreen
@@ -22,10 +21,24 @@ import com.example.oaplicativo.util.SecurityUtils
 import kotlinx.coroutines.launch
 
 @Composable
-fun SetupNavGraph(navController: NavHostController) {
+fun SetupNavGraph(
+    navController: NavHostController,
+    isDarkTheme: Boolean,
+    onToggleTheme: () -> Unit
+) {
     val scope = rememberCoroutineScope()
     val authRepository: AuthRepository = AuthRepositoryImpl.getInstance()
     val context = androidx.compose.ui.platform.LocalContext.current
+
+    val onLogoutGlobal = {
+        scope.launch {
+            authRepository.logout()
+            SecurityUtils.clearCredentials(context)
+            navController.navigate(Screen.Login.route) {
+                popUpTo(0) { inclusive = true }
+            }
+        }
+    }
 
     NavHost(
         navController = navController,
@@ -41,6 +54,8 @@ fun SetupNavGraph(navController: NavHostController) {
         
         composable(route = Screen.Menu.route) {
             MenuScreen(
+                isDarkTheme = isDarkTheme,
+                onToggleTheme = onToggleTheme,
                 onNavigateToRecadastro = {
                     navController.navigate(Screen.CustomerList.route)
                 },
@@ -50,20 +65,17 @@ fun SetupNavGraph(navController: NavHostController) {
                 onNavigateToVisitas = {
                     navController.navigate(Screen.VisitasDashboard.route)
                 },
-                onLogout = {
-                    scope.launch {
-                        authRepository.logout()
-                        SecurityUtils.clearCredentials(context)
-                        navController.navigate(Screen.Login.route) {
-                            popUpTo(Screen.Menu.route) { inclusive = true }
-                        }
-                    }
-                }
+                onNavigateToUserRegistration = {
+                    navController.navigate(Screen.UserRegistration.route)
+                },
+                onLogout = { onLogoutGlobal() }
             )
         }
 
         composable(route = Screen.CustomerList.route) {
             CustomerListScreen(
+                isDarkTheme = isDarkTheme,
+                onToggleTheme = onToggleTheme,
                 onAddCustomer = {
                     navController.navigate(Screen.RecadastroForm.route)
                 },
@@ -73,9 +85,7 @@ fun SetupNavGraph(navController: NavHostController) {
                 onNavigateToUserRegistration = {
                     navController.navigate(Screen.UserRegistration.route)
                 },
-                onLogout = {
-                    navController.popBackStack()
-                }
+                onLogout = { onLogoutGlobal() }
             )
         }
 
@@ -120,8 +130,11 @@ fun SetupNavGraph(navController: NavHostController) {
             })
         ) { backStackEntry ->
             val customerId = backStackEntry.arguments?.getString("customerId")
-            CustomerFormScreen(
+            RecadastroFormScreen(
                 customerId = customerId,
+                isDarkTheme = isDarkTheme,
+                onToggleTheme = onToggleTheme,
+                onLogout = { onLogoutGlobal() },
                 onSaveSuccess = {
                     navController.popBackStack()
                 },
@@ -144,6 +157,9 @@ fun SetupNavGraph(navController: NavHostController) {
 
         composable(route = Screen.RecadastroForm.route) {
             RecadastroFormScreen(
+                isDarkTheme = isDarkTheme,
+                onToggleTheme = onToggleTheme,
+                onLogout = { onLogoutGlobal() },
                 onBack = { navController.popBackStack() },
                 onSaveSuccess = {
                     navController.popBackStack()
