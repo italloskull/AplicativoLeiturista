@@ -1,8 +1,15 @@
 package com.example.oaplicativo.ui.components
 
-import androidx.compose.foundation.BorderStroke
+import android.content.Context
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
@@ -12,84 +19,123 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 /**
- * 🚀 COMPONENTES PADRONIZADOS - TEMA DINÂMICO MATERIAL 3
+ * MOTOR DE FEEDBACK HÁPTICO (SÊNIOR)
+ * Centraliza as vibrações para garantir consistência e economia de bateria.
  */
+object HapticFeedback {
+    fun success(context: Context) {
+        vibrate(context, 50)
+    }
 
+    fun error(context: Context) {
+        val pattern = longArrayOf(0, 50, 100, 50)
+        vibratePattern(context, pattern)
+    }
+
+    fun tick(context: Context) {
+        vibrate(context, 10)
+    }
+
+    private fun vibrate(context: Context, duration: Long) {
+        try {
+            val vibrator = getVibrator(context)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createOneShot(duration, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(duration)
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun vibratePattern(context: Context, pattern: LongArray) {
+        try {
+            val vibrator = getVibrator(context)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(pattern, -1)
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun getVibrator(context: Context): Vibrator {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+            vibratorManager.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GlobalActionMenu(
     isDarkTheme: Boolean,
-    isAdmin: Boolean = false,
+    isAdmin: Boolean,
     onToggleTheme: () -> Unit,
     onLogout: () -> Unit,
     onNavigateToUserRegistration: (() -> Unit)? = null,
-    tint: Color = MaterialTheme.colorScheme.primary
+    tint: Color = MaterialTheme.colorScheme.onSurface
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     Box {
-        IconButton(onClick = { expanded = true }) {
-            Icon(
-                imageVector = Icons.Default.MoreVert,
-                contentDescription = "Menu de Opções",
-                tint = tint
-            )
+        IconButton(onClick = { 
+            HapticFeedback.tick(context)
+            showMenu = true 
+        }) {
+            Icon(Icons.Default.MoreVert, "Menu", tint = tint)
         }
+
         DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
+            expanded = showMenu,
+            onDismissRequest = { showMenu = false },
+            modifier = Modifier.background(MaterialTheme.colorScheme.surface)
         ) {
-            // OPÇÃO DE TEMA
             DropdownMenuItem(
-                text = { Text(if (isDarkTheme) "Modo Claro" else "Modo Escuro") },
-                leadingIcon = {
-                    Icon(
-                        imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
-                        contentDescription = null
-                    )
-                },
+                text = { Text("Trocar Tema") },
+                leadingIcon = { Icon(if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode, null) },
                 onClick = {
-                    expanded = false
+                    HapticFeedback.tick(context)
                     onToggleTheme()
+                    showMenu = false
                 }
             )
 
-            // OPÇÃO ADMINISTRATIVA (Apenas para ADM)
             if (isAdmin && onNavigateToUserRegistration != null) {
-                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), thickness = 0.5.dp)
                 DropdownMenuItem(
                     text = { Text("Gerenciar Usuários") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.GroupAdd,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    },
+                    leadingIcon = { Icon(Icons.Default.GroupAdd, null) },
                     onClick = {
-                        expanded = false
+                        HapticFeedback.tick(context)
                         onNavigateToUserRegistration()
+                        showMenu = false
                     }
                 )
             }
 
-            // OPÇÃO DE SAIR
-            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), thickness = 0.5.dp)
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
             DropdownMenuItem(
                 text = { Text("Sair do Sistema", color = MaterialTheme.colorScheme.error) },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Logout,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                },
+                leadingIcon = { Icon(Icons.AutoMirrored.Filled.Logout, null, tint = MaterialTheme.colorScheme.error) },
                 onClick = {
-                    expanded = false
+                    HapticFeedback.error(context)
                     onLogout()
+                    showMenu = false
                 }
             )
         }
@@ -107,24 +153,32 @@ fun AppButton(
     containerColor: Color = MaterialTheme.colorScheme.primary,
     contentColor: Color = MaterialTheme.colorScheme.onPrimary
 ) {
+    val context = LocalContext.current
     Button(
-        onClick = onClick,
-        modifier = modifier.fillMaxWidth().height(56.dp),
+        onClick = {
+            HapticFeedback.success(context)
+            onClick()
+        },
+        modifier = modifier
+            .fillMaxWidth()
+            .height(56.dp),
+        shape = MaterialTheme.shapes.large,
         enabled = enabled && !isLoading,
-        shape = MaterialTheme.shapes.medium,
-        colors = ButtonDefaults.buttonColors(containerColor = containerColor, contentColor = contentColor)
+        colors = ButtonDefaults.buttonColors(
+            containerColor = containerColor,
+            contentColor = contentColor,
+            disabledContainerColor = containerColor.copy(alpha = 0.5f)
+        )
     ) {
         if (isLoading) {
-            Box(contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = contentColor, strokeWidth = 2.dp)
-            }
+            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = contentColor, strokeWidth = 2.dp)
         } else {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 if (icon != null) {
-                    Icon(icon, null, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(12.dp))
+                    Icon(icon, null)
+                    Spacer(Modifier.width(8.dp))
                 }
-                Text(text.uppercase(), fontWeight = FontWeight.Black)
+                Text(text, fontWeight = FontWeight.Bold, fontSize = 16.sp)
             }
         }
     }
@@ -136,70 +190,69 @@ fun AppTextField(
     onValueChange: (String) -> Unit,
     label: String,
     modifier: Modifier = Modifier,
+    icon: ImageVector? = null, 
     leadingIcon: ImageVector? = null,
-    error: String? = null,
-    isValid: Boolean = false,
-    keyboardOptions: androidx.compose.foundation.text.KeyboardOptions = androidx.compose.foundation.text.KeyboardOptions.Default,
-    visualTransformation: androidx.compose.ui.text.input.VisualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
+    placeholder: String? = null,
+    isError: Boolean = false,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    singleLine: Boolean = true,
     enabled: Boolean = true,
-    readOnly: Boolean = false,
-    textStyle: androidx.compose.ui.text.TextStyle? = null,
+    textStyle: TextStyle? = null,
     colors: TextFieldColors? = null,
     trailingIcon: @Composable (() -> Unit)? = null
 ) {
-    Column(modifier = modifier.fillMaxWidth()) {
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            label = { Text(label) },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = enabled,
-            readOnly = readOnly,
-            isError = error != null,
-            textStyle = textStyle ?: LocalTextStyle.current.copy(color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium),
-            shape = MaterialTheme.shapes.medium,
-            leadingIcon = leadingIcon?.let { { Icon(it, null) } },
-            trailingIcon = when {
-                error != null -> { { Icon(Icons.Default.Error, "Erro", tint = MaterialTheme.colorScheme.error) } }
-                isValid -> { { Icon(Icons.Default.CheckCircle, "OK", tint = Color(0xFF4CAF50)) } }
-                else -> trailingIcon
-            },
-            keyboardOptions = keyboardOptions,
-            visualTransformation = visualTransformation,
-            singleLine = true,
-            colors = colors ?: OutlinedTextFieldDefaults.colors(
-                focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                focusedLabelColor = MaterialTheme.colorScheme.primary,
-                unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                cursorColor = MaterialTheme.colorScheme.primary
-            )
+    val finalLeadingIcon = leadingIcon ?: icon
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label, fontWeight = FontWeight.Medium) },
+        placeholder = placeholder?.let { { Text(it) } },
+        modifier = modifier.fillMaxWidth(),
+        leadingIcon = finalLeadingIcon?.let { { Icon(it, null, tint = MaterialTheme.colorScheme.primary) } },
+        trailingIcon = trailingIcon,
+        isError = isError,
+        singleLine = singleLine,
+        enabled = enabled,
+        shape = MaterialTheme.shapes.large,
+        keyboardOptions = keyboardOptions,
+        visualTransformation = visualTransformation,
+        textStyle = textStyle ?: LocalTextStyle.current.copy(color = MaterialTheme.colorScheme.onSurface),
+        colors = colors ?: OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = MaterialTheme.colorScheme.primary,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+            focusedLabelColor = MaterialTheme.colorScheme.primary,
+            cursorColor = MaterialTheme.colorScheme.primary
         )
-        if (error != null) {
-            Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 16.dp, top = 4.dp))
-        }
-    }
+    )
 }
 
 @Composable
-fun AppCard(title: String, icon: ImageVector, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+fun AppCard(
+    title: String,
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
     Card(
-        modifier = modifier.fillMaxWidth().padding(vertical = 8.dp),
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(icon, null, modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
+                Surface(
+                    modifier = Modifier.size(32.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(icon, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
                 Spacer(Modifier.width(12.dp))
-                Text(
-                    text = title.uppercase(), 
-                    fontWeight = FontWeight.ExtraBold, 
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
             }
             Spacer(Modifier.height(16.dp))
             content()
@@ -208,68 +261,117 @@ fun AppCard(title: String, icon: ImageVector, modifier: Modifier = Modifier, con
 }
 
 @Composable
-fun BooleanOption(label: String, checked: Boolean?, onCheckedChange: (Boolean?) -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
-        Row(modifier = Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(
-                onClick = { onCheckedChange(true) },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (checked == true) Color(0xFF4CAF50) else MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = if (checked == true) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-                ),
-                modifier = Modifier.weight(1f).height(48.dp),
-                shape = MaterialTheme.shapes.medium
-            ) { Text("Sim", fontWeight = FontWeight.Bold) }
-            
-            Button(
-                onClick = { onCheckedChange(false) },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (checked == false) Color(0xFFF44336) else MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = if (checked == false) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-                ),
-                modifier = Modifier.weight(1f).height(48.dp),
-                shape = MaterialTheme.shapes.medium
-            ) { Text("Não", fontWeight = FontWeight.Bold) }
-        }
-    }
-}
-
-@Composable
-fun GpsStatusCard(latitude: Double?, longitude: Double?, onUpdateClick: () -> Unit, isLoading: Boolean = false) {
-    val hasLoc = latitude != null
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (hasLoc) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
-        ),
-        border = BorderStroke(1.dp, if (hasLoc) Color(0xFF4CAF50) else Color(0xFFF44336))
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Text(
-                if (hasLoc) "GPS Vinculado" else "GPS Necessário", 
-                fontWeight = FontWeight.Black, 
-                color = if (hasLoc) Color(0xFF2E7D32) else Color(0xFFC62828)
-            )
-            if (hasLoc) Text("Lat: $latitude / Lon: $longitude", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
-            Button(onClick = onUpdateClick, modifier = Modifier.fillMaxWidth().padding(top = 12.dp), enabled = !isLoading, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)) {
-                if (isLoading) CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White)
-                else Text("Atualizar Localização", fontWeight = FontWeight.Bold)
+fun BooleanOption(
+    label: String,
+    selectedOption: String? = null,
+    onOptionSelected: (String?) -> Unit
+) {
+    val context = LocalContext.current
+    Column(modifier = Modifier.padding(vertical = 4.dp)) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(modifier = Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("Sim", "Não").forEach { option ->
+                val selected = selectedOption == option
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp)
+                        .clickable { 
+                            HapticFeedback.tick(context)
+                            onOptionSelected(option) 
+                        },
+                    shape = MaterialTheme.shapes.medium,
+                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    border = if (selected) null else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(option, color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-fun AppStatusBadge(status: String?, modifier: Modifier = Modifier) {
-    val (color, label) = when (status) {
-        "Boa" -> Color(0xFF4CAF50) to "Boa"
-        "Regular" -> Color(0xFFFFC107) to "Regular"
-        "Ruim" -> Color(0xFFF44336) to "Ruim"
-        else -> MaterialTheme.colorScheme.outline to "???"
+fun GpsStatusCard(
+    lat: Double? = null,
+    lng: Double? = null,
+    latitude: Double? = null,
+    longitude: Double? = null,
+    onUpdate: () -> Unit = {},
+    onUpdateClick: () -> Unit = {},
+    isCapturing: Boolean = false,
+    isLoading: Boolean = false
+) {
+    val context = LocalContext.current
+    val finalLat = latitude ?: lat
+    val finalLng = longitude ?: lng
+    val finalOnUpdate = if (latitude != null || onUpdateClick != {}) onUpdateClick else onUpdate
+    val finalIsCapturing = isCapturing || isLoading
+    
+    val hasGps = finalLat != null && finalLng != null
+    
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(
+            containerColor = if (hasGps) Color(0xFFF0FDF4) else Color(0xFFFEF2F2)
+        ),
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (hasGps) Color(0xFFBBF7D0) else Color(0xFFFECACA))
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    if (hasGps) Icons.Default.LocationOn else Icons.Default.LocationOff,
+                    null,
+                    tint = if (hasGps) Color(0xFF16A34A) else Color(0xFFDC2626)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (hasGps) "GPS Vinculado" else "GPS Necessário",
+                    fontWeight = FontWeight.Bold,
+                    color = if (hasGps) Color(0xFF16A34A) else Color(0xFFDC2626)
+                )
+            }
+            if (hasGps) {
+                Text("Lat: $finalLat / Lon: $finalLng", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
+            }
+            Spacer(Modifier.height(12.dp))
+            AppButton(
+                text = if (finalIsCapturing) "Obtendo sinal..." else "Atualizar Localização",
+                onClick = {
+                    HapticFeedback.tick(context)
+                    finalOnUpdate()
+                },
+                isLoading = finalIsCapturing,
+                containerColor = MaterialTheme.colorScheme.primary
+            )
+        }
     }
-    Surface(color = color.copy(alpha = 0.1f), contentColor = color, shape = CircleShape, border = BorderStroke(0.5.dp, color), modifier = modifier) {
-        Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
+}
+
+@Composable
+fun AppStatusBadge(status: String?, modifier: Modifier = Modifier) {
+    val color = when (status?.uppercase()) {
+        "BOA" -> Color(0xFF10B981)
+        "REGULAR" -> Color(0xFFF59E0B)
+        "RUIM" -> Color(0xFFEF4444)
+        else -> MaterialTheme.colorScheme.outline
+    }
+    Surface(
+        modifier = modifier,
+        shape = CircleShape,
+        color = color.copy(alpha = 0.1f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.5f))
+    ) {
+        Text(
+            text = status?.uppercase() ?: "---",
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Black,
+            color = color
+        )
     }
 }
 
@@ -277,32 +379,53 @@ fun AppStatusBadge(status: String?, modifier: Modifier = Modifier) {
 fun <T> SpinnerOption(
     label: String,
     options: List<T>,
-    selectedOption: T?,
-    onOptionSelected: (T?) -> Unit,
-    optionToString: (T) -> String = { it.toString() }
+    selected: T? = null,
+    selectedOption: T? = null,
+    onSelected: (T?) -> Unit = {},
+    onOptionSelected: (T?) -> Unit = {},
+    labelProvider: (T) -> String = { it.toString() }
 ) {
     var expanded by remember { mutableStateOf(false) }
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
-        Box(modifier = Modifier.padding(top = 4.dp)) {
-            OutlinedButton(
-                onClick = { expanded = true }, 
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                shape = MaterialTheme.shapes.medium,
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
+    val context = LocalContext.current
+    val finalSelected = selectedOption ?: selected
+    val finalOnSelected = if (selectedOption != null || onOptionSelected != {}) onOptionSelected else onSelected
+
+    Column(modifier = Modifier.padding(vertical = 4.dp)) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box(modifier = Modifier.padding(top = 8.dp)) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .clickable { 
+                        HapticFeedback.tick(context)
+                        expanded = true 
+                    },
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surface,
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
             ) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text(selectedOption?.let { optionToString(it) } ?: "Selecione...")
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = finalSelected?.let { labelProvider(it) } ?: "Selecione uma opção",
+                        color = if (finalSelected != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    )
                     Icon(Icons.Default.ArrowDropDown, null)
                 }
             }
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                DropdownMenuItem(text = { Text("Nenhum") }, onClick = { onOptionSelected(null); expanded = false })
-                options.forEach { opt ->
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, modifier = Modifier.fillMaxWidth(0.9f)) {
+                options.forEach { option ->
                     DropdownMenuItem(
-                        text = { Text(optionToString(opt)) }, 
-                        onClick = { onOptionSelected(opt); expanded = false }
+                        text = { Text(labelProvider(option)) },
+                        onClick = {
+                            HapticFeedback.tick(context)
+                            finalOnSelected(option)
+                            expanded = false
+                        }
                     )
                 }
             }

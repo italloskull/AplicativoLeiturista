@@ -15,14 +15,15 @@ class StatsRepositoryImpl private constructor(context: Context) : StatsRepositor
 
     override suspend fun refreshStats() {
         val today = db.getTodayStats()
-        val record = db.getPersonalRecord()
         val totalHoje = today["Total"] ?: 0
+        
+        // Sincroniza o recorde pessoal antes de emitir
+        db.updateRecordIfHigher(totalHoje)
+        val record = db.getPersonalRecord()
         
         val percentBoa = if (totalHoje > 0) (today["Boa"] ?: 0).toFloat() / totalHoje else 0f
         val percentRegular = if (totalHoje > 0) (today["Regular"] ?: 0).toFloat() / totalHoje else 0f
         val percentRuim = if (totalHoje > 0) (today["Ruim"] ?: 0).toFloat() / totalHoje else 0f
-
-        db.updateRecordIfHigher(totalHoje)
 
         _stats.value = VisitasStats(
             hojeTotal = totalHoje,
@@ -30,7 +31,7 @@ class StatsRepositoryImpl private constructor(context: Context) : StatsRepositor
             percentualBoa = percentBoa,
             percentualRegular = percentRegular,
             percentualRuim = percentRuim,
-            totalHistorico = totalHoje // Ajustar conforme necessidade de histórico real
+            totalHistorico = record // Usando o recorde como base de histórico simplificado
         )
     }
 

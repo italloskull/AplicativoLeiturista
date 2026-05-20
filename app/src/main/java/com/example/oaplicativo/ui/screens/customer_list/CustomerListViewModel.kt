@@ -1,3 +1,4 @@
+@file:Suppress("SpellCheckingInspection")
 package com.example.oaplicativo.ui.screens.customer_list
 
 import android.app.Application
@@ -14,7 +15,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class CustomerListViewModel(
@@ -31,9 +31,6 @@ class CustomerListViewModel(
     private val localDb = LocalDatabase(application)
 
     init {
-        viewModelScope.launch {
-            try { localDb.purgeOldRecords() } catch (_: Exception) { }
-        }
         loadData()
         startPeriodicRefresh()
     }
@@ -46,16 +43,16 @@ class CustomerListViewModel(
     }
 
     private fun updateLocalData() {
-        try {
+        viewModelScope.launch {
             val pending = localDb.getPendingCustomers().map { it.second }
             customerRepository.updateLocalCustomers(pending)
-        } catch (_: Exception) { }
+        }
     }
 
     private fun startPeriodicRefresh() {
         viewModelScope.launch {
-            while (isActive) {
-                delay(15 * 60 * 1000) // Aumentado para economia de bateria
+            while (true) {
+                delay(30000)
                 updateLocalData()
                 customerRepository.fetchCustomers()
             }

@@ -37,9 +37,9 @@ fun MenuScreen(
     val context = LocalContext.current
     val localDb = remember { LocalDatabase(context) }
     
-    // ESTADOS DINÂMICOS DAS ESTATÍSTICAS
-    var recadastroPending by remember { mutableStateOf(0) }
-    var economiasPending by remember { mutableStateOf(0) }
+    // ESTADOS DINÂMICOS DAS ESTATÍSTICAS (OTIMIZADOS COM mutableIntStateOf)
+    var recadastroPending by remember { mutableIntStateOf(0) }
+    var economiasPending by remember { mutableIntStateOf(0) }
 
     // Atualiza estatísticas ao entrar na tela
     LaunchedEffect(Unit) {

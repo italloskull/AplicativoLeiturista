@@ -1,9 +1,15 @@
 package com.example.oaplicativo.model
 
+import androidx.compose.runtime.Immutable
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 
+/**
+ * DATA MODEL: CUSTOMER (100% ALINHADO COM SQL DO SUPABASE)
+ * ⚡ OTIMIZAÇÃO: Marcado como @Immutable para economizar bateria e recomposições no Compose.
+ */
+@Immutable
 @Serializable
 data class Customer(
     val id: String? = null,
@@ -13,21 +19,15 @@ data class Customer(
     @SerialName("matricula") val registrationNumber: String? = null,
     @SerialName("digito_matricula") val registrationDigit: String? = null,
     val email: String? = null,
-    val setor: String? = null,
-    val quadra: String? = null,
     @SerialName("telefone_fixo") val landline: String? = null,
-    @SerialName("celular") val cellPhone: String? = null,
+    val celular: String? = null,
     
-    @SerialName("caixa_padrao") val isStandardMeasurementBox: Boolean? = null,
-    @SerialName("lacres_padronizados") val isStandardizedSeals: Boolean? = null,
-    @SerialName("hd_acessivel") val isHdAccessible: Boolean? = null,
-    @SerialName("veranista") val isVacationer: Boolean? = null,
-    
-    @SerialName("possui_piscina") val possuiPiscina: Boolean? = null,
+    @SerialName("caixa_padrao") val isStandardMeasurementBox: String? = null,
+    @SerialName("lacres_padronizados") val isStandardizedSeals: String? = null,
+    @SerialName("hd_acessivel") val isHdAccessible: String? = null,
+    @SerialName("veranista") val isVacationer: String? = null,
+    @SerialName("possui_piscina") val possuiPiscina: String? = null,
     @SerialName("possui_caixa_agua") val possuiCaixaAgua: String? = null,
-    @SerialName("beneficiario_social") val beneficiarioSocial: Boolean? = null,
-    @SerialName("usa_agua_vizinho") val usaAguaVizinho: Boolean? = null,
-    @SerialName("possui_hidrometro") val possuiHidrometro: Boolean? = null,
     
     val latitude: Double? = null,
     val longitude: Double? = null,
@@ -37,18 +37,17 @@ data class Customer(
     @SerialName("criado_em") val createdAt: String? = null,
     @SerialName("adicionado_por") val addedBy: String? = null,
     @SerialName("capturado_em") val capturedAt: String? = null,
-    @Transient val syncedAt: String? = null,
+    @SerialName("sincronizado_em") val synchronizedAt: String? = null,
     val date: String? = null,
-
     @SerialName("qualidade") val quality: String? = null,
 
-    // Campos Multi-Papel
+    // Entrevista
     @SerialName("entrevistado_nome") val entrevistadoNome: String? = null,
     @SerialName("entrevistado_cpf") val entrevistadoCpf: String? = null,
     @SerialName("entrevistado_mae") val entrevistadoMae: String? = null,
     @SerialName("entrevistado_nascimento") val entrevistadoNascimento: String? = null,
     @SerialName("entrevistado_sexo") val entrevistadoSexo: String? = null,
-    @SerialName("entrevistado_apresentou_doc") val entrevistadoApresentouDoc: Boolean? = null,
+    @SerialName("entrevistado_apresentou_doc") val entrevistadoApresentouDoc: String? = null,
     @SerialName("entrevistado_qual_doc") val entrevistadoQualDoc: String? = null,
 
     @SerialName("proprietario_nome") val proprietarioNome: String? = null,
@@ -56,7 +55,7 @@ data class Customer(
     @SerialName("proprietario_mae") val proprietarioMae: String? = null,
     @SerialName("proprietario_nascimento") val proprietarioNascimento: String? = null,
     @SerialName("proprietario_sexo") val proprietarioSexo: String? = null,
-    @SerialName("proprietario_apresentou_doc") val proprietarioApresentouDoc: Boolean? = null,
+    @SerialName("proprietario_apresentou_doc") val proprietarioApresentouDoc: String? = null,
     @SerialName("proprietario_qual_doc") val proprietarioQual_doc: String? = null,
 
     @SerialName("locatario_nome") val locatarioNome: String? = null,
@@ -64,10 +63,10 @@ data class Customer(
     @SerialName("locatario_mae") val locatarioMae: String? = null,
     @SerialName("locatario_nascimento") val locatarioNascimento: String? = null,
     @SerialName("locatario_sexo") val locatarioSexo: String? = null,
-    @SerialName("locatario_apresentou_doc") val locatarioApresentouDoc: Boolean? = null,
+    @SerialName("locatario_apresentou_doc") val locatarioApresentouDoc: String? = null,
     @SerialName("locatario_qual_doc") val locatarioQualDoc: String? = null,
 
-    // Campos de Endereço
+    // Endereço
     val logradouro: String? = null,
     val numero: String? = null,
     val complemento: String? = null,
@@ -77,17 +76,20 @@ data class Customer(
     val cep: String? = null,
     
     @SerialName("pavimento_rua") val pavimentoRua: String? = null,
-    @SerialName("pavimento_calcada") val pavimentoCalcada: String? = null,
-    @SerialName("hidrometro_proximo") val hidrometroProximo: String? = null,
     @SerialName("fonte_abastecimento") val fonteAbastecimento: String? = null,
-    @SerialName("existe_rede_agua") val existeRedeAgua: Boolean? = null,
-    
+    @SerialName("existe_rede_agua") val existeRedeAgua: String? = null,
     val observacao: String? = null,
+    @SerialName("beneficiario_social") val beneficiarioSocial: String? = null,
+    @SerialName("usa_agua_vizinho") val usaAguaVizinho: String? = null,
+    @SerialName("possui_hidrometro") val possuiHidrometro: String? = null,
     @SerialName("grupo_sugerido") val grupoSugerido: String? = null,
+    val setor: String? = null,
+    val quadra: String? = null,
 
-    @SerialName("local_instalacao") val localInstalacao: String? = null,
-    @SerialName("acessibilidade") val acessibilidade: String? = null,
-    @SerialName("numero_hidrometro") val numeroHidrometro: String? = null,
-
+    // Compatibilidade Local
+    @Transient val localInstalacao: String? = null,
+    @Transient val acessibilidade: String? = null,
+    @Transient val numeroHidrometro: String? = null,
+    @Transient val cellPhone: String? = null,
     @Transient val isSynced: Boolean = true
 )

@@ -3,9 +3,7 @@ package com.example.oaplicativo.ui.screens.recadastro.viewmodel
 
 import android.app.Application
 import android.util.Log
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.*
@@ -15,6 +13,7 @@ import com.example.oaplicativo.data.remote.viacep.RetrofitClient
 import java.util.Locale
 import com.example.oaplicativo.data.repository.AuthRepositoryImpl
 import com.example.oaplicativo.data.repository.CustomerRepositoryImpl
+import com.example.oaplicativo.data.repository.StatsRepositoryImpl
 import com.example.oaplicativo.domain.repository.CustomerRepository
 import com.example.oaplicativo.data.local.LocalDatabase
 import com.example.oaplicativo.data.sync.SyncWorker
@@ -36,7 +35,7 @@ class RoleData {
     var nomeMae by mutableStateOf("")
     var dataNascimento by mutableStateOf("")
     var sexo by mutableStateOf<String?>(null)
-    var apresentouDoc by mutableStateOf<Boolean?>(null)
+    var apresentouDoc by mutableStateOf<String?>(null)
     var qualDoc by mutableStateOf("")
 }
 
@@ -95,17 +94,17 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
     var pavimentoRua by mutableStateOf<String?>(null)
     var pavimentoCalcada by mutableStateOf<String?>(null)
     var fonteAbastecimento by mutableStateOf<String?>(null)
-    var existeRedeAgua by mutableStateOf<Boolean?>(null)
-    var possuiPiscina by mutableStateOf<Boolean?>(null)
+    var existeRedeAgua by mutableStateOf<String?>(null)
+    var possuiPiscina by mutableStateOf<String?>(null)
     var possuiCaixaAgua by mutableStateOf<String?>(null)
-    var beneficiarioSocial by mutableStateOf<Boolean?>(null)
-    var usaAguaVizinho by mutableStateOf<Boolean?>(null)
+    var beneficiarioSocial by mutableStateOf<String?>(null)
+    var usaAguaVizinho by mutableStateOf<String?>(null)
 
-    var possuiHidrometro by mutableStateOf<Boolean?>(null)
-    var isStandardMeasurementBox by mutableStateOf<Boolean?>(null)
-    var isStandardizedSeals by mutableStateOf<Boolean?>(null)
-    var isHdAccessible by mutableStateOf<Boolean?>(null)
-    var isVacationer by mutableStateOf<Boolean?>(null)
+    var possuiHidrometro by mutableStateOf<String?>(null)
+    var isStandardMeasurementBox by mutableStateOf<String?>(null)
+    var isStandardizedSeals by mutableStateOf<String?>(null)
+    var isHdAccessible by mutableStateOf<String?>(null)
+    var isVacationer by mutableStateOf<String?>(null)
     var locationStatus by mutableStateOf<String?>(null)
     
     var numeroHidrometro by mutableStateOf("")
@@ -120,22 +119,21 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
     private var lastResolvedLng: Double = 0.0
     private val geocoder: Geocoder by lazy { Geocoder(application, Locale("pt", "BR")) }
 
-    val registrationProgress: Float
-        get() {
-            var count = 0
-            if (matricula.isNotBlank()) count++
-            if (latitude != null) count++
-            if (cep.isNotBlank()) count++
-            if (logradouro.isNotBlank()) count++
-            if (numero.isNotBlank()) count++
-            if (entrevistadoData.nomeCompleto.isNotBlank()) count++
-            if (entrevistadoData.cpfCnpj.isNotBlank()) count++
-            if (celular1.isNotBlank()) count++
-            if (beneficiarioSocial != null) count++
-            if (usaAguaVizinho != null) count++
-            if (possuiHidrometro != null) count++
-            return count.toFloat() / 11f
-        }
+    val registrationProgress: Float by derivedStateOf {
+        var count = 0
+        if (matricula.isNotBlank()) count++
+        if (latitude != null) count++
+        if (cep.isNotBlank()) count++
+        if (logradouro.isNotBlank()) count++
+        if (numero.isNotBlank()) count++
+        if (entrevistadoData.nomeCompleto.isNotBlank()) count++
+        if (entrevistadoData.cpfCnpj.isNotBlank()) count++
+        if (celular1.isNotBlank()) count++
+        if (beneficiarioSocial != null) count++
+        if (usaAguaVizinho != null) count++
+        if (possuiHidrometro != null) count++
+        count.toFloat() / 11f
+    }
 
     private suspend fun getLeituristaCidadeNome(cidadeId: String?): String? {
         if (cidadeId == null) return null
@@ -170,34 +168,30 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
             uf = customer.uf ?: ""
             email = customer.email ?: ""
             telefone = customer.landline ?: ""
-            celular1 = customer.cellPhone ?: ""
+            celular1 = customer.celular ?: ""
             
-            beneficiarioSocial = customer.beneficiarioSocial
-            usaAguaVizinho = customer.usaAguaVizinho
-            possuiHidrometro = customer.possuiHidrometro
-            isStandardMeasurementBox = customer.isStandardMeasurementBox
-            isStandardizedSeals = customer.isStandardizedSeals
-            isHdAccessible = customer.isHdAccessible
-            isVacationer = customer.isVacationer
+            beneficiarioSocial = customer.beneficiarioSocial.ifSpaceNull()
+            usaAguaVizinho = customer.usaAguaVizinho.ifSpaceNull()
+            possuiHidrometro = customer.possuiHidrometro.ifSpaceNull()
+            isStandardMeasurementBox = customer.isStandardMeasurementBox.ifSpaceNull()
+            isStandardizedSeals = customer.isStandardizedSeals.ifSpaceNull()
+            isHdAccessible = customer.isHdAccessible.ifSpaceNull()
+            isVacationer = customer.isVacationer.ifSpaceNull()
             locationStatus = customer.locationStatus
-            existeRedeAgua = customer.existeRedeAgua
-            possuiPiscina = customer.possuiPiscina
+            existeRedeAgua = customer.existeRedeAgua.ifSpaceNull()
+            possuiPiscina = customer.possuiPiscina.ifSpaceNull()
             possuiCaixaAgua = customer.possuiCaixaAgua
             pavimentoRua = customer.pavimentoRua
-            pavimentoCalcada = customer.pavimentoCalcada
             fonteAbastecimento = customer.fonteAbastecimento
             observacao = customer.observacao ?: ""
             economias = customer.economiesCount?.toString() ?: ""
-            numeroHidrometro = customer.numeroHidrometro ?: ""
-            localInstalacao = customer.localInstalacao
-            acessibilidade = customer.acessibilidade
 
             entrevistadoData.nomeCompleto = customer.entrevistadoNome ?: ""
             entrevistadoData.cpfCnpj = customer.entrevistadoCpf ?: ""
             entrevistadoData.nomeMae = customer.entrevistadoMae ?: ""
             entrevistadoData.dataNascimento = customer.entrevistadoNascimento ?: ""
             entrevistadoData.sexo = customer.entrevistadoSexo
-            entrevistadoData.apresentouDoc = customer.entrevistadoApresentouDoc
+            entrevistadoData.apresentouDoc = customer.entrevistadoApresentouDoc.ifSpaceNull()
             entrevistadoData.qualDoc = customer.entrevistadoQualDoc ?: ""
             
             proprietarioData.nomeCompleto = customer.proprietarioNome ?: ""
@@ -205,7 +199,7 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
             proprietarioData.nomeMae = customer.proprietarioMae ?: ""
             proprietarioData.dataNascimento = customer.proprietarioNascimento ?: ""
             proprietarioData.sexo = customer.proprietarioSexo
-            proprietarioData.apresentouDoc = customer.proprietarioApresentouDoc
+            proprietarioData.apresentouDoc = customer.proprietarioApresentouDoc.ifSpaceNull()
             proprietarioData.qualDoc = customer.proprietarioQual_doc ?: ""
             
             locatarioData.nomeCompleto = customer.locatarioNome ?: ""
@@ -213,7 +207,7 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
             locatarioData.nomeMae = customer.locatarioMae ?: ""
             locatarioData.dataNascimento = customer.locatarioNascimento ?: ""
             locatarioData.sexo = customer.locatarioSexo
-            locatarioData.apresentouDoc = customer.locatarioApresentouDoc
+            locatarioData.apresentouDoc = customer.locatarioApresentouDoc.ifSpaceNull()
             locatarioData.qualDoc = customer.locatarioQualDoc ?: ""
         }
     }
@@ -269,12 +263,8 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
         val sPiscina = possuiPiscina
         val sCaixaAgua = possuiCaixaAgua
         val sPavRua = pavimentoRua
-        val sPavCalc = pavimentoCalcada
         val sFonte = fonteAbastecimento
         val sEco = economias.toIntOrNull()
-        val sNumHidro = numeroHidrometro.trim()
-        val sLocalInst = localInstalacao
-        val sAcess = acessibilidade
 
         viewModelScope.launch {
             try {
@@ -308,27 +298,31 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
                 val finalLocDoc = if (snapshotVinculo == "Locatário") sEntrevistadoDoc else sLocDoc
                 val finalLocQual = if (snapshotVinculo == "Locatário") sEntrevistadoQual else sLocQual
 
+                // SÊNIOR FIX: Garantir que UUIDs sejam válidos ou nulos
+                val finalCidadeId = if (user.cidadeId?.length == 36) user.cidadeId else null
+                val finalLeituristaId = if (user.id?.length == 36) user.id else null
+
                 val customer = Customer(
                     id = java.util.UUID.randomUUID().toString(),
-                    cidadeId = user.cidadeId,
-                    leituristaId = user.id,
-                    name = sEntrevistadoNome,
-                    registrationNumber = snapshotMatricula,
+                    cidadeId = finalCidadeId,
+                    leituristaId = finalLeituristaId,
+                    name = sEntrevistadoNome.ifBlank { "Sem Nome" },
+                    registrationNumber = snapshotMatricula.ifBlank { "0" },
                     registrationDigit = snapshotDigit,
                     email = snapshotEmail,
                     setor = snapshotSetor,
                     quadra = snapshotQuadra,
                     landline = snapshotLandline,
-                    cellPhone = snapshotCelular,
-                    isStandardMeasurementBox = isStandardMeasurementBox,
-                    isStandardizedSeals = isStandardizedSeals,
-                    isHdAccessible = isHdAccessible,
-                    isVacationer = isVacationer,
-                    possuiPiscina = sPiscina,
+                    celular = snapshotCelular,
+                    isStandardMeasurementBox = isStandardMeasurementBox.orSpace(),
+                    isStandardizedSeals = isStandardizedSeals.orSpace(),
+                    isHdAccessible = isHdAccessible.orSpace(),
+                    isVacationer = isVacationer.orSpace(),
+                    possuiPiscina = sPiscina.orSpace(),
                     possuiCaixaAgua = sCaixaAgua,
-                    beneficiarioSocial = sSocial,
-                    usaAguaVizinho = sAguaVizinho,
-                    possuiHidrometro = sHidrometro,
+                    beneficiarioSocial = sSocial.orSpace(),
+                    usaAguaVizinho = sAguaVizinho.orSpace(),
+                    possuiHidrometro = sHidrometro.orSpace(),
                     latitude = snapshotLat,
                     longitude = snapshotLng,
                     locationStatus = locationStatus,
@@ -343,21 +337,21 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
                     entrevistadoMae = sEntrevistadoMae,
                     entrevistadoNascimento = sEntrevistadoNasc,
                     entrevistadoSexo = sEntrevistadoSexo,
-                    entrevistadoApresentouDoc = sEntrevistadoDoc,
+                    entrevistadoApresentouDoc = sEntrevistadoDoc.orSpace(),
                     entrevistadoQualDoc = sEntrevistadoQual,
                     proprietarioNome = finalPropNome,
                     proprietarioCpf = finalPropCpf,
                     proprietarioMae = finalPropMae,
                     proprietarioNascimento = finalPropNasc,
                     proprietarioSexo = finalPropSexo,
-                    proprietarioApresentouDoc = finalPropDoc,
+                    proprietarioApresentouDoc = finalPropDoc.orSpace(),
                     proprietarioQual_doc = finalPropQual,
                     locatarioNome = finalLocNome,
                     locatarioCpf = finalLocCpf,
                     locatarioMae = finalLocMae,
                     locatarioNascimento = finalLocNasc,
                     locatarioSexo = finalLocSexo,
-                    locatarioApresentouDoc = finalLocDoc,
+                    locatarioApresentouDoc = finalLocDoc.orSpace(),
                     locatarioQualDoc = finalLocQual,
                     logradouro = snapshotLogradouro,
                     numero = snapshotNumero,
@@ -367,19 +361,18 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
                     uf = snapshotUf,
                     cep = snapshotCep,
                     pavimentoRua = sPavRua,
-                    pavimentoCalcada = sPavCalc,
-                    hidrometroProximo = sNumHidro,
                     fonteAbastecimento = sFonte,
-                    existeRedeAgua = sRedeAtiva,
+                    existeRedeAgua = sRedeAtiva.orSpace(),
                     observacao = snapshotObs,
-                    localInstalacao = sLocalInst,
-                    acessibilidade = sAcess,
-                    numeroHidrometro = sNumHidro,
                     grupoSugerido = GeoFencingHelper.findSuggestedGroup(finalCidade, snapshotLat, snapshotLng),
                     isSynced = false
                 )
 
                 localDb.saveCustomerOffline(customer)
+                
+                // Atualiza estatísticas imediatamente após salvar
+                StatsRepositoryImpl.getInstance(getApplication()).refreshStats()
+
                 val pending = localDb.getPendingCustomers().map { it.second }
                 customerRepository.updateLocalCustomers(pending)
 
@@ -440,39 +433,80 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
 
     fun fetchAddressFromLocation(lat: Double, lng: Double) {
         val distance = locationHelper.calculateDistance(lastResolvedLat, lastResolvedLng, lat, lng)
-        if (distance < 5.0 && lastResolvedLat != 0.0) return
+        if (distance < 5.0 && lastResolvedLat != 0.0) {
+            Log.d("GeoDebug", "Distância muito curta ($distance m). Ignorando busca de endereço.")
+            return
+        }
+        
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                Log.d("GeoDebug", "Iniciando busca de endereço para: $lat, $lng")
                 lastResolvedLat = lat
                 lastResolvedLng = lng
-                val osmResponse = RetrofitClient.nominatimService.reverseGeocode(lat, lng)
-                if (osmResponse.isSuccessful && osmResponse.body()?.address != null) {
-                    val addr = osmResponse.body()!!.address!!
-                    kotlinx.coroutines.withContext(Dispatchers.Main) {
-                        updateAddressFields(newLogradouro = addr.road, newBairro = addr.suburb, newCidade = addr.city ?: addr.town, newUf = addr.state, newCep = null)
-                        val osmCepStr = addr.postcode?.filter { it.isDigit() } ?: ""
-                        if (isGenericCep(osmCepStr)) refineCepWithViaCep(addr.state, addr.city ?: addr.town, addr.road)
-                        else if (cep.isBlank() || isGenericCep(cep)) cep = osmCepStr
+                
+                var addressFound = false
+
+                // 1. TENTA OPENSTREETMAP (NOMINATIM) - COM CUIDADO
+                try {
+                    val osmResponse = RetrofitClient.nominatimService.reverseGeocode(lat, lng)
+                    if (osmResponse.isSuccessful && osmResponse.body()?.address != null) {
+                        val addr = osmResponse.body()!!.address!!
+                        Log.d("GeoDebug", "Endereço OSM encontrado: ${addr.road}, ${addr.suburb}")
+                        
+                        kotlinx.coroutines.withContext(Dispatchers.Main) {
+                            updateAddressFields(
+                                newLogradouro = addr.road, 
+                                newBairro = addr.suburb, 
+                                newCidade = addr.city ?: addr.town, 
+                                newUf = addr.state, 
+                                newCep = null
+                            )
+                            
+                            val osmCepStr = addr.postcode?.filter { it.isDigit() } ?: ""
+                            if (isGenericCep(osmCepStr)) {
+                                refineCepWithViaCep(addr.state, addr.city ?: addr.town, addr.road)
+                            } else if (cep.isBlank() || isGenericCep(cep)) {
+                                cep = osmCepStr
+                            }
+                        }
+                        addressFound = true
                     }
-                    return@launch
+                } catch (e: Exception) {
+                    Log.w("GeoDebug", "OSM Falhou (DNS ou Rede): ${e.message}. Tentando Google...")
                 }
-                if (!Geocoder.isPresent()) return@launch
-                if (android.os.Build.VERSION.SDK_INT >= 33) {
-                    geocoder.getFromLocation(lat, lng, 5) { addresses ->
-                        if (addresses.isNotEmpty()) {
+
+                // 2. SE OSM FALHOU OU NÃO ACHOU, TENTA GOOGLE GEOCODER (FALLBACK NATIVO)
+                if (!addressFound) {
+                    if (!Geocoder.isPresent()) {
+                        Log.e("GeoDebug", "Google Geocoder não disponível no aparelho.")
+                        return@launch
+                    }
+
+                    if (android.os.Build.VERSION.SDK_INT >= 33) {
+                        geocoder.getFromLocation(lat, lng, 5) { addresses ->
+                            if (addresses.isNotEmpty()) {
+                                val best = addresses.find { !it.thoroughfare.isNullOrBlank() } ?: addresses[0]
+                                Log.d("GeoDebug", "Endereço Google encontrado: ${best.thoroughfare}")
+                                viewModelScope.launch(Dispatchers.Main) { handleGoogleAddress(best) }
+                            } else {
+                                Log.e("GeoDebug", "Google Geocoder não retornou resultados para esta coordenada.")
+                            }
+                        }
+                    } else {
+                        @Suppress("DEPRECATION")
+                        val addresses = geocoder.getFromLocation(lat, lng, 5)
+                        if (!addresses.isNullOrEmpty()) {
                             val best = addresses.find { !it.thoroughfare.isNullOrBlank() } ?: addresses[0]
-                            viewModelScope.launch(Dispatchers.Main) { handleGoogleAddress(best) }
+                            Log.d("GeoDebug", "Endereço Google encontrado: ${best.thoroughfare}")
+                            kotlinx.coroutines.withContext(Dispatchers.Main) { handleGoogleAddress(best) }
+                        } else {
+                            Log.e("GeoDebug", "Google Geocoder não retornou resultados.")
                         }
                     }
-                } else {
-                    @Suppress("DEPRECATION")
-                    val addresses = geocoder.getFromLocation(lat, lng, 5)
-                    if (!addresses.isNullOrEmpty()) {
-                        val best = addresses.find { !it.thoroughfare.isNullOrBlank() } ?: addresses[0]
-                        kotlinx.coroutines.withContext(Dispatchers.Main) { handleGoogleAddress(best) }
-                    }
                 }
-            } catch (_: Exception) { }
+            } catch (e: Exception) {
+                Log.e("GeoDebug", "ERRO CRÍTICO NO MOTOR GEO: ${e.message}", e)
+            }
         }
     }
 
@@ -525,4 +559,8 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
     private fun String.normalizeForSearch(): String {
         return this.lowercase().replace(Regex("[áàâã]"), "a").replace(Regex("[éèê]"), "e").replace(Regex("[íìî]"), "i").replace(Regex("[óòôõ]"), "o").replace(Regex("[úùû]"), "u").replace("ç", "c").trim()
     }
+
+    private fun String?.orSpace(): String? = this ?: " "
+
+    private fun String?.ifSpaceNull(): String? = if (this == " ") null else this
 }

@@ -194,7 +194,13 @@ fun CustomerListScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 80.dp)
                 ) {
-                    items(filteredCustomers, key = { it.id ?: "" }) { customer ->
+                    // SOLUÇÃO SÊNIOR: Fallback de chave para evitar conflito de IDs vazios/nulos
+                    items(
+                        items = filteredCustomers,
+                        key = { customer -> 
+                            customer.id ?: "temp_${filteredCustomers.indexOf(customer)}_${System.currentTimeMillis()}" 
+                        }
+                    ) { customer ->
                         CustomerListItem(
                             customer = customer,
                             userLocation = userLocationState.value,

@@ -51,7 +51,7 @@ class EconomyUpdateViewModel(
     }
 
     fun getItemById(id: String): EconomyUpdate? {
-        return repository.items.value.find { it.id == id }
+        return items.value.find { it.id == id }
     }
 
     fun resetState() {

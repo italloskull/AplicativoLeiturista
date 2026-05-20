@@ -25,9 +25,10 @@ class AuthRepositoryImpl private constructor() : AuthRepository {
     override val currentUserProfile: StateFlow<UserProfile?> = _currentUserProfile.asStateFlow()
 
     override suspend fun login(identifier: String, password: String) {
+        // A lógica de login agora é delegada ao ViewModel para suportar o fallback contextual
+        // Mas o Repository ainda mantém a lógica base de rede
         val trimmedIdentifier = identifier.trim().lowercase()
 
-        // SOLUÇÃO: Restaurada busca de e-mail via RPC por Nome de Usuário
         val email = try {
             val result = client.postgrest.rpc(
                 "get_email_by_username",
@@ -38,9 +39,15 @@ class AuthRepositoryImpl private constructor() : AuthRepository {
             raw
         } catch (e: Exception) {
             val message = e.message ?: ""
-            Log.e("AuthRepo", "Erro no RPC: $message")
-            if (message.contains("Network", ignoreCase = true) || message.contains("timeout", ignoreCase = true)) {
-                throw Exception("Sem conexão com o servidor")
+            Log.e("AuthRepo", "Erro na fase de descoberta de e-mail: $message", e)
+            
+            // SÊNIOR FIX: Identificação robusta de erros de conectividade
+            if (message.contains("Network", ignoreCase = true) || 
+                message.contains("timeout", ignoreCase = true) ||
+                message.contains("Unable to resolve host", ignoreCase = true) ||
+                message.contains("Failed to connect", ignoreCase = true)) {
+                Log.w("AuthRepo", "Conectividade ausente detectada. Acionando modo offline.")
+                throw Exception("OFFLINE_ERROR")
             } else {
                 throw Exception("Usuário não encontrado")
             }
@@ -66,12 +73,18 @@ class AuthRepositoryImpl private constructor() : AuthRepository {
                     .select {
                         filter { eq("id", user.id) }
                     }.decodeSingleOrNull<UserProfile>()
+                
+                // UNIFICAÇÃO: Notifica o StateFlow
                 _currentUserProfile.value = profile
             } catch (e: Exception) {
                 Log.e("AuthRepo", "Erro ao carregar perfil: ${e.message}")
-                _currentUserProfile.value = null
             }
         }
+    }
+
+    // Método para login local (Modo Sênior)
+    fun setLocalProfile(profile: UserProfile?) {
+        _currentUserProfile.value = profile
     }
 
     override suspend fun registerUser(
@@ -104,7 +117,9 @@ class AuthRepositoryImpl private constructor() : AuthRepository {
     }
 
     override suspend fun logout() {
-        client.auth.signOut()
+        try {
+            client.auth.signOut()
+        } catch (_: Exception) {}
         _currentUserProfile.value = null
     }
 

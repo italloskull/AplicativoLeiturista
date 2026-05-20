@@ -2,6 +2,7 @@ package com.example.oaplicativo.ui.screens.recadastro
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -223,10 +224,19 @@ fun RecadastroFormScreen(
                             val fineLoc = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
                             if (fineLoc == PackageManager.PERMISSION_GRANTED) {
                                 scope.launch {
+                                    Log.d("GeoDebug", "Botão 'Atualizar Localização' clicado.")
+                                    viewModel.isCapturingLocation = true
                                     val loc = locationHelper.getCurrentLocation()
-                                    viewModel.latitude = loc?.latitude
-                                    viewModel.longitude = loc?.longitude
-                                    if (loc != null) viewModel.fetchAddressFromLocation(loc.latitude, loc.longitude)
+                                    if (loc != null) {
+                                        Log.d("GeoDebug", "GPS obtido: ${loc.latitude}, ${loc.longitude}")
+                                        viewModel.latitude = loc.latitude
+                                        viewModel.longitude = loc.longitude
+                                        viewModel.fetchAddressFromLocation(loc.latitude, loc.longitude)
+                                    } else {
+                                        Log.e("GeoDebug", "Falha ao obter localização do LocationHelper.")
+                                        Toast.makeText(context, "Sinal de GPS fraco ou inexistente.", Toast.LENGTH_SHORT).show()
+                                    }
+                                    viewModel.isCapturingLocation = false
                                 }
                             } else {
                                 locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
@@ -261,11 +271,11 @@ fun RecadastroFormScreen(
 
             item {
                 AppCard(title = "Características Físicas", icon = Icons.Default.Foundation) {
-                    BooleanOption(label = "Rede de abastecimento ativa?", checked = viewModel.existeRedeAgua) { viewModel.existeRedeAgua = it }
-                    BooleanOption(label = "Beneficiário de Tarifa Social?", checked = viewModel.beneficiarioSocial) { viewModel.beneficiarioSocial = it }
-                    BooleanOption(label = "Consome água de vizinho?", checked = viewModel.usaAguaVizinho) { viewModel.usaAguaVizinho = it }
-                    BooleanOption(label = "O imóvel possui piscina?", checked = viewModel.possuiPiscina) { viewModel.possuiPiscina = it }
-                    BooleanOption(label = "É imóvel de veranista?", checked = viewModel.isVacationer) { viewModel.isVacationer = it }
+                    BooleanOption(label = "Rede de abastecimento ativa?", selectedOption = viewModel.existeRedeAgua) { viewModel.existeRedeAgua = it }
+                    BooleanOption(label = "Beneficiário de Tarifa Social?", selectedOption = viewModel.beneficiarioSocial) { viewModel.beneficiarioSocial = it }
+                    BooleanOption(label = "Consome água de vizinho?", selectedOption = viewModel.usaAguaVizinho) { viewModel.usaAguaVizinho = it }
+                    BooleanOption(label = "O imóvel possui piscina?", selectedOption = viewModel.possuiPiscina) { viewModel.possuiPiscina = it }
+                    BooleanOption(label = "É imóvel de veranista?", selectedOption = viewModel.isVacationer) { viewModel.isVacationer = it }
                     
                     Spacer(Modifier.height(8.dp))
                     SpinnerOption(label = "Situação do Local", options = listOf("Terreno Baldio", "Construção", "Habitado", "Comércio", "Outros"), selectedOption = viewModel.locationStatus, onOptionSelected = { viewModel.locationStatus = it })
@@ -276,14 +286,14 @@ fun RecadastroFormScreen(
 
             item {
                 AppCard(title = "Hidrometria Técnica", icon = Icons.Default.WaterDrop) {
-                    BooleanOption(label = "Possui Caixa Padrão?", checked = viewModel.isStandardMeasurementBox) { viewModel.isStandardMeasurementBox = it }
-                    BooleanOption(label = "Lacres Padronizados?", checked = viewModel.isStandardizedSeals) { viewModel.isStandardizedSeals = it }
-                    BooleanOption(label = "Hidrômetro Acessível?", checked = viewModel.isHdAccessible) { viewModel.isHdAccessible = it }
+                    BooleanOption(label = "Possui Caixa Padrão?", selectedOption = viewModel.isStandardMeasurementBox) { viewModel.isStandardMeasurementBox = it }
+                    BooleanOption(label = "Lacres Padronizados?", selectedOption = viewModel.isStandardizedSeals) { viewModel.isStandardizedSeals = it }
+                    BooleanOption(label = "Hidrômetro Acessível?", selectedOption = viewModel.isHdAccessible) { viewModel.isHdAccessible = it }
                     
                     HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
 
-                    BooleanOption(label = "Medição via Hidrômetro?", checked = viewModel.possuiHidrometro) { viewModel.possuiHidrometro = it }
-                    if (viewModel.possuiHidrometro == true) {
+                    BooleanOption(label = "Medição via Hidrômetro?", selectedOption = viewModel.possuiHidrometro) { viewModel.possuiHidrometro = it }
+                    if (viewModel.possuiHidrometro == "Sim") {
                         Spacer(Modifier.height(12.dp))
                         AppTextField(value = viewModel.numeroHidrometro, onValueChange = { viewModel.numeroHidrometro = it }, label = "Nº de Série do Hidrômetro", leadingIcon = Icons.Default.Pin)
                     }
@@ -380,6 +390,20 @@ fun RecadastroFormScreen(
                     )
                     SpinnerOption(label = "Sexo", options = listOf("Masculino", "Feminino", "Outro"), selectedOption = activeData.sexo, onOptionSelected = { activeData.sexo = it })
                     
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 20.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+                    
+                    BooleanOption(label = "Apresentou Documentação?", selectedOption = activeData.apresentouDoc) { activeData.apresentouDoc = it }
+                    
+                    if (activeData.apresentouDoc == "Sim") {
+                        Spacer(Modifier.height(12.dp))
+                        AppTextField(
+                            value = activeData.qualDoc,
+                            onValueChange = { activeData.qualDoc = it },
+                            label = "Qual Documento?",
+                            leadingIcon = Icons.Default.Description
+                        )
+                    }
+
                     HorizontalDivider(modifier = Modifier.padding(vertical = 20.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
                     
                     Text("Canais de Notificações", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)

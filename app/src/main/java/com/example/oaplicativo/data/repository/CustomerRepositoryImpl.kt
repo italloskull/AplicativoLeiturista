@@ -93,12 +93,11 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
     }
 
     private fun combineAndEmit() {
-        scope.launch(Dispatchers.Default) { // OTIMIZAÇÃO: Processamento em pool paralelo (não Main Thread)
+        scope.launch(Dispatchers.Default) {
             refreshMutex.withLock {
                 val remoteKeys = remoteCustomers.mapNotNull { it.registrationNumber }.filter { it.isNotBlank() }.toSet()
                 val uniqueLocal = localPendingCustomers.filter { local ->
                     val key = local.registrationNumber
-                    // SÊNIOR FIX: Se a matrícula for vazia, nunca filtra. Se tiver, checa duplicidade.
                     if (key.isNullOrBlank()) true 
                     else !remoteKeys.contains(key)
                 }
@@ -111,14 +110,20 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
     override suspend fun addCustomer(customer: Customer) {
         withContext(Dispatchers.IO) {
             try {
-                Log.d("CustomerRepo", "Enviando para Supabase: ${customer.registrationNumber}")
-                // Usa ID como critério de conflito para permitir edições locais sincronizarem sem duplicar
+                // DEBUG SÊNIOR: Payload real sendo enviado
+                Log.d("SyncDebug", "Tentando sincronizar: ${customer.registrationNumber} (ID: ${customer.id})")
+                
+                // Forçamos o upsert baseado no ID (UUID)
                 client.postgrest["clientes"].upsert(customer) {
                     onConflict = "id"
                 }
+                
+                Log.d("SyncDebug", "✅ SUCESSO: Registro ${customer.id} sincronizado.")
                 fetchCustomers()
             } catch (e: Exception) {
-                Log.e("CustomerRepo", "FALHA NO SUPABASE: ${e.message}", e)
+                // CAPTURA DO MOTIVO REAL DO ERRO
+                Log.e("SyncDebug", "❌ FALHA NO SUPABASE: ${e.message}")
+                Log.e("SyncDebug", "DICA TÉCNICA: Verifique se os UUIDs e tipos booleanos batem com o DDL.")
                 throw e
             }
         }
@@ -144,10 +149,7 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
         }
     }
 
-    override suspend fun saveCustomerLocallyAndSync(customer: Customer) {
-        // Método preparado para centralização futura de salvamento + sync
-        // Mantido vázio para garantir zero quebras de build nesta fase de reorganização
-    }
+    override suspend fun saveCustomerLocallyAndSync(customer: Customer) { }
 
     companion object {
         @Volatile

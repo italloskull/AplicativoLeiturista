@@ -20,8 +20,8 @@ data class VisitasStats(
 class VisitasViewModel(
     application: Application,
     private val repository: StatsRepository = StatsRepositoryImpl.getInstance(application)
-) : com.example.oaplicativo.util.BaseViewModel<VisitasStats>() {
-    
+) : AndroidViewModel(application) {
+
     val stats: StateFlow<VisitasStats> = repository.stats
 
     init {
@@ -30,13 +30,7 @@ class VisitasViewModel(
 
     fun loadStats() {
         viewModelScope.launch {
-            emitLoading()
-            try {
-                repository.refreshStats()
-                emitSuccess(repository.stats.value)
-            } catch (e: Exception) {
-                emitError("Erro ao carregar estatísticas", e)
-            }
+            repository.refreshStats()
         }
     }
 }

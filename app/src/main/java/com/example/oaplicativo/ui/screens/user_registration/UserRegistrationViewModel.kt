@@ -9,6 +9,7 @@ import com.example.oaplicativo.model.Cidade
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class UserRegistrationViewModel(
@@ -16,48 +17,30 @@ class UserRegistrationViewModel(
 ) : ViewModel() {
 
     private val _registrationState = MutableStateFlow<RegistrationState>(RegistrationState.Idle)
-    val registrationState: StateFlow<RegistrationState> = _registrationState
+    val registrationState: StateFlow<RegistrationState> = _registrationState.asStateFlow()
 
     private val _cidades = MutableStateFlow<List<Cidade>>(emptyList())
-    val cidades: StateFlow<List<Cidade>> = _cidades
+    val cidades: StateFlow<List<Cidade>> = _cidades.asStateFlow()
 
     fun loadCidades() {
         viewModelScope.launch {
             try {
-                val lista = SupabaseClient.client.postgrest["cidades"]
-                    .select()
-                    .decodeList<Cidade>()
-                _cidades.value = lista
+                val list = SupabaseClient.client.postgrest["cidades"].select().decodeList<Cidade>()
+                _cidades.value = list
             } catch (e: Exception) {
-                // silencia, lista fica vazia
+                _cidades.value = emptyList()
             }
         }
     }
 
-    fun register(
-        fullName: String,
-        username: String,
-        email: String,
-        pass: String,
-        cargo: String,
-        cidadeId: String
-    ) {
+    fun register(name: String, email: String, pass: String, user: String, role: String, cidadeId: String) {
         viewModelScope.launch {
             _registrationState.value = RegistrationState.Loading
             try {
-                authRepository.registerUser(
-                    name = fullName,
-                    email = email,
-                    password = pass,
-                    username = username,
-                    role = cargo,
-                    cidadeId = cidadeId
-                )
+                authRepository.registerUser(name, email, pass, user, role, cidadeId)
                 _registrationState.value = RegistrationState.Success
             } catch (e: Exception) {
-                _registrationState.value = RegistrationState.Error(
-                    e.message ?: "Falha na comunicação com o servidor"
-                )
+                _registrationState.value = RegistrationState.Error(e.message ?: "Erro ao registrar")
             }
         }
     }
