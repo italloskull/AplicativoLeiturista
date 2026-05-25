@@ -28,6 +28,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.example.oaplicativo.util.CpfCnpjVisualTransformation
+import com.example.oaplicativo.util.DateVisualTransformation
+import com.example.oaplicativo.util.PhoneVisualTransformation
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.oaplicativo.ui.components.*
 import com.example.oaplicativo.ui.screens.recadastro.viewmodel.RecadastroViewModel
@@ -150,20 +153,27 @@ fun RecadastroFormScreen(
                         isLoading = isCapturingGpsOnSave,
                         onClick = {
                             scope.launch {
+                                // Se as coordenadas estão nulas, tentamos capturar no "vôo"
                                 if (viewModel.latitude == null || viewModel.longitude == null) {
                                     isCapturingGpsOnSave = true
                                     val fineLoc = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
                                     if (fineLoc == PackageManager.PERMISSION_GRANTED) {
+                                        // Tentativa rápida de captura (locationHelper deve ter um timeout interno)
                                         val loc = locationHelper.getCurrentLocation()
-                                        viewModel.latitude = loc?.latitude
-                                        viewModel.longitude = loc?.longitude
+                                        if (loc != null) {
+                                            viewModel.latitude = loc.latitude
+                                            viewModel.longitude = loc.longitude
+                                        }
                                     } else {
+                                        // Se não tem permissão, pedimos apenas uma vez
                                         locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
                                         isCapturingGpsOnSave = false
                                         return@launch
                                     }
                                     isCapturingGpsOnSave = false
                                 }
+                                
+                                // SALVA DE QUALQUER JEITO: Com ou sem GPS obtido na tentativa acima
                                 viewModel.saveRecadastro(
                                     onSuccess = onSaveSuccess,
                                     onError = { msg -> Toast.makeText(context, msg, Toast.LENGTH_LONG).show() }
@@ -307,43 +317,22 @@ fun RecadastroFormScreen(
             }
 
             item {
-                AppCard(title = "Responsável pelo Imóvel (Fatura)", icon = Icons.Default.Badge) {
-                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth().padding(bottom = 20.dp)) {
-                        val roles = listOf("Entrevistado", "Proprietario", "Locatario")
+                AppCard(title = "Responsável pela Fatura", icon = Icons.Default.Badge) {
+                    Text("O responsável é o:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 20.dp)) {
+                        val roles = listOf("Proprietário", "Locatário")
                         roles.forEachIndexed { index, role ->
                             SegmentedButton(
                                 shape = SegmentedButtonDefaults.itemShape(index = index, count = roles.size),
-                                onClick = { viewModel.currentRole = role },
-                                selected = viewModel.currentRole == role
+                                onClick = { viewModel.responsavelTipo = role },
+                                selected = viewModel.responsavelTipo == role
                             ) {
-                                val label = when(role) {
-                                    "Proprietario" -> "Proprietário"
-                                    "Locatario" -> "Locatário"
-                                    else -> role
-                                }
-                                Text(label, style = MaterialTheme.typography.labelSmall)
+                                Text(role, style = MaterialTheme.typography.labelSmall)
                             }
                         }
                     }
 
-                    if (viewModel.currentRole == "Entrevistado") {
-                        Text("Vínculo do Responsável:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 20.dp)) {
-                            val options = listOf("Proprietário", "Locatário")
-                            options.forEachIndexed { index, opt ->
-                                SegmentedButton(
-                                    shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
-                                    onClick = { viewModel.entrevistadoVinculo = opt },
-                                    selected = viewModel.entrevistadoVinculo == opt
-                                ) {
-                                    Text(opt, style = MaterialTheme.typography.labelSmall)
-                                }
-                            }
-                        }
-                    }
-
-                    val activeData = viewModel.activeRoleData
-                    val isLocked = viewModel.isCurrentRoleLocked
+                    val activeData = viewModel.responsavelData
 
                     val displayName = if (viewModel.isDataCensoredInitial) {
                         activeData.nomeCompleto.split(" ").firstOrNull() ?: ""
@@ -352,9 +341,9 @@ fun RecadastroFormScreen(
                     AppTextField(
                         value = displayName, 
                         onValueChange = { if (!viewModel.isDataCensoredInitial) activeData.nomeCompleto = it }, 
-                        label = "Nome Completo", 
+                        label = "Nome Completo do Responsável", 
                         leadingIcon = Icons.Default.Person, 
-                        enabled = !isLocked && !viewModel.isDataCensoredInitial
+                        enabled = !viewModel.isDataCensoredInitial
                     )
                     
                     Spacer(Modifier.height(12.dp))
@@ -364,10 +353,11 @@ fun RecadastroFormScreen(
                         value = activeData.cpfCnpj,
                         onValueChange = { if (it.length <= 14) activeData.cpfCnpj = it },
                         isCensoredInitial = viewModel.isDataCensoredInitial,
-                        censoredValue = PrivacyUtils.maskEmail(activeData.cpfCnpj),
+                        censoredValue = PrivacyUtils.maskCpfCnpj(activeData.cpfCnpj),
                         isAdmin = userProfile?.isAdmin ?: false,
                         leadingIcon = Icons.Default.Badge,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        visualTransformation = CpfCnpjVisualTransformation()
                     )
 
                     Spacer(Modifier.height(12.dp))
@@ -376,7 +366,7 @@ fun RecadastroFormScreen(
                         onValueChange = { activeData.nomeMae = it }, 
                         label = "Nome da Mãe", 
                         leadingIcon = Icons.Default.EscalatorWarning, 
-                        enabled = !isLocked && !viewModel.isDataCensoredInitial
+                        enabled = !viewModel.isDataCensoredInitial
                     )
                     Spacer(Modifier.height(12.dp))
                     AppTextField(
@@ -386,27 +376,12 @@ fun RecadastroFormScreen(
                         leadingIcon = Icons.Default.CalendarToday, 
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), 
                         visualTransformation = DateVisualTransformation(), 
-                        enabled = !isLocked && !viewModel.isDataCensoredInitial
+                        enabled = !viewModel.isDataCensoredInitial
                     )
                     SpinnerOption(label = "Sexo", options = listOf("Masculino", "Feminino", "Outro"), selectedOption = activeData.sexo, onOptionSelected = { activeData.sexo = it })
                     
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 20.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
-                    
-                    BooleanOption(label = "Apresentou Documentação?", selectedOption = activeData.apresentouDoc) { activeData.apresentouDoc = it }
-                    
-                    if (activeData.apresentouDoc == "Sim") {
-                        Spacer(Modifier.height(12.dp))
-                        AppTextField(
-                            value = activeData.qualDoc,
-                            onValueChange = { activeData.qualDoc = it },
-                            label = "Qual Documento?",
-                            leadingIcon = Icons.Default.Description
-                        )
-                    }
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 20.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
-                    
-                    Text("Canais de Notificações", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(20.dp))
+                    Text("Contatos do Responsável", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(12.dp))
                     
                     CensoredDataField(
@@ -430,8 +405,63 @@ fun RecadastroFormScreen(
                         censoredValue = PrivacyUtils.applyPartialPhoneCensorship(viewModel.celular1),
                         isAdmin = userProfile?.isAdmin ?: false,
                         leadingIcon = Icons.Default.PhoneIphone,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        visualTransformation = PhoneVisualTransformation()
                     )
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 20.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+                    
+                    BooleanOption(label = "Apresentou Documentação?", selectedOption = activeData.apresentouDoc) { activeData.apresentouDoc = it }
+                    
+                    if (activeData.apresentouDoc == "Sim") {
+                        Spacer(Modifier.height(12.dp))
+                        AppTextField(
+                            value = activeData.qualDoc,
+                            onValueChange = { activeData.qualDoc = it },
+                            label = "Qual Documento?",
+                            leadingIcon = Icons.Default.Description
+                        )
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 20.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+
+                    Text("Sobre a Entrevista:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(12.dp))
+
+                    BooleanOption(
+                        label = "O entrevistado é o próprio responsável?", 
+                        selectedOption = viewModel.entrevistadoEhOResponsavel
+                    ) { 
+                        viewModel.entrevistadoEhOResponsavel = it ?: "Sim"
+                    }
+
+                    if (viewModel.entrevistadoEhOResponsavel == "Não") {
+                        Spacer(Modifier.height(12.dp))
+                        AppTextField(
+                            value = viewModel.entrevistadoNomeApenas,
+                            onValueChange = { viewModel.entrevistadoNomeApenas = it },
+                            label = "Nome de quem atendeu (Entrevistado)",
+                            leadingIcon = Icons.Default.RecordVoiceOver
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        AppTextField(
+                            value = viewModel.entrevistadoEmailApenas,
+                            onValueChange = { viewModel.entrevistadoEmailApenas = it },
+                            label = "E-mail do Entrevistado (Opcional)",
+                            leadingIcon = Icons.Default.Email
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        AppTextField(
+                            value = viewModel.entrevistadoCelularApenas,
+                            onValueChange = { if (it.length <= 11) viewModel.entrevistadoCelularApenas = it },
+                            label = "WhatsApp do Entrevistado (Opcional)",
+                            leadingIcon = Icons.Default.PhoneIphone,
+                            visualTransformation = PhoneVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
+                        )
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 20.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
                 }
             }
 

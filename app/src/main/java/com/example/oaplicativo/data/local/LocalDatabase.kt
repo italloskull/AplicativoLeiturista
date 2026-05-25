@@ -171,9 +171,13 @@ class LocalDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
             put("cep", customer.cep)
             put("cidade", customer.cidade)
             put("pavimento_rua", customer.pavimentoRua)
+            put("pavimento_calcada", customer.pavimentoCalcada)
             put("fonte_abastecimento", customer.fonteAbastecimento)
+            put("local_instalacao", customer.localInstalacao)
+            put("acessibilidade", customer.acessibilidade)
             put("observacao", customer.observacao)
             put("grupo_sugerido", customer.grupoSugerido)
+            put("rota_sugerida", customer.rotaSugerida)
             put("isSynced", 0)
         }
         writableDatabase.insertWithOnConflict("customers", null, values, SQLiteDatabase.CONFLICT_REPLACE)
@@ -251,10 +255,14 @@ class LocalDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
                 uf = cursor.getString(cursor.getColumnIndexOrThrow("uf")),
                 cep = cursor.getString(cursor.getColumnIndexOrThrow("cep")),
                 cidade = cursor.getString(cursor.getColumnIndexOrThrow("cidade")),
-                pavimentoRua = cursor.getString(cursor.getColumnIndexOrThrow("pavimento_rua")),
-                fonteAbastecimento = cursor.getString(cursor.getColumnIndexOrThrow("fonte_abastecimento")),
+                pavimentoRua = getStrOrNull("pavimento_rua"),
+                pavimentoCalcada = getStrOrNull("pavimento_calcada"),
+                fonteAbastecimento = getStrOrNull("fonte_abastecimento"),
+                localInstalacao = getStrOrNull("local_instalacao"),
+                acessibilidade = getStrOrNull("acessibilidade"),
                 observacao = cursor.getString(cursor.getColumnIndexOrThrow("observacao")),
                 grupoSugerido = cursor.getString(cursor.getColumnIndexOrThrow("grupo_sugerido")),
+                rotaSugerida = getStrOrNull("rota_sugerida"),
                 isSynced = false
             )
             list.add(Pair(id, customer))
@@ -304,8 +312,8 @@ class LocalDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
     }
 
     companion object {
-        private const val DATABASE_NAME = "sanitation_local_v15.db"
-        private const val DATABASE_VERSION = 27
+        private const val DATABASE_NAME = "sanitation_final_v1.db" // Nome definitivo para selar a estrutura
+        private const val DATABASE_VERSION = 30
 
         private const val CREATE_TABLE_CUSTOMERS = """
             CREATE TABLE customers (
@@ -368,8 +376,10 @@ class LocalDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
                 existe_rede_agua TEXT,
                 observacao TEXT,
                 grupo_sugerido TEXT,
+                rota_sugerida TEXT,
                 isSynced INTEGER DEFAULT 0,
                 numero_hidrometro TEXT,
+                pavimento_calcada TEXT,
                 local_instalacao TEXT,
                 acessibilidade TEXT,
                 usa_agua_vizinho TEXT,

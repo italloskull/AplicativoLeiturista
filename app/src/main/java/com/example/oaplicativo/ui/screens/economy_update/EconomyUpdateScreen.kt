@@ -220,15 +220,17 @@ fun EconomyUpdateScreen(
                             longitude = loc?.longitude
                         }
                         
+                        // LÓGICA "INDSTRUTÍVEL": Todos os campos são opcionais.
+                        // Aplicamos trim() e tratamos nulos/vazios.
                         viewModel.saveEconomyUpdate(
                             EconomyUpdate(
                                 id = existingItem?.id,
-                                hdNumber = hdNumber.trim(),
-                                buildingName = buildingName.trim(),
-                                constructionCompany = constructionCompany.trim(),
+                                hdNumber = hdNumber.trim().ifBlank { "Sem HD" }, // Único campo que precisa de um valor base para o Upsert
+                                buildingName = buildingName.trim().ifBlank { "Sem Nome" },
+                                constructionCompany = constructionCompany.trim().ifBlank { " " },
                                 economiesCount = economiesCount.toIntOrNull() ?: 0,
                                 floorsCount = floorsCount.toIntOrNull() ?: 0,
-                                electricityMeterNumber = electricityMeter.trim(),
+                                electricityMeterNumber = electricityMeter.trim().ifBlank { " " },
                                 latitude = latitude,
                                 longitude = longitude
                             )
@@ -236,7 +238,7 @@ fun EconomyUpdateScreen(
                     }
                 },
                 isLoading = state is EconomyUpdateState.Loading,
-                enabled = hdNumber.isNotEmpty() && buildingName.isNotEmpty()
+                enabled = true // SÊNIOR FIX: Nada bloqueia o salvamento
             )
             
             Spacer(modifier = Modifier.height(32.dp))

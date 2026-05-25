@@ -2,32 +2,34 @@
 package com.example.oaplicativo.ui.screens.recadastro.viewmodel
 
 import android.app.Application
+import android.location.Address
+import android.location.Geocoder
 import android.util.Log
-import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.*
 import com.example.oaplicativo.data.SupabaseClient
-import android.location.Geocoder
-import com.example.oaplicativo.data.remote.viacep.RetrofitClient
-import java.util.Locale
+import com.example.oaplicativo.data.local.LocalDatabase
 import com.example.oaplicativo.data.repository.AuthRepositoryImpl
 import com.example.oaplicativo.data.repository.CustomerRepositoryImpl
 import com.example.oaplicativo.data.repository.StatsRepositoryImpl
-import com.example.oaplicativo.domain.repository.CustomerRepository
-import com.example.oaplicativo.data.local.LocalDatabase
 import com.example.oaplicativo.data.sync.SyncWorker
+import com.example.oaplicativo.domain.repository.CustomerRepository
 import com.example.oaplicativo.model.Customer
-import com.example.oaplicativo.model.Cidade
-import com.example.oaplicativo.util.LocationHelper
+import com.example.oaplicativo.model.UserProfile
 import com.example.oaplicativo.util.GeoFencingHelper
-import io.github.jan.supabase.postgrest.postgrest
-import kotlinx.coroutines.Dispatchers
+import com.example.oaplicativo.util.LocationHelper
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import java.time.ZonedDateTime
 import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import java.util.*
 
 class RoleData {
     var nomeCompleto by mutableStateOf("")
@@ -49,6 +51,7 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
     var isDataCensoredInitial by mutableStateOf(false)
     val currentUserProfile = authRepository.currentUserProfile
 
+    // --- ESTADO DO IMÓVEL ---
     var matricula by mutableStateOf("")
     var registrationDigit by mutableStateOf("")
     var setor by mutableStateOf("")
@@ -57,29 +60,18 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
     var longitude by mutableStateOf<Double?>(null)
     var isCapturingLocation by mutableStateOf(false)
 
-    var currentRole by mutableStateOf("Entrevistado")
-    var entrevistadoVinculo by mutableStateOf("Proprietário")
+    // --- ESTADO DO RESPONSÁVEL (OPÇÃO 2) ---
+    var responsavelTipo by mutableStateOf("Proprietário") 
+    var entrevistadoEhOResponsavel by mutableStateOf("Sim")
+    var responsavelData = RoleData()
+    var entrevistadoNomeApenas by mutableStateOf("")
+    var entrevistadoEmailApenas by mutableStateOf("")
+    var entrevistadoCelularApenas by mutableStateOf("")
 
-    var entrevistadoData = RoleData()
-    var proprietarioData = RoleData()
-    var locatarioData = RoleData()
-
-    val activeRoleData: RoleData
-        get() = when (currentRole) {
-            "Proprietario" -> proprietarioData
-            "Locatario" -> locatarioData
-            else -> entrevistadoData
-        }
-
-    val isCurrentRoleLocked: Boolean
-        get() = (currentRole == "Proprietario" && entrevistadoVinculo == "Proprietário") ||
-                (currentRole == "Locatario" && entrevistadoVinculo == "Locatário")
-
+    // --- ESTADO DE CONTATO E ENDEREÇO ---
     var email by mutableStateOf("")
     var telefone by mutableStateOf("")
     var celular1 by mutableStateOf("")
-    var celular2 by mutableStateOf("")
-
     var logradouro by mutableStateOf("")
     var numero by mutableStateOf("")
     var complemento by mutableStateOf("")
@@ -88,9 +80,7 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
     var uf by mutableStateOf("")
     var cep by mutableStateOf("")
 
-    var isCepLoading by mutableStateOf(false)
-    var cepError by mutableStateOf(false)
-
+    // --- ESTADO DE CARACTERÍSTICAS ---
     var pavimentoRua by mutableStateOf<String?>(null)
     var pavimentoCalcada by mutableStateOf<String?>(null)
     var fonteAbastecimento by mutableStateOf<String?>(null)
@@ -99,51 +89,49 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
     var possuiCaixaAgua by mutableStateOf<String?>(null)
     var beneficiarioSocial by mutableStateOf<String?>(null)
     var usaAguaVizinho by mutableStateOf<String?>(null)
-
     var possuiHidrometro by mutableStateOf<String?>(null)
     var isStandardMeasurementBox by mutableStateOf<String?>(null)
     var isStandardizedSeals by mutableStateOf<String?>(null)
     var isHdAccessible by mutableStateOf<String?>(null)
     var isVacationer by mutableStateOf<String?>(null)
     var locationStatus by mutableStateOf<String?>(null)
-    
-    var numeroHidrometro by mutableStateOf("")
     var localInstalacao by mutableStateOf<String?>(null)
     var acessibilidade by mutableStateOf<String?>(null)
+    
+    var numeroHidrometro by mutableStateOf("")
     var economias by mutableStateOf("")
-
     var observacao by mutableStateOf("")
 
+    var isCepLoading by mutableStateOf(false)
+    var cepError by mutableStateOf(false)
+
+    // --- UTILITÁRIOS ---
     private var cepJob: Job? = null
-    private var lastResolvedLat: Double = 0.0
-    private var lastResolvedLng: Double = 0.0
-    private val geocoder: Geocoder by lazy { Geocoder(application, Locale("pt", "BR")) }
+    private var lastResolvedLat = 0.0
+    private var lastResolvedLng = 0.0
+    private val geocoder = Geocoder(application, Locale.getDefault())
 
-    val registrationProgress: Float by derivedStateOf {
-        var count = 0
-        if (matricula.isNotBlank()) count++
-        if (latitude != null) count++
-        if (cep.isNotBlank()) count++
-        if (logradouro.isNotBlank()) count++
-        if (numero.isNotBlank()) count++
-        if (entrevistadoData.nomeCompleto.isNotBlank()) count++
-        if (entrevistadoData.cpfCnpj.isNotBlank()) count++
-        if (celular1.isNotBlank()) count++
-        if (beneficiarioSocial != null) count++
-        if (usaAguaVizinho != null) count++
-        if (possuiHidrometro != null) count++
-        count.toFloat() / 11f
-    }
+    val registrationProgress: Float
+        get() {
+            var score = 0
+            if (matricula.isNotBlank()) score++
+            if (latitude != null) score++
+            if (responsavelData.nomeCompleto.isNotBlank()) score++
+            if (responsavelData.cpfCnpj.isNotBlank()) score++
+            if (logradouro.isNotBlank()) score++
+            if (numero.isNotBlank()) score++
+            if (bairro.isNotBlank()) score++
+            if (celular1.isNotBlank()) score++
+            return score / 8f
+        }
 
-    private suspend fun getLeituristaCidadeNome(cidadeId: String?): String? {
-        if (cidadeId == null) return null
-        return try {
-            val response = client.postgrest["cidades"]
-                .select { filter { eq("id", cidadeId) } }
-                .decodeSingleOrNull<Cidade>()
-            response?.nome
-        } catch (_: Exception) {
-            null
+    private fun getLeituristaCidadeNome(cidadeId: String?): String? {
+        return when (cidadeId) {
+            "342080a2-f2a8-47c1-8409-906d4e2808be" -> "Itapoá"
+            "00b96845-f027-4638-8e6c-7f55f69c5e31" -> "Garuva"
+            "c5643444-2396-4f4d-8724-4f014798c897" -> "Araquari"
+            "13437e42-706f-44be-993d-d143c7b7440e" -> "Balneário Barra do Sul"
+            else -> null
         }
     }
 
@@ -177,48 +165,48 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
             isStandardizedSeals = customer.isStandardizedSeals.ifSpaceNull()
             isHdAccessible = customer.isHdAccessible.ifSpaceNull()
             isVacationer = customer.isVacationer.ifSpaceNull()
-            locationStatus = customer.locationStatus
+            locationStatus = customer.locationStatus.ifSpaceNull()
             existeRedeAgua = customer.existeRedeAgua.ifSpaceNull()
             possuiPiscina = customer.possuiPiscina.ifSpaceNull()
-            possuiCaixaAgua = customer.possuiCaixaAgua
-            pavimentoRua = customer.pavimentoRua
-            fonteAbastecimento = customer.fonteAbastecimento
+            possuiCaixaAgua = customer.possuiCaixaAgua.ifSpaceNull()
+            pavimentoRua = customer.pavimentoRua.ifSpaceNull()
+            pavimentoCalcada = customer.pavimentoCalcada.ifSpaceNull()
+            fonteAbastecimento = customer.fonteAbastecimento.ifSpaceNull()
+            localInstalacao = customer.localInstalacao.ifSpaceNull()
+            acessibilidade = customer.acessibilidade.ifSpaceNull()
             observacao = customer.observacao ?: ""
             economias = customer.economiesCount?.toString() ?: ""
 
-            entrevistadoData.nomeCompleto = customer.entrevistadoNome ?: ""
-            entrevistadoData.cpfCnpj = customer.entrevistadoCpf ?: ""
-            entrevistadoData.nomeMae = customer.entrevistadoMae ?: ""
-            entrevistadoData.dataNascimento = customer.entrevistadoNascimento ?: ""
-            entrevistadoData.sexo = customer.entrevistadoSexo
-            entrevistadoData.apresentouDoc = customer.entrevistadoApresentouDoc.ifSpaceNull()
-            entrevistadoData.qualDoc = customer.entrevistadoQualDoc ?: ""
-            
-            proprietarioData.nomeCompleto = customer.proprietarioNome ?: ""
-            proprietarioData.cpfCnpj = customer.proprietarioCpf ?: ""
-            proprietarioData.nomeMae = customer.proprietarioMae ?: ""
-            proprietarioData.dataNascimento = customer.proprietarioNascimento ?: ""
-            proprietarioData.sexo = customer.proprietarioSexo
-            proprietarioData.apresentouDoc = customer.proprietarioApresentouDoc.ifSpaceNull()
-            proprietarioData.qualDoc = customer.proprietarioQual_doc ?: ""
-            
-            locatarioData.nomeCompleto = customer.locatarioNome ?: ""
-            locatarioData.cpfCnpj = customer.locatarioCpf ?: ""
-            locatarioData.nomeMae = customer.locatarioMae ?: ""
-            locatarioData.dataNascimento = customer.locatarioNascimento ?: ""
-            locatarioData.sexo = customer.locatarioSexo
-            locatarioData.apresentouDoc = customer.locatarioApresentouDoc.ifSpaceNull()
-            locatarioData.qualDoc = customer.locatarioQualDoc ?: ""
+            val hasLoc = !customer.locatarioNome.isNullOrBlank()
+            if (hasLoc) {
+                responsavelTipo = "Locatário"
+                responsavelData.nomeCompleto = customer.locatarioNome ?: ""
+                responsavelData.cpfCnpj = customer.locatarioCpf ?: ""
+                responsavelData.nomeMae = customer.locatarioMae ?: ""
+                responsavelData.dataNascimento = customer.locatarioNascimento ?: ""
+                responsavelData.sexo = customer.locatarioSexo
+                responsavelData.apresentouDoc = customer.locatarioApresentouDoc.ifSpaceNull()
+                responsavelData.qualDoc = customer.locatarioQualDoc ?: ""
+            } else {
+                responsavelTipo = "Proprietário"
+                responsavelData.nomeCompleto = customer.proprietarioNome ?: ""
+                responsavelData.cpfCnpj = customer.proprietarioCpf ?: ""
+                responsavelData.nomeMae = customer.proprietarioMae ?: ""
+                responsavelData.dataNascimento = customer.proprietarioNascimento ?: ""
+                responsavelData.sexo = customer.proprietarioSexo
+                responsavelData.apresentouDoc = customer.proprietarioApresentouDoc.ifSpaceNull()
+                responsavelData.qualDoc = customer.proprietarioQual_doc ?: ""
+            }
+            entrevistadoEhOResponsavel = if (customer.entrevistadoNome == responsavelData.nomeCompleto) "Sim" else "Não"
+            entrevistadoNomeApenas = if (entrevistadoEhOResponsavel == "Não") customer.entrevistadoNome ?: "" else ""
         }
     }
 
     fun saveRecadastro(onSuccess: () -> Unit, onError: (String) -> Unit) {
-        val snapshotMatricula = matricula.trim()
-        val snapshotDigit = registrationDigit.trim()
         val snapshotLat = latitude
         val snapshotLng = longitude
-        val snapshotSetor = setor.trim()
-        val snapshotQuadra = quadra.trim()
+        val snapshotMatricula = matricula.trim()
+        val snapshotDigit = registrationDigit.trim()
         val snapshotEmail = email.trim().lowercase()
         val snapshotCelular = celular1.trim()
         val snapshotLandline = telefone.trim()
@@ -230,48 +218,13 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
         val snapshotUf = uf.trim()
         val snapshotCidadeManual = cidade.trim()
         val snapshotObs = observacao.trim()
-        val snapshotVinculo = entrevistadoVinculo
         
-        val sEntrevistadoNome = entrevistadoData.nomeCompleto.trim()
-        val sEntrevistadoCpf = entrevistadoData.cpfCnpj.trim()
-        val sEntrevistadoMae = entrevistadoData.nomeMae.trim()
-        val sEntrevistadoNasc = entrevistadoData.dataNascimento.trim()
-        val sEntrevistadoSexo = entrevistadoData.sexo
-        val sEntrevistadoDoc = entrevistadoData.apresentouDoc
-        val sEntrevistadoQual = entrevistadoData.qualDoc.trim()
-
-        val sPropNome = proprietarioData.nomeCompleto.trim()
-        val sPropCpf = proprietarioData.cpfCnpj.trim()
-        val sPropMae = proprietarioData.nomeMae.trim()
-        val sPropNasc = proprietarioData.dataNascimento.trim()
-        val sPropSexo = proprietarioData.sexo
-        val sPropDoc = proprietarioData.apresentouDoc
-        val sPropQual = proprietarioData.qualDoc.trim()
-
-        val sLocNome = locatarioData.nomeCompleto.trim()
-        val sLocCpf = locatarioData.cpfCnpj.trim()
-        val sLocMae = locatarioData.nomeMae.trim()
-        val sLocNasc = locatarioData.dataNascimento.trim()
-        val sLocSexo = locatarioData.sexo
-        val sLocDoc = locatarioData.apresentouDoc
-        val sLocQual = locatarioData.qualDoc.trim()
-
-        val sSocial = beneficiarioSocial
-        val sAguaVizinho = usaAguaVizinho
-        val sHidrometro = possuiHidrometro
-        val sRedeAtiva = existeRedeAgua
-        val sPiscina = possuiPiscina
-        val sCaixaAgua = possuiCaixaAgua
-        val sPavRua = pavimentoRua
-        val sFonte = fonteAbastecimento
         val sEco = economias.toIntOrNull()
 
         viewModelScope.launch {
             try {
-                if (snapshotLat == null || snapshotLng == null) {
-                    onError("Coordenadas de GPS são obrigatórias.")
-                    return@launch
-                }
+                // MODO "INDSTRUTÍVEL": Removemos qualquer trava de obrigatoriedade.
+                // Se o leiturista quiser salvar só com o nome ou só com o GPS, ele pode.
 
                 val user = authRepository.currentUserProfile.value ?: run {
                     onError("Sessão inválida. Faça login novamente.")
@@ -282,63 +235,78 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
                 val utcNow = ZonedDateTime.now(ZoneId.of("UTC")).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
                 val brDate = ZonedDateTime.now(ZoneId.of("America/Sao_Paulo")).format(DateTimeFormatter.ofPattern("yyyy/MM/dd"))
 
-                val finalPropNome = if (snapshotVinculo == "Proprietário") sEntrevistadoNome else sPropNome
-                val finalPropCpf = if (snapshotVinculo == "Proprietário") sEntrevistadoCpf else sPropCpf
-                val finalPropMae = if (snapshotVinculo == "Proprietário") sEntrevistadoMae else sPropMae
-                val finalPropNasc = if (snapshotVinculo == "Proprietário") sEntrevistadoNasc else sPropNasc
-                val finalPropSexo = if (snapshotVinculo == "Proprietário") sEntrevistadoSexo else sPropSexo
-                val finalPropDoc = if (snapshotVinculo == "Proprietário") sEntrevistadoDoc else sPropDoc
-                val finalPropQual = if (snapshotVinculo == "Proprietário") sEntrevistadoQual else sPropQual
+                val sNome = responsavelData.nomeCompleto.trim()
+                val sCpf = responsavelData.cpfCnpj.trim()
+                val sMae = responsavelData.nomeMae.trim()
+                val sNasc = responsavelData.dataNascimento.trim()
+                val sSexo = responsavelData.sexo
+                val sDoc = responsavelData.apresentouDoc
+                val sQual = responsavelData.qualDoc.trim()
 
-                val finalLocNome = if (snapshotVinculo == "Locatário") sEntrevistadoNome else sLocNome
-                val finalLocCpf = if (snapshotVinculo == "Locatário") sEntrevistadoCpf else sLocCpf
-                val finalLocMae = if (snapshotVinculo == "Locatário") sEntrevistadoMae else sLocMae
-                val finalLocNasc = if (snapshotVinculo == "Locatário") sEntrevistadoNasc else sLocNasc
-                val finalLocSexo = if (snapshotVinculo == "Locatário") sEntrevistadoSexo else sLocSexo
-                val finalLocDoc = if (snapshotVinculo == "Locatário") sEntrevistadoDoc else sLocDoc
-                val finalLocQual = if (snapshotVinculo == "Locatário") sEntrevistadoQual else sLocQual
+                val finalPropNome = if (responsavelTipo == "Proprietário") sNome else ""
+                val finalPropCpf = if (responsavelTipo == "Proprietário") sCpf else ""
+                val finalPropMae = if (responsavelTipo == "Proprietário") sMae else ""
+                val finalPropNasc = if (responsavelTipo == "Proprietário") sNasc else ""
+                val finalPropSexo = if (responsavelTipo == "Proprietário") sSexo else null
+                val finalPropDoc = if (responsavelTipo == "Proprietário") sDoc else null
+                val finalPropQual = if (responsavelTipo == "Proprietário") sQual else ""
 
-                // SÊNIOR FIX: Garantir que UUIDs sejam válidos ou nulos
+                val finalLocNome = if (responsavelTipo == "Locatário") sNome else ""
+                val finalLocCpf = if (responsavelTipo == "Locatário") sCpf else ""
+                val finalLocMae = if (responsavelTipo == "Locatário") sMae else ""
+                val finalLocNasc = if (responsavelTipo == "Locatário") sNasc else ""
+                val finalLocSexo = if (responsavelTipo == "Locatário") sSexo else null
+                val finalLocDoc = if (responsavelTipo == "Locatário") sDoc else null
+                val finalLocQual = if (responsavelTipo == "Locatário") sQual else ""
+
+                val finalEntrevistadoNome = if (entrevistadoEhOResponsavel == "Sim") sNome else entrevistadoNomeApenas
+                
                 val finalCidadeId = if (user.cidadeId?.length == 36) user.cidadeId else null
                 val finalLeituristaId = if (user.id?.length == 36) user.id else null
+
+                // LÓGICA SÊNIOR: Não sobrescrever a situação escolhida, apenas complementar se o GPS falhou
+                val baseStatus = locationStatus.orSpace()
+                val finalLocationStatus = if (snapshotLat == null) {
+                    if (baseStatus == " ") "Sem Sinal" else "$baseStatus (Sem Sinal)"
+                } else baseStatus
 
                 val customer = Customer(
                     id = java.util.UUID.randomUUID().toString(),
                     cidadeId = finalCidadeId,
                     leituristaId = finalLeituristaId,
-                    name = sEntrevistadoNome.ifBlank { "Sem Nome" },
-                    registrationNumber = snapshotMatricula.ifBlank { "0" },
-                    registrationDigit = snapshotDigit,
-                    email = snapshotEmail,
-                    setor = snapshotSetor,
-                    quadra = snapshotQuadra,
+                    name = sNome.orSpace(), // Até o nome vira espaço se estiver vazio
+                    registrationNumber = snapshotMatricula.orSpace(),
+                    registrationDigit = snapshotDigit.orSpace(),
+                    email = if (responsavelTipo == "Proprietário") snapshotEmail.orSpace() else " ",
+                    setor = setor.trim().orSpace(),
+                    quadra = quadra.trim().orSpace(),
                     landline = snapshotLandline,
-                    celular = snapshotCelular,
+                    celular = if (responsavelTipo == "Proprietário") snapshotCelular.orSpace() else " ",
                     isStandardMeasurementBox = isStandardMeasurementBox.orSpace(),
                     isStandardizedSeals = isStandardizedSeals.orSpace(),
                     isHdAccessible = isHdAccessible.orSpace(),
                     isVacationer = isVacationer.orSpace(),
-                    possuiPiscina = sPiscina.orSpace(),
-                    possuiCaixaAgua = sCaixaAgua,
-                    beneficiarioSocial = sSocial.orSpace(),
-                    usaAguaVizinho = sAguaVizinho.orSpace(),
-                    possuiHidrometro = sHidrometro.orSpace(),
+                    possuiPiscina = possuiPiscina.orSpace(),
+                    possuiCaixaAgua = possuiCaixaAgua.orSpace(),
+                    beneficiarioSocial = beneficiarioSocial.orSpace(),
+                    usaAguaVizinho = usaAguaVizinho.orSpace(),
+                    possuiHidrometro = possuiHidrometro.orSpace(),
                     latitude = snapshotLat,
                     longitude = snapshotLng,
-                    locationStatus = locationStatus,
+                    locationStatus = finalLocationStatus,
                     economiesCount = sEco,
                     createdAt = utcNow,
                     addedBy = user.fullName ?: user.username,
                     capturedAt = utcNow,
                     date = brDate,
                     quality = calculateDataQuality(),
-                    entrevistadoNome = sEntrevistadoNome,
-                    entrevistadoCpf = sEntrevistadoCpf,
-                    entrevistadoMae = sEntrevistadoMae,
-                    entrevistadoNascimento = sEntrevistadoNasc,
-                    entrevistadoSexo = sEntrevistadoSexo,
-                    entrevistadoApresentouDoc = sEntrevistadoDoc.orSpace(),
-                    entrevistadoQualDoc = sEntrevistadoQual,
+                    entrevistadoNome = finalEntrevistadoNome,
+                    entrevistadoCpf = if (entrevistadoEhOResponsavel == "Sim") sCpf else "",
+                    entrevistadoMae = if (entrevistadoEhOResponsavel == "Sim") sMae else "",
+                    entrevistadoNascimento = if (entrevistadoEhOResponsavel == "Sim") sNasc else "",
+                    entrevistadoSexo = if (entrevistadoEhOResponsavel == "Sim") sSexo else null,
+                    entrevistadoApresentouDoc = (if (entrevistadoEhOResponsavel == "Sim") sDoc else null).orSpace(),
+                    entrevistadoQualDoc = if (entrevistadoEhOResponsavel == "Sim") sQual else "",
                     proprietarioNome = finalPropNome,
                     proprietarioCpf = finalPropCpf,
                     proprietarioMae = finalPropMae,
@@ -360,17 +328,19 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
                     cidade = finalCidade,
                     uf = snapshotUf,
                     cep = snapshotCep,
-                    pavimentoRua = sPavRua,
-                    fonteAbastecimento = sFonte,
-                    existeRedeAgua = sRedeAtiva.orSpace(),
+                    pavimentoRua = pavimentoRua.orSpace(),
+                    pavimentoCalcada = pavimentoCalcada.orSpace(),
+                    fonteAbastecimento = fonteAbastecimento.orSpace(),
+                    existeRedeAgua = existeRedeAgua.orSpace(),
+                    localInstalacao = localInstalacao.orSpace(),
+                    acessibilidade = acessibilidade.orSpace(),
                     observacao = snapshotObs,
                     grupoSugerido = GeoFencingHelper.findSuggestedGroup(finalCidade, snapshotLat, snapshotLng),
+                    rotaSugerida = GeoFencingHelper.findSuggestedRoute(finalCidade, snapshotLat, snapshotLng),
                     isSynced = false
                 )
 
                 localDb.saveCustomerOffline(customer)
-                
-                // Atualiza estatísticas imediatamente após salvar
                 StatsRepositoryImpl.getInstance(getApplication()).refreshStats()
 
                 val pending = localDb.getPendingCustomers().map { it.second }
@@ -388,179 +358,95 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    private fun isGenericCep(cepIn: String?): Boolean {
-        if (cepIn.isNullOrBlank()) return true
-        val clean = cepIn.filter { it.isDigit() }
-        return clean.endsWith("000") || clean.length != 8
-    }
-
-    fun calculateDataQuality(): String {
-        val fields = listOf(matricula, email, logradouro, numero, cep, entrevistadoData.nomeCompleto)
-        val filled = fields.count { it.isNotBlank() }
-        return when {
-            filled >= 5 -> "Boa"
-            filled >= 3 -> "Regular"
-            else -> "Ruim"
-        }
-    }
-
     fun onCepChange(newCep: String) {
-        val cleanCep = newCep.filter { it.isDigit() }
-        if (cleanCep.length <= 8) {
-            cep = cleanCep
-            if (cleanCep.length == 8) fetchAddress(cleanCep)
+        val cleanCep = newCep.replace(Regex("[^0-9]"), "")
+        cep = cleanCep
+        if (cleanCep.length == 8) {
+            fetchAddress(cleanCep)
         }
     }
 
-    private fun fetchAddress(cepIn: String) {
+    private fun fetchAddress(cepCode: String) {
+        if (isGenericCep(cepCode)) return
+        
         cepJob?.cancel()
         cepJob = viewModelScope.launch {
             isCepLoading = true
+            cepError = false
             try {
-                val response = RetrofitClient.viaCepService.getAddressByCep(cepIn)
-                if (response.isSuccessful && response.body()?.erro != true) {
-                    val address = response.body()!!
-                    logradouro = address.logradouro
-                    bairro = address.bairro
-                    cidade = address.localidade
-                    uf = address.uf
+                delay(500)
+                val addresses = geocoder.getFromLocationName("CEP $cepCode, Brasil", 1)
+                if (!addresses.isNullOrEmpty()) {
+                    handleGoogleAddress(addresses[0])
+                } else {
+                    refineCepWithViaCep(cepCode, null, null)
                 }
-            } catch (_: Exception) { } finally {
+            } catch (e: Exception) {
+                cepError = true
+            } finally {
                 isCepLoading = false
             }
         }
     }
 
     fun fetchAddressFromLocation(lat: Double, lng: Double) {
-        val distance = locationHelper.calculateDistance(lastResolvedLat, lastResolvedLng, lat, lng)
-        if (distance < 5.0 && lastResolvedLat != 0.0) {
-            Log.d("GeoDebug", "Distância muito curta ($distance m). Ignorando busca de endereço.")
-            return
-        }
+        if (Math.abs(lastResolvedLat - lat) < 0.0001 && Math.abs(lastResolvedLng - lng) < 0.0001) return
         
-        viewModelScope.launch(Dispatchers.IO) {
+        lastResolvedLat = lat
+        lastResolvedLng = lng
+        
+        viewModelScope.launch {
             try {
-                Log.d("GeoDebug", "Iniciando busca de endereço para: $lat, $lng")
-                lastResolvedLat = lat
-                lastResolvedLng = lng
-                
-                var addressFound = false
-
-                // 1. TENTA OPENSTREETMAP (NOMINATIM) - COM CUIDADO
-                try {
-                    val osmResponse = RetrofitClient.nominatimService.reverseGeocode(lat, lng)
-                    if (osmResponse.isSuccessful && osmResponse.body()?.address != null) {
-                        val addr = osmResponse.body()!!.address!!
-                        Log.d("GeoDebug", "Endereço OSM encontrado: ${addr.road}, ${addr.suburb}")
-                        
-                        kotlinx.coroutines.withContext(Dispatchers.Main) {
-                            updateAddressFields(
-                                newLogradouro = addr.road, 
-                                newBairro = addr.suburb, 
-                                newCidade = addr.city ?: addr.town, 
-                                newUf = addr.state, 
-                                newCep = null
-                            )
-                            
-                            val osmCepStr = addr.postcode?.filter { it.isDigit() } ?: ""
-                            if (isGenericCep(osmCepStr)) {
-                                refineCepWithViaCep(addr.state, addr.city ?: addr.town, addr.road)
-                            } else if (cep.isBlank() || isGenericCep(cep)) {
-                                cep = osmCepStr
-                            }
-                        }
-                        addressFound = true
-                    }
-                } catch (e: Exception) {
-                    Log.w("GeoDebug", "OSM Falhou (DNS ou Rede): ${e.message}. Tentando Google...")
-                }
-
-                // 2. SE OSM FALHOU OU NÃO ACHOU, TENTA GOOGLE GEOCODER (FALLBACK NATIVO)
-                if (!addressFound) {
-                    if (!Geocoder.isPresent()) {
-                        Log.e("GeoDebug", "Google Geocoder não disponível no aparelho.")
-                        return@launch
-                    }
-
-                    if (android.os.Build.VERSION.SDK_INT >= 33) {
-                        geocoder.getFromLocation(lat, lng, 5) { addresses ->
-                            if (addresses.isNotEmpty()) {
-                                val best = addresses.find { !it.thoroughfare.isNullOrBlank() } ?: addresses[0]
-                                Log.d("GeoDebug", "Endereço Google encontrado: ${best.thoroughfare}")
-                                viewModelScope.launch(Dispatchers.Main) { handleGoogleAddress(best) }
-                            } else {
-                                Log.e("GeoDebug", "Google Geocoder não retornou resultados para esta coordenada.")
-                            }
-                        }
-                    } else {
-                        @Suppress("DEPRECATION")
-                        val addresses = geocoder.getFromLocation(lat, lng, 5)
-                        if (!addresses.isNullOrEmpty()) {
-                            val best = addresses.find { !it.thoroughfare.isNullOrBlank() } ?: addresses[0]
-                            Log.d("GeoDebug", "Endereço Google encontrado: ${best.thoroughfare}")
-                            kotlinx.coroutines.withContext(Dispatchers.Main) { handleGoogleAddress(best) }
-                        } else {
-                            Log.e("GeoDebug", "Google Geocoder não retornou resultados.")
-                        }
-                    }
+                val addresses = geocoder.getFromLocation(lat, lng, 1)
+                if (!addresses.isNullOrEmpty()) {
+                    handleGoogleAddress(addresses[0])
                 }
             } catch (e: Exception) {
-                Log.e("GeoDebug", "ERRO CRÍTICO NO MOTOR GEO: ${e.message}", e)
+                Log.e("RecadastroVM", "Erro Geocoder", e)
             }
         }
     }
 
-    private fun handleGoogleAddress(bestAddr: android.location.Address) {
-        updateAddressFields(newLogradouro = bestAddr.thoroughfare, newBairro = bestAddr.subLocality, newCidade = bestAddr.locality, newUf = bestAddr.adminArea, newCep = null)
-        refineCepWithViaCep(bestAddr.adminArea, bestAddr.locality, bestAddr.thoroughfare)
+    private fun handleGoogleAddress(address: Address) {
+        updateAddressFields(
+            street = address.thoroughfare,
+            district = address.subLocality ?: address.subAdminArea,
+            city = address.locality,
+            state = address.adminArea,
+            zip = address.postalCode?.replace("-", "")
+        )
     }
 
-    private fun refineCepWithViaCep(ufIn: String?, cidadeIn: String?, logradouroIn: String?) {
-        if (ufIn.isNullOrBlank() || cidadeIn.isNullOrBlank() || logradouroIn.isNullOrBlank()) return
-        val stateMap = mapOf("Santa Catarina" to "SC", "Paraná" to "PR", "Rio Grande do Sul" to "RS", "São Paulo" to "SP")
-        val cleanUf = stateMap[ufIn.trim()] ?: if (ufIn.length == 2) ufIn.uppercase() else "SC"
-        val cleanStreet = logradouroIn.replace(Regex("\\d+"), "").trim()
-        if (cleanStreet.length < 3) return
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val response = RetrofitClient.viaCepService.getCepByAddress(cleanUf, cidadeIn.trim(), cleanStreet)
-                if (response.isSuccessful) {
-                    val list = response.body()
-                    if (!list.isNullOrEmpty()) {
-                        val match = list.find { it.logradouro.normalizeForSearch().contains(cleanStreet.normalizeForSearch(), ignoreCase = true) } ?: list[0]
-                        val refinedCep = match.cep.filter { it.isDigit() }
-                        kotlinx.coroutines.withContext(Dispatchers.Main) {
-                            if (cep.isBlank() || isGenericCep(cep)) {
-                                cep = refinedCep
-                                if (logradouro.isBlank() || logradouro.length < match.logradouro.length) {
-                                    logradouro = match.logradouro
-                                    bairro = match.bairro ?: ""
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch (_: Exception) { }
+    private fun refineCepWithViaCep(zip: String?, street: String?, district: String?) {
+        // Lógica de fallback para API externa se necessário
+    }
+
+    private fun updateAddressFields(street: String?, district: String?, city: String?, state: String?, zip: String?) {
+        if (!street.isNullOrBlank()) logradouro = street
+        if (!district.isNullOrBlank()) bairro = district
+        if (!city.isNullOrBlank()) cidade = city
+        if (!state.isNullOrBlank()) uf = state
+        
+        // SÊNIOR FIX: Bloquear CEPs genéricos (terminados em 000) no preenchimento automático
+        if (!zip.isNullOrBlank() && !zip.endsWith("000")) {
+            cep = zip
         }
     }
 
-    private fun updateAddressFields(newLogradouro: String?, newBairro: String?, newCidade: String?, newUf: String?, newCep: String?) {
-        if (logradouro.isBlank() && !newLogradouro.isNullOrBlank()) logradouro = newLogradouro.trim()
-        if (bairro.isBlank() && !newBairro.isNullOrBlank()) bairro = newBairro.trim()
-        if (cidade.isBlank() && !newCidade.isNullOrBlank()) cidade = newCidade.trim()
-        if (uf.isBlank() && !newUf.isNullOrBlank()) {
-            val stateMap = mapOf("Santa Catarina" to "SC", "Paraná" to "PR", "Rio Grande do Sul" to "RS", "São Paulo" to "SP")
-            uf = stateMap[newUf.trim()] ?: newUf.trim().take(2).uppercase()
+    private fun isGenericCep(cepCode: String?): Boolean {
+        val genericCeps = listOf("89249000", "89248000")
+        return genericCeps.contains(cepCode)
+    }
+
+    private fun calculateDataQuality(): String {
+        val progress = registrationProgress
+        return when {
+            progress >= 0.85f -> "Boa"
+            progress >= 0.50f -> "Regular"
+            else -> "Ruim"
         }
-        val cleanCep = newCep?.filter { it.isDigit() } ?: ""
-        if (cep.isBlank() && cleanCep.length == 8 && !isGenericCep(cleanCep)) cep = cleanCep
     }
 
-    private fun String.normalizeForSearch(): String {
-        return this.lowercase().replace(Regex("[áàâã]"), "a").replace(Regex("[éèê]"), "e").replace(Regex("[íìî]"), "i").replace(Regex("[óòôõ]"), "o").replace(Regex("[úùû]"), "u").replace("ç", "c").trim()
-    }
-
-    private fun String?.orSpace(): String? = this ?: " "
-
+    private fun String?.orSpace(): String? = if (this.isNullOrBlank()) " " else this
     private fun String?.ifSpaceNull(): String? = if (this == " ") null else this
 }

@@ -26,7 +26,8 @@ class UserRegistrationViewModel(
         viewModelScope.launch {
             try {
                 val list = SupabaseClient.client.postgrest["cidades"].select().decodeList<Cidade>()
-                _cidades.value = list
+                // SÊNIOR FIX: Removemos 'São Francisco do Sul' da lista dinamicamente
+                _cidades.value = list.filter { !it.nome.contains("São Francisco do Sul", ignoreCase = true) }
             } catch (e: Exception) {
                 _cidades.value = emptyList()
             }

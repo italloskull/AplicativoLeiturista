@@ -40,10 +40,13 @@ fun EconomyUpdateListScreen(
     var userLocation by remember { mutableStateOf<android.location.Location?>(null) }
 
     // --- ATUALIZAÇÃO AUTOMÁTICA ---
-    // Toda vez que a tela ganha foco, pedimos os dados mais recentes.
     LaunchedEffect(Unit) {
         viewModel.fetchEconomyUpdates()
-        userLocation = locationHelper.getCurrentLocation()
+        // SÊNIOR FIX: Verificação de permissão antes de capturar GPS na listagem
+        val fineLoc = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION)
+        if (fineLoc == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            userLocation = locationHelper.getCurrentLocation()
+        }
     }
 
     val filteredItems by remember(items, searchQuery, userLocation) {
@@ -51,10 +54,11 @@ fun EconomyUpdateListScreen(
             val base = if (searchQuery.isBlank()) items 
                       else items.filter { it.buildingName.contains(searchQuery, true) || it.hdNumber.contains(searchQuery, true) }
             
-            if (userLocation != null) {
+            val currentLoc = userLocation
+            if (currentLoc != null) {
                 base.sortedBy { item ->
                     if (item.latitude != null && item.longitude != null) {
-                        locationHelper.calculateDistance(userLocation!!.latitude, userLocation!!.longitude, item.latitude, item.longitude)
+                        locationHelper.calculateDistance(currentLoc.latitude, currentLoc.longitude, item.latitude, item.longitude)
                     } else Float.MAX_VALUE
                 }.take(10)
             } else base

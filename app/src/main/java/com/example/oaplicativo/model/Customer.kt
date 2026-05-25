@@ -76,19 +76,21 @@ data class Customer(
     val cep: String? = null,
     
     @SerialName("pavimento_rua") val pavimentoRua: String? = null,
+    @SerialName("pavimento_calcada") val pavimentoCalcada: String? = null,
     @SerialName("fonte_abastecimento") val fonteAbastecimento: String? = null,
+    @SerialName("local_instalacao") val localInstalacao: String? = null,
+    @SerialName("acessibilidade") val acessibilidade: String? = null,
     @SerialName("existe_rede_agua") val existeRedeAgua: String? = null,
     val observacao: String? = null,
     @SerialName("beneficiario_social") val beneficiarioSocial: String? = null,
     @SerialName("usa_agua_vizinho") val usaAguaVizinho: String? = null,
     @SerialName("possui_hidrometro") val possuiHidrometro: String? = null,
     @SerialName("grupo_sugerido") val grupoSugerido: String? = null,
+    @SerialName("rota_sugerida") val rotaSugerida: String? = null,
     val setor: String? = null,
     val quadra: String? = null,
 
-    // Compatibilidade Local
-    @Transient val localInstalacao: String? = null,
-    @Transient val acessibilidade: String? = null,
+    // Compatibilidade Local e Campos Extras
     @Transient val numeroHidrometro: String? = null,
     @Transient val cellPhone: String? = null,
     @Transient val isSynced: Boolean = true

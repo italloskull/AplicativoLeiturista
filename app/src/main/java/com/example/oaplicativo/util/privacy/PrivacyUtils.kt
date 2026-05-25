@@ -76,6 +76,17 @@ object PrivacyUtils {
         }
     }
 
+    fun applyPartialCpfCnpjCensorship(value: String?): String {
+        if (value == null) return "N/A"
+        val clean = value.replace(Regex("[^0-9]"), "")
+        return if (clean.length >= 6) {
+            "${clean.take(3)}.***.***-${clean.takeLast(2)}"
+        } else {
+            "***.***.***-**"
+        }
+    }
+
     fun maskEmail(email: String?): String { return applyPartialEmailCensorship(email) }
     fun maskPhone(phone: String?): String { return applyPartialPhoneCensorship(phone) }
+    fun maskCpfCnpj(value: String?): String { return applyPartialCpfCnpjCensorship(value) }
 }

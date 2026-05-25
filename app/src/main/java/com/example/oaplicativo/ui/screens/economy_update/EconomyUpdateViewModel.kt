@@ -18,7 +18,7 @@ sealed class EconomyUpdateState {
     data class Error(val message: String) : EconomyUpdateState()
 }
 
-class EconomyUpdateViewModel(
+class EconomyUpdateViewModel @JvmOverloads constructor(
     application: Application,
     private val repository: EconomyRepository = EconomyRepositoryImpl.getInstance()
 ) : AndroidViewModel(application) {

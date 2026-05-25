@@ -9,6 +9,7 @@ import io.github.jan.supabase.storage.Storage
 import io.github.jan.supabase.functions.Functions
 import io.github.jan.supabase.realtime.Realtime
 import io.github.jan.supabase.serializer.KotlinXSerializer
+import io.ktor.client.engine.okhttp.OkHttp
 import kotlinx.serialization.json.Json
 
 /**
@@ -19,6 +20,7 @@ object SupabaseClient {
     private const val SUPABASE_KEY = BuildConfig.SUPABASE_KEY
 
     val client = createSupabaseClient(SUPABASE_URL, SUPABASE_KEY) {
+        httpEngine = OkHttp.create()
         defaultSerializer = KotlinXSerializer(Json {
             ignoreUnknownKeys = true
             explicitNulls = true // SÊNIOR FIX: Garante que campos NULL sejam enviados explicitamente

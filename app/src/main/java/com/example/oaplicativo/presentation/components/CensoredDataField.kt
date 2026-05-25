@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.input.VisualTransformation
 import kotlinx.coroutines.delay
 
 /**
@@ -26,6 +27,7 @@ fun CensoredDataField(
     modifier: Modifier = Modifier,
     leadingIcon: ImageVector? = null,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
     revealDurationMs: Long = 10000L
 ) {
     var isRevealedByAdmin by remember { mutableStateOf(false) }
@@ -92,6 +94,7 @@ fun CensoredDataField(
             }
         } else null,
         keyboardOptions = keyboardOptions,
+        visualTransformation = if (isCensoredInitial && !isEffectivelyEnabled) VisualTransformation.None else visualTransformation,
         singleLine = true
     )
 }
