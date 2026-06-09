@@ -2,6 +2,7 @@ package com.example.oaplicativo.data.repository
 
 import android.util.Log
 import com.example.oaplicativo.data.SupabaseClient
+import com.example.oaplicativo.data.local.LocalDatabase
 import com.example.oaplicativo.domain.repository.EconomyRepository
 import com.example.oaplicativo.model.EconomyUpdate
 import io.github.jan.supabase.postgrest.postgrest
@@ -25,34 +26,73 @@ class EconomyRepositoryImpl private constructor() : EconomyRepository {
     private val mutex = Mutex()
 
     init {
-        scope.launch {
-            fetchEconomyUpdates()
-        }
+        // Carga inicial assíncrona
     }
 
     override suspend fun fetchEconomyUpdates() {
         mutex.withLock {
             try {
-                val list = client.postgrest["atualizacao_economias"]
-                    .select {
-                        order("criado_em", order = Order.DESCENDING)
-                        limit(100)
-                    }.decodeList<EconomyUpdate>()
-                _items.value = list
+                // 1. Busca do servidor (registros oficiais)
+                val remoteList = try {
+                    client.postgrest["atualizacao_economias"]
+                        .select {
+                            order("criado_em", order = Order.DESCENDING)
+                            limit(100)
+                        }.decodeList<EconomyUpdate>()
+                } catch (e: Exception) {
+                    Log.w("EconomyRepo", "Offline: Não foi possível buscar do Supabase.")
+                    emptyList()
+                }
+                
+                // 2. SÊNIOR FIX: Mesclagem inteligente com o banco local usando o Singleton Database
+                // O contexto é obtido via referência global segura no Singleton
+                val localPending = try {
+                    val db = LocalDatabase.getInstance(com.example.oaplicativo.MainActivity.contextReference ?: throw Exception("Context not ready"))
+                    db.getPendingEconomyUpdates().map { it.second.copy(isSynced = false) }
+                } catch (e: Exception) {
+                    Log.e("EconomyRepo", "Erro ao acessar banco local: ${e.message}")
+                    emptyList()
+                }
+
+                // 3. Mescla as duas listas (IDs locais têm prioridade na visualização para mostrar a nuvem vermelha)
+                val combined = (localPending + remoteList).distinctBy { it.id }
+                
+                _items.value = combined
             } catch (e: Exception) {
-                Log.e("EconomyRepo", "Erro ao buscar economias: ${e.message}")
+                Log.e("EconomyRepo", "Erro ao processar lista de economias: ${e.message}")
             }
         }
     }
 
+    fun updateLocalEconomyUpdates(list: List<EconomyUpdate>) {
+        _items.value = list
+    }
+
     override suspend fun saveEconomyUpdate(item: EconomyUpdate) {
+        saveEconomyUpdates(listOf(item))
+    }
+
+    override suspend fun saveEconomyUpdates(items: List<EconomyUpdate>) {
+        if (items.isEmpty()) return
         try {
-            client.postgrest["atualizacao_economias"].upsert(item) {
-                onConflict = "numero_hd"
+            // SÊNIOR DEBUG: Log do payload exato para conferência
+            items.forEach { 
+                Log.d("EconomyRepo", "📦 Payload HD: ${it.hdNumber}, Edifício: ${it.buildingName}, ID: ${it.id}") 
             }
+
+            // SÊNIOR FIX: Garantia absoluta de UPSERT por ID
+            client.postgrest["atualizacao_economias"].upsert(items) {
+                onConflict = "id"
+            }
+            Log.d("EconomyRepo", "✅ Sucesso Supabase: Lote de ${items.size} enviado.")
             fetchEconomyUpdates()
         } catch (e: Exception) {
-            Log.e("EconomyRepo", "Erro ao salvar economia: ${e.message}")
+            val errorMsg = e.message ?: "Erro desconhecido no Supabase"
+            Log.e("EconomyRepo", "❌ FALHA NO SUPABASE: $errorMsg")
+            // SÊNIOR QA: Verificamos se o erro é de 'Tabela não encontrada' ou 'RLS'
+            if (errorMsg.contains("404") || errorMsg.contains("not found")) {
+                Log.e("EconomyRepo", "🚨 ATENÇÃO: Verifique se a tabela 'atualizacao_economias' existe no Supabase!")
+            }
             throw e
         }
     }
@@ -66,7 +106,9 @@ class EconomyRepositoryImpl private constructor() : EconomyRepository {
         private var instance: EconomyRepositoryImpl? = null
         fun getInstance(): EconomyRepositoryImpl {
             return instance ?: synchronized(this) {
-                instance ?: EconomyRepositoryImpl().also { instance = it }
+                instance ?: EconomyRepositoryImpl().also { 
+                    instance = it 
+                }
             }
         }
     }

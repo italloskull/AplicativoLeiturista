@@ -28,7 +28,7 @@ class CustomerListViewModel(
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
-    private val localDb = LocalDatabase(application)
+    private val localDb = LocalDatabase.getInstance(application)
 
     init {
         loadData()

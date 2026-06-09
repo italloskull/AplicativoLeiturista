@@ -85,7 +85,8 @@ fun SetupNavGraph(
                 onNavigateToUserRegistration = {
                     navController.navigate(Screen.UserRegistration.route)
                 },
-                onLogout = { onLogoutGlobal() }
+                onLogout = { onLogoutGlobal() },
+                onBack = { navController.popBackStack() } // SÊNIOR FIX: Volta para o Menu e não para o Login
             )
         }
 

@@ -108,22 +108,24 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
     }
 
     override suspend fun addCustomer(customer: Customer) {
+        addCustomers(listOf(customer))
+    }
+
+    override suspend fun addCustomers(customers: List<Customer>) {
+        if (customers.isEmpty()) return
         withContext(Dispatchers.IO) {
             try {
-                // DEBUG SÊNIOR: Payload real sendo enviado
-                Log.d("SyncDebug", "Tentando sincronizar: ${customer.registrationNumber} (ID: ${customer.id})")
+                // SÊNIOR PERF: Envio em Lote (Batch Insert) para economizar rádio e bateria
+                Log.d("SyncDebug", "🚀 Enviando lote de ${customers.size} registros.")
                 
-                // Forçamos o upsert baseado no ID (UUID)
-                client.postgrest["clientes"].upsert(customer) {
+                client.postgrest["clientes"].upsert(customers) {
                     onConflict = "id"
                 }
                 
-                Log.d("SyncDebug", "✅ SUCESSO: Registro ${customer.id} sincronizado.")
+                Log.d("SyncDebug", "✅ SUCESSO: Lote sincronizado.")
                 fetchCustomers()
             } catch (e: Exception) {
-                // CAPTURA DO MOTIVO REAL DO ERRO
-                Log.e("SyncDebug", "❌ FALHA NO SUPABASE: ${e.message}")
-                Log.e("SyncDebug", "DICA TÉCNICA: Verifique se os UUIDs e tipos booleanos batem com o DDL.")
+                Log.e("SyncDebug", "❌ ERRO NO LOTE: ${e.message}")
                 throw e
             }
         }

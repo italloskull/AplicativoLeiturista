@@ -7,5 +7,6 @@ interface EconomyRepository {
     val items: StateFlow<List<EconomyUpdate>>
     suspend fun fetchEconomyUpdates()
     suspend fun saveEconomyUpdate(item: EconomyUpdate)
+    suspend fun saveEconomyUpdates(items: List<EconomyUpdate>) // SÊNIOR PERF: Suporte a lote
     suspend fun getItemById(id: String): EconomyUpdate?
 }

@@ -44,10 +44,17 @@ fun LoginScreen(
     var passwordVisible by remember { mutableStateOf(false) }
     var rememberMe by remember { mutableStateOf(false) }
 
+    // SÊNIOR FIX: Carregamento inicial ultra-agressivo
     LaunchedEffect(Unit) {
-        if (SecurityUtils.isRememberMeEnabled(context)) {
-            email = SecurityUtils.getRememberedIdentifier(context) ?: ""
-            password = SecurityUtils.getRememberedPassword(context) ?: ""
+        val isEnabled = SecurityUtils.isRememberMeEnabled(context)
+        Log.i("LoginScreen", "🚀 Inicializando App. Lembrar Me: $isEnabled")
+        
+        if (isEnabled) {
+            val savedUser = SecurityUtils.getRememberedIdentifier(context)
+            val savedPass = SecurityUtils.getRememberedPassword(context)
+            
+            if (!savedUser.isNullOrBlank()) email = savedUser
+            if (!savedPass.isNullOrBlank()) password = savedPass
             rememberMe = true
         }
         checkUpdates(context, scope)
@@ -55,6 +62,14 @@ fun LoginScreen(
 
     LaunchedEffect(loginState) {
         if (loginState is LoginState.Success) {
+            // SÊNIOR UX FIX: Garantimos o salvamento das credenciais ANTES de mudar de tela
+            val identifier = email.lowercase().trim()
+            val pass = password
+            val rem = rememberMe
+            
+            Log.d("LoginSave", "Iniciando persistência: User=$identifier, Remember=$rem")
+            SecurityUtils.saveCredentials(context, identifier, pass, rem)
+
             onLoginSuccess()
         }
     }
@@ -231,7 +246,13 @@ fun LoginScreen(
 
                     AppButton(
                         text = "Entrar no Sistema",
-                        onClick = { viewModel.login(context, email, password, rememberMe) },
+                        onClick = { 
+                            // SÊNIOR UX FIX: Capturamos o estado do checkbox no exato momento do clique
+                            Log.d("LoginAction", "Clique no botão. RememberMe está: $rememberMe")
+                            // SÊNIOR QA FIX: Limpamos o cache anterior para garantir que o 'v7' seja soberano
+                            SecurityUtils.saveCredentials(context, email, password, rememberMe)
+                            viewModel.login(context, email, password, rememberMe) 
+                        },
                         isLoading = loginState is LoginState.Loading,
                         containerColor = Color(0xFF0052CC), // Azul Cobalto da logo
                         contentColor = Color.White

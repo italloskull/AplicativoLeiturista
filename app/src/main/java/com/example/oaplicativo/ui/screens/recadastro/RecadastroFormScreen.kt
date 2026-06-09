@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.Comment
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -59,7 +60,11 @@ fun RecadastroFormScreen(
     var isCapturingGpsOnSave by remember { mutableStateOf(false) }
 
     LaunchedEffect(customerId) {
-        viewModel.loadCustomerForEdit(customerId)
+        if (customerId != null) {
+            viewModel.loadCustomerForEdit(customerId)
+        } else {
+            viewModel.resetForm() // SÊNIOR FIX: Garante formulário limpo ao criar novo
+        }
     }
 
     val userProfile by viewModel.currentUserProfile.collectAsState()
@@ -194,8 +199,12 @@ fun RecadastroFormScreen(
         ) {
             item {
                 AppCard(title = "Localização do Imóvel", icon = Icons.Default.Map) {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Box(Modifier.weight(3f)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(), 
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(Modifier.weight(0.75f)) {
                             AppTextField(
                                 value = viewModel.matricula, 
                                 onValueChange = { viewModel.matricula = it }, 
@@ -204,11 +213,14 @@ fun RecadastroFormScreen(
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next)
                             )
                         }
-                        Box(Modifier.weight(1f)) {
+                        
+                        Text("-", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                        Box(Modifier.weight(0.25f)) {
                             AppTextField(
                                 value = viewModel.registrationDigit, 
-                                onValueChange = { if (it.length <= 2) viewModel.registrationDigit = it }, 
-                                label = "Dígito",
+                                onValueChange = { if (it.length <= 1) viewModel.registrationDigit = it }, 
+                                label = "DV",
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next)
                             )
                         }

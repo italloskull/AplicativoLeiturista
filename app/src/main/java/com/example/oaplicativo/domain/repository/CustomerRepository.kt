@@ -7,6 +7,7 @@ interface CustomerRepository {
     val customers: StateFlow<List<Customer>>
     suspend fun fetchCustomers()
     suspend fun addCustomer(customer: Customer)
+    suspend fun addCustomers(customers: List<Customer>) // SÊNIOR PERF: Suporte a lote (batch)
     suspend fun updateCustomer(customer: Customer)
     suspend fun getCustomerById(id: String): Customer?
     suspend fun deleteCustomer(id: String)

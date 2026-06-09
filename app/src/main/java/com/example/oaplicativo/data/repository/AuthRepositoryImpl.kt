@@ -1,10 +1,13 @@
 @file:Suppress("SpellCheckingInspection")
 package com.example.oaplicativo.data.repository
 
+import android.content.Context
 import android.util.Log
 import com.example.oaplicativo.data.SupabaseClient
+import com.example.oaplicativo.data.local.LocalDatabase
 import com.example.oaplicativo.domain.repository.AuthRepository
 import com.example.oaplicativo.model.UserProfile
+import com.example.oaplicativo.util.SecurityUtils
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.postgrest.postgrest
@@ -23,6 +26,27 @@ class AuthRepositoryImpl private constructor() : AuthRepository {
     
     private val _currentUserProfile = MutableStateFlow<UserProfile?>(null)
     override val currentUserProfile: StateFlow<UserProfile?> = _currentUserProfile.asStateFlow()
+
+    // SÊNIOR FIX: Carregamento do perfil vindo do cofre interno do celular
+    fun loadProfileFromCache(context: Context) {
+        try {
+            val db = LocalDatabase.getInstance(context)
+            // Se o repositório estiver vazio, tentamos preencher com o que está no celular
+            if (_currentUserProfile.value == null) {
+                // Buscamos o último usuário que logou com sucesso neste aparelho
+                val savedUser = SecurityUtils.getRememberedIdentifier(context)
+                if (savedUser != null) {
+                    val profile = db.getCachedUserProfile(savedUser)
+                    if (profile != null) {
+                        Log.i("AuthRepo", "👤 Perfil recuperado do cache: ${profile.fullName}")
+                        _currentUserProfile.value = profile
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("AuthRepo", "Falha ao ler cache de perfil", e)
+        }
+    }
 
     override suspend fun login(identifier: String, password: String) {
         // A lógica de login agora é delegada ao ViewModel para suportar o fallback contextual

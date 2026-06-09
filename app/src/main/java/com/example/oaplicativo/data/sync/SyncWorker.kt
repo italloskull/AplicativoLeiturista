@@ -4,56 +4,129 @@ import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.example.oaplicativo.MainActivity
 import com.example.oaplicativo.data.local.LocalDatabase
 import com.example.oaplicativo.data.repository.CustomerRepositoryImpl
+import com.example.oaplicativo.data.repository.EconomyRepositoryImpl
 import com.example.oaplicativo.domain.repository.CustomerRepository
+import com.example.oaplicativo.domain.repository.EconomyRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.UUID
 
 /**
- * SyncWorker: Responsável pela sincronização robusta e reativa.
- * Revertido para a versão estável que nunca falha no envio.
+ * SyncWorker: Responsável pela sincronização robusta e resiliente.
+ * SÊNIOR DEBUG FIX: Garantia de remoção atômica e relatório de falhas.
  */
 class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
     CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
-        val db = LocalDatabase(applicationContext)
+        val db = LocalDatabase.getInstance(applicationContext)
         val repository: CustomerRepository = CustomerRepositoryImpl.getInstance()
         
-        Log.d("SyncWorker", "Iniciando verificação de pendências...")
+        Log.d("SyncWorker", "🤖 Robô de Sincronização: Iniciando...")
 
-        val pendingCustomers = try {
-            db.getPendingCustomers()
-        } catch (e: Exception) {
-            return@withContext Result.retry()
+        val pendingCustomers = try { db.getPendingCustomers() } catch (e: Exception) { emptyList() }
+        val pendingEconomy = try { db.getPendingEconomyUpdates() } catch (e: Exception) { emptyList() }
+
+        if (pendingCustomers.isEmpty() && pendingEconomy.isEmpty()) {
+            Log.d("SyncWorker", "✅ Nada pendente em nenhuma fila.")
+            return@withContext Result.success()
         }
 
-        if (pendingCustomers.isEmpty()) return@withContext Result.success()
+        Log.d("SyncWorker", "🤖 Robô de Sincronização: Processando ${pendingCustomers.size} clientes e ${pendingEconomy.size} economias...")
 
-        for ((localId, customer) in pendingCustomers) {
+        var successCount = 0
+        var failCount = 0
+
+        // 1. Sincroniza Clientes (Recadastro) - AGORA COM FALLBACK DE ISOLAMENTO
+        if (pendingCustomers.isNotEmpty()) {
             try {
-                // Tenta enviar para o Supabase
-                repository.addCustomer(customer)
+                val customersList = pendingCustomers.map { it.second }
+                repository.addCustomers(customersList)
                 
-                // Sucesso absoluto: Remove do banco local somente após a confirmação do repositório
-                db.deleteSyncedCustomer(localId)
-                Log.d("SyncWorker", "Registro $localId sincronizado e removido do cache local.")
+                pendingCustomers.forEach { db.deleteSyncedCustomer(it.first) }
+                successCount += pendingCustomers.size
+                Log.d("SyncWorker", "✅ Lote de ${pendingCustomers.size} clientes enviado.")
             } catch (e: Exception) {
-                // Se falhar (ex: timeout, erro 500), mantemos no banco local para a próxima tentativa
-                Log.e("SyncWorker", "Falha ao sincronizar registro $localId: ${e.message}. Tentará novamente mais tarde.")
-                // Não interrompemos o loop para tentar enviar outros registros pendentes, 
-                // mas sinalizamos ao WorkManager para agendar um retry para os que falharam.
+                Log.w("SyncWorker", "⚠️ Falha no lote de clientes. Iniciando decomposição para isolar erro.")
+                // SÊNIOR DEBUG FIX: Se o lote falhar, tentamos um por um para não travar a fila inteira
+                pendingCustomers.forEach { (localId, customer) ->
+                    try {
+                        repository.addCustomer(customer)
+                        db.deleteSyncedCustomer(localId)
+                        successCount++
+                    } catch (inner: Exception) {
+                        db.incrementSyncAttempt("customers", localId, inner.message)
+                        failCount++
+                        Log.e("SyncWorker", "❌ Erro fatal no registro $localId: ${inner.message}")
+                    }
+                }
             }
         }
 
-        // Verifica se ainda restam pendências após o loop
-        val finalPending = try { db.getPendingCustomers() } catch (e: Exception) { emptyList() }
+        // 2. Sincroniza Economias (Atualização Predial) - AGORA COM FALLBACK DE ISOLAMENTO
+        val economyRepo: EconomyRepository = EconomyRepositoryImpl.getInstance()
         
-        return@withContext if (finalPending.isEmpty()) {
+        val pendingEconomyReloaded = try { db.getPendingEconomyUpdates() } catch (e: Exception) { emptyList() }
+        
+        if (pendingEconomyReloaded.isNotEmpty()) {
+            try {
+                val economyList = pendingEconomyReloaded.map { it.second }
+                Log.d("SyncWorker", "🚀 Tentando enviar lote de ${economyList.size} economias.")
+                economyRepo.saveEconomyUpdates(economyList)
+                
+                pendingEconomyReloaded.forEach { db.deleteSyncedEconomyUpdate(it.first) }
+                successCount += pendingEconomyReloaded.size
+                Log.d("SyncWorker", "✅ Economias enviadas com sucesso.")
+            } catch (e: Exception) {
+                Log.w("SyncWorker", "⚠️ Falha no lote de economias: ${e.message}. Decompondo...")
+                pendingEconomyReloaded.forEach { (localId, item) ->
+                    try {
+                        Log.d("SyncWorker", "🔍 Tentando registro individual: $localId (HD: ${item.hdNumber})")
+                        economyRepo.saveEconomyUpdate(item)
+                        db.deleteSyncedEconomyUpdate(localId)
+                        successCount++
+                        Log.d("SyncWorker", "✅ Sincronizado individualmente: $localId")
+                    } catch (inner: Exception) {
+                        db.incrementSyncAttempt("economy_updates", localId, inner.message)
+                        failCount++
+                        Log.e("SyncWorker", "❌ Erro fatal na economia $localId: ${inner.message}")
+                    }
+                }
+            }
+        }
+
+        Log.i("SyncWorker", "📊 Sincronização Finalizada: $successCount Sucessos, $failCount Falhas.")
+
+        // SÊNIOR REFRESH: Força a atualização dos repositórios globais após o worker
+        try {
+            CustomerRepositoryImpl.getInstance().fetchCustomers()
+            EconomyRepositoryImpl.getInstance().fetchEconomyUpdates()
+        } catch (_: Exception) {}
+
+        // SÊNIOR DEBUG UI: Mostra o erro técnico real no celular se houver falhas persistentes
+        if (failCount > 0) {
+            withContext(Dispatchers.Main) {
+                val dbDebug = LocalDatabase.getInstance(applicationContext)
+                val lastErr = try {
+                    val cursor = dbDebug.readableDatabase.rawQuery("SELECT last_error FROM economy_updates WHERE isSynced = 0 AND last_error IS NOT NULL LIMIT 1", null)
+                    var msg: String? = null
+                    if (cursor.moveToFirst()) msg = cursor.getString(0)
+                    cursor.close()
+                    msg
+                } catch (_: Exception) { null }
+
+                if (lastErr != null) {
+                    android.widget.Toast.makeText(applicationContext, "Erro Supabase: ${lastErr.take(100)}", android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+
+        return@withContext if (failCount == 0) {
             Result.success()
         } else {
-            // Se restarem registros que falharam, o WorkManager tentará novamente conforme a política de backoff
             Result.retry()
         }
     }

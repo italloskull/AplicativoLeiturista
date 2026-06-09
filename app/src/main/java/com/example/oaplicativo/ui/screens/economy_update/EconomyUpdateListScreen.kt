@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
@@ -19,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.oaplicativo.model.EconomyUpdate
+import com.example.oaplicativo.presentation.components.SyncIndicator
 import com.example.oaplicativo.ui.components.AsyncDataContainer
 import com.example.oaplicativo.util.LocationHelper
 import com.example.oaplicativo.util.navigation.NavigationUtils
@@ -65,6 +67,16 @@ fun EconomyUpdateListScreen(
         }
     }
 
+    // SÊNIOR FIX: Refresh ao retornar para a tela (Garante visibilidade do registro novo)
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val lifecycleState by lifecycleOwner.lifecycle.currentStateFlow.collectAsState()
+    
+    LaunchedEffect(lifecycleState) {
+        if (lifecycleState == androidx.lifecycle.Lifecycle.State.RESUMED) {
+            viewModel.fetchEconomyUpdates()
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -106,7 +118,10 @@ fun EconomyUpdateListScreen(
                     onRetry = { viewModel.fetchEconomyUpdates() }
                 ) { data: List<EconomyUpdate> ->
                     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 80.dp)) {
-                        items(data) { item ->
+                        items(
+                            items = data,
+                            key = { it.id ?: it.hdNumber } // PERFORMANCE FIX: Chave estável para evitar recomposição
+                        ) { item ->
                             EconomyItemRow(
                                 item = item,
                                 userLocation = userLocation,
@@ -130,12 +145,6 @@ fun EconomyItemRow(
     onClick: () -> Unit,
     onNavigate: () -> Unit
 ) {
-    val distance = remember(item, userLocation) {
-        if (userLocation != null && item.latitude != null && item.longitude != null) {
-            val d = locationHelper.calculateDistance(userLocation.latitude, userLocation.longitude, item.latitude, item.longitude)
-            locationHelper.formatDistance(d)
-        } else null
-    }
 
     ListItem(
         modifier = Modifier.clickable(onClick = onClick),
@@ -143,9 +152,43 @@ fun EconomyItemRow(
         supportingContent = {
             Column {
                 Text("HD: ${item.hdNumber} • ${item.economiesCount} Econ.")
-                if (distance != null) {
-                    Text("Distância: $distance", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall)
+                
+                // SÊNIOR PERFORMANCE FIX: Espaço reservado para o Badge de Distância para evitar reflow
+                Spacer(Modifier.height(4.dp))
+                
+                val distLabel = remember(userLocation, item) {
+                    if (userLocation != null && item.latitude != null && item.longitude != null) {
+                        val d = locationHelper.calculateDistance(userLocation.latitude, userLocation.longitude, item.latitude, item.longitude)
+                        locationHelper.formatDistance(d)
+                    } else null
                 }
+
+                Surface(
+                    color = if (distLabel != null) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                    contentColor = if (distLabel != null) MaterialTheme.colorScheme.onPrimaryContainer else Color.Transparent,
+                    shape = MaterialTheme.shapes.extraSmall
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Place,
+                            contentDescription = null,
+                            modifier = Modifier.size(12.dp),
+                            tint = if (distLabel != null) LocalContentColor.current else Color.Transparent
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = distLabel ?: "000.0m", // Reserva o espaço aproximado
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
+                
+                // SÊNIOR FIX: Adicionado indicador de nuvem (sincronização)
+                Spacer(Modifier.height(4.dp))
+                SyncIndicator(item.isSynced)
             }
         },
         leadingContent = { 

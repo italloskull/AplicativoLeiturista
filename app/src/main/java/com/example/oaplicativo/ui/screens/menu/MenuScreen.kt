@@ -1,5 +1,7 @@
 package com.example.oaplicativo.ui.screens.menu
 
+import android.util.Log
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -21,6 +23,8 @@ import androidx.compose.ui.unit.sp
 import com.example.oaplicativo.data.local.LocalDatabase
 import com.example.oaplicativo.data.repository.AuthRepositoryImpl
 import com.example.oaplicativo.ui.components.GlobalActionMenu
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.time.LocalTime
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -35,14 +39,35 @@ fun MenuScreen(
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
-    val localDb = remember { LocalDatabase(context) }
+    val scope = rememberCoroutineScope()
+    val localDb = remember { LocalDatabase.getInstance(context) }
     
     // ESTADOS DINÂMICOS DAS ESTATÍSTICAS (OTIMIZADOS COM mutableIntStateOf)
     var recadastroPending by remember { mutableIntStateOf(0) }
     var economiasPending by remember { mutableIntStateOf(0) }
 
-    // Atualiza estatísticas ao entrar na tela
+    val authRepository = AuthRepositoryImpl.getInstance()
+    val userProfile by authRepository.currentUserProfile.collectAsState()
+
+    // SÊNIOR FIX: Monitoramento em tempo real das estatísticas enquanto houver pendências
+    LaunchedEffect(recadastroPending, economiasPending) {
+        if (recadastroPending + economiasPending > 0) {
+            while (true) {
+                delay(3000) // Verifica a cada 3 segundos se a fila andou
+                recadastroPending = localDb.getRecadastroStats().second
+                economiasPending = localDb.getEconomyStats().second
+                if (recadastroPending + economiasPending == 0) break
+            }
+        }
+    }
+
+    // SÊNIOR FIX: Garante que o perfil seja carregado se estiver vazio (ex: após fechar o app)
     LaunchedEffect(Unit) {
+        authRepository.loadProfileFromCache(context) // Força a leitura do nome salvo no celular
+        if (userProfile == null) {
+            authRepository.fetchProfile()
+        }
+        // Carga inicial
         recadastroPending = localDb.getRecadastroStats().second
         economiasPending = localDb.getEconomyStats().second
     }
@@ -52,9 +77,6 @@ fun MenuScreen(
         in 12..17 -> "Boa tarde"
         else -> "Boa noite"
     }
-
-    val authRepository = AuthRepositoryImpl.getInstance()
-    val userProfile by authRepository.currentUserProfile.collectAsState()
 
     Scaffold(
         topBar = {
@@ -75,6 +97,16 @@ fun MenuScreen(
                         onToggleTheme = onToggleTheme,
                         onLogout = onLogout,
                         onNavigateToUserRegistration = onNavigateToUserRegistration,
+                        onForceSync = {
+                            // SÊNIOR FIX: Antes de forçar, limpamos as tentativas falhas para dar uma nova chance real
+                            localDb.resetSyncAttempts()
+
+                            val syncRequest = androidx.work.OneTimeWorkRequestBuilder<com.example.oaplicativo.data.sync.SyncWorker>()
+                                .setConstraints(androidx.work.Constraints.Builder().setRequiredNetworkType(androidx.work.NetworkType.CONNECTED).build())
+                                .build()
+                            androidx.work.WorkManager.getInstance(context).enqueueUniqueWork("force_sync_manual", androidx.work.ExistingWorkPolicy.REPLACE, syncRequest)
+                            Toast.makeText(context, "Sincronização forçada iniciada!", Toast.LENGTH_SHORT).show()
+                        },
                         tint = MaterialTheme.colorScheme.primary
                     )
                 },
@@ -129,7 +161,7 @@ fun MenuScreen(
                             color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
                         )
                         Text(
-                            text = userProfile?.fullName?.split(" ")?.firstOrNull() ?: "Leiturista",
+                            text = userProfile?.fullName?.split(" ")?.firstOrNull() ?: userProfile?.username ?: "Leiturista",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimary
@@ -201,11 +233,69 @@ fun MenuScreen(
                 modifier = Modifier.fillMaxWidth().padding(24.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "Recadastre.IA • Versão 0.9.2.6.4",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (recadastroPending + economiasPending > 0) {
+                        Text(
+                            text = "Aguardando sinal: ${recadastroPending + economiasPending} registros na fila",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFFF59E0B),
+                            fontWeight = FontWeight.Bold
+                        )
+                        
+                        // SÊNIOR QA: Link rápido para forçar se houver erro
+                        var isSyncingManual by remember { mutableStateOf(false) }
+                        
+                        if (isSyncingManual) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Sincronizando com Supabase...", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                            }
+                            Spacer(Modifier.height(4.dp))
+                        }
+
+                        TextButton(
+                            enabled = !isSyncingManual,
+                            onClick = {
+                                isSyncingManual = true
+                                scope.launch {
+                                    localDb.resetSyncAttempts()
+                                    
+                                    val syncRequest = androidx.work.OneTimeWorkRequestBuilder<com.example.oaplicativo.data.sync.SyncWorker>()
+                                        .setConstraints(androidx.work.Constraints.Builder().setRequiredNetworkType(androidx.work.NetworkType.CONNECTED).build())
+                                        .build()
+                                    
+                                    androidx.work.WorkManager.getInstance(context).enqueueUniqueWork(
+                                        "force_sync_manual_${System.currentTimeMillis()}", 
+                                        androidx.work.ExistingWorkPolicy.REPLACE, 
+                                        syncRequest
+                                    )
+                                    
+                                    // SÊNIOR UX: Ciclo de checagem agressiva por 15 segundos
+                                    repeat(10) {
+                                        delay(3000)
+                                        recadastroPending = localDb.getRecadastroStats().second
+                                        economiasPending = localDb.getEconomyStats().second
+                                        // Busca erros técnicos se houver
+                                        val pendingEconomyList = localDb.getPendingEconomyUpdates()
+                                        val errorMsg = pendingEconomyList.firstOrNull()?.second?.id?.let { "ID: $it" } ?: ""
+                                        Log.d("MenuDebug", "Checagem: Clientes=$recadastroPending, Econ=$economiasPending, $errorMsg")
+                                    }
+                                    
+                                    isSyncingManual = false
+                                    Toast.makeText(context, "Sincronização finalizada.", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        ) {
+                            Text(if (isSyncingManual) "Processando..." else "Tentar Enviar Agora", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                    Text(
+                        text = "Recadastre.IA • Versão 0.9.2.6.4",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    )
+                }
             }
         }
     }

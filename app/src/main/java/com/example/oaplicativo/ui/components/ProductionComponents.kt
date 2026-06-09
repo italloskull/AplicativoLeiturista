@@ -87,6 +87,7 @@ fun GlobalActionMenu(
     onToggleTheme: () -> Unit,
     onLogout: () -> Unit,
     onNavigateToUserRegistration: (() -> Unit)? = null,
+    onForceSync: (() -> Unit)? = null, // SÊNIOR FIX: Adicionado botão de sync manual
     tint: Color = MaterialTheme.colorScheme.onSurface
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -122,6 +123,18 @@ fun GlobalActionMenu(
                     onClick = {
                         HapticFeedback.tick(context)
                         onNavigateToUserRegistration()
+                        showMenu = false
+                    }
+                )
+            }
+
+            if (onForceSync != null) {
+                DropdownMenuItem(
+                    text = { Text("Forçar Sincronização") },
+                    leadingIcon = { Icon(Icons.Default.Sync, null) },
+                    onClick = {
+                        HapticFeedback.tick(context)
+                        onForceSync()
                         showMenu = false
                     }
                 )

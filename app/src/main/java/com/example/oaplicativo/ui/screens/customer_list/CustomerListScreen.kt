@@ -15,12 +15,14 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -47,6 +49,7 @@ fun CustomerListScreen(
     onCustomerClick: (Customer) -> Unit,
     onNavigateToUserRegistration: () -> Unit,
     onLogout: () -> Unit,
+    onBack: () -> Unit, // SÊNIOR FIX: Adicionado callback de volta
     viewModel: CustomerListViewModel = viewModel(factory = androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner.current?.let {
         androidx.lifecycle.viewmodel.viewModelFactory {
             addInitializer(CustomerListViewModel::class) {
@@ -136,7 +139,7 @@ fun CustomerListScreen(
             TopAppBar(
                 title = { Text("Recadastro de Clientes", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onLogout) {
+                    IconButton(onClick = onBack) { // SÊNIOR FIX: Agora chama onBack e não onLogout
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
                     }
                 },
@@ -285,13 +288,40 @@ fun CustomerListItem(
                 ) {
                     AppStatusBadge(customer.quality)
                     
-                    if (userLocation != null && customer.latitude != null && customer.longitude != null) {
-                        val dist = locationHelper.calculateDistance(
-                            userLocation.latitude, userLocation.longitude,
-                            customer.latitude, customer.longitude
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        DistanceBadge(String.format("%.1fm", dist))
+                    Spacer(Modifier.width(8.dp))
+                    
+                    // SÊNIOR PERFORMANCE FIX: Espaço reservado para o Badge de Distância para evitar reflow
+                    val distLabel = remember(userLocation, customer) {
+                        if (userLocation != null && customer.latitude != null && customer.longitude != null) {
+                            val dist = locationHelper.calculateDistance(
+                                userLocation.latitude, userLocation.longitude,
+                                customer.latitude, customer.longitude
+                            )
+                            String.format("%.1fm", dist)
+                        } else null
+                    }
+
+                    Surface(
+                        color = if (distLabel != null) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                        contentColor = if (distLabel != null) MaterialTheme.colorScheme.onPrimaryContainer else Color.Transparent,
+                        shape = MaterialTheme.shapes.extraSmall
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Place,
+                                contentDescription = null,
+                                modifier = Modifier.size(12.dp),
+                                tint = if (distLabel != null) LocalContentColor.current else Color.Transparent
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = distLabel ?: "000.0m", // Reserva o espaço aproximado
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
                     }
                     
                     Spacer(Modifier.weight(1f))

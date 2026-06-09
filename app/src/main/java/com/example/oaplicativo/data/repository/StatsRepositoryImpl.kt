@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 class StatsRepositoryImpl private constructor(context: Context) : StatsRepository {
-    private val db = LocalDatabase(context)
+    private val db = LocalDatabase.getInstance(context)
     private val _stats = MutableStateFlow(VisitasStats())
     override val stats: StateFlow<VisitasStats> = _stats.asStateFlow()
 

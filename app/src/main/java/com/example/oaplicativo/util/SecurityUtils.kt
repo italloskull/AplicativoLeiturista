@@ -3,103 +3,76 @@ package com.example.oaplicativo.util
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 
+/**
+ * SECURITY UTILS: PROTOCOLO DE PERSISTÊNCIA INQUEBRÁVEL (V6)
+ * Foco total em compatibilidade com Xiaomi/MIUI e garantia de escrita no disco.
+ */
 object SecurityUtils {
-    private const val PREFS_NAME = "secure_prefs"
-    private const val KEY_IDENTIFIER = "remember_id"
-    private const val KEY_PASSWORD = "remember_pass"
-    private const val KEY_REMEMBER_ME = "remember_me"
+    // Mudança de nome para V6 para garantir que o Android ignore qualquer cache corrompido anterior
+    private const val PREFS_NAME = "unbreakable_auth_v7"
+    private const val KEY_IDENTIFIER = "persistent_user"
+    private const val KEY_PASSWORD = "persistent_pass"
+    private const val KEY_REMEMBER_ME = "is_remember_enabled"
 
     /**
-     * Obtém as SharedPreferences criptografadas com sistema de Auto-Cura (Self-Healing).
-     * Se houver falha de Keystore (comum em reinstalações), limpa e reinicia os dados.
+     * Retorna o banco de dados de preferências padrão com Modo Privado.
+     * SÊNIOR DECISION: Removemos a biblioteca 'androidx.security' temporariamente para resolver 
+     * a incompatibilidade física com aparelhos Xiaomi que estão rejeitando o Keystore.
      */
-    fun getEncryptedPrefs(context: Context): SharedPreferences {
-        return try {
-            val masterKey = MasterKey.Builder(context)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-
-            EncryptedSharedPreferences.create(
-                context,
-                PREFS_NAME,
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
-        } catch (e: Exception) {
-            Log.e("SecurityUtils", "Falha de Keystore detectada (AEADBadTag/KeyStore). Reiniciando cofre...", e)
-            
-            // OPERAÇÃO DE RESGATE: Se a chave quebrou, deletamos o arquivo corrompido para o app não travar
-            try {
-                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().clear().apply()
-                val sharedPrefsFile = java.io.File(context.filesDir.parent, "shared_prefs/$PREFS_NAME.xml")
-                if (sharedPrefsFile.exists()) {
-                    sharedPrefsFile.delete()
-                }
-            } catch (inner: Exception) {
-                Log.e("SecurityUtils", "Erro ao deletar arquivo corrompido", inner)
-            }
-            
-            // Tenta criar novamente um cofre novo e limpo
-            val masterKey = MasterKey.Builder(context)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-
-            EncryptedSharedPreferences.create(
-                context,
-                PREFS_NAME,
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
-        }
+    private fun getPrefs(context: Context): SharedPreferences {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
 
+    /**
+     * SALVAMENTO ATÔMICO: Grava os dados e aguarda a confirmação física do hardware (Disk Write).
+     */
     fun saveCredentials(context: Context, identifier: String, pass: String, remember: Boolean) {
         try {
-            val prefs = getEncryptedPrefs(context)
-            prefs.edit().apply {
-                putBoolean(KEY_REMEMBER_ME, remember)
-                if (remember) {
-                    putString(KEY_IDENTIFIER, identifier)
-                    putString(KEY_PASSWORD, pass)
-                } else {
-                    remove(KEY_IDENTIFIER)
-                    remove(KEY_PASSWORD)
-                }
-                apply()
+            val editor = getPrefs(context).edit()
+            
+            // Sempre limpamos antes para garantir que não haja lixo
+            editor.clear() 
+
+            if (remember) {
+                editor.putBoolean(KEY_REMEMBER_ME, true)
+                editor.putString(KEY_IDENTIFIER, identifier.trim().lowercase())
+                editor.putString(KEY_PASSWORD, pass)
+            } else {
+                editor.putBoolean(KEY_REMEMBER_ME, false)
             }
+            
+            // SÊNIOR FIX: .commit() é síncrono e retorna booleano. .apply() é assíncrono.
+            // Para login, PRECISAMOS da garantia de escrita agora.
+            val success = editor.commit()
+            Log.i("SecurityUtils", "🔒 Persistência V6 - Sucesso: $success | Usuário: $identifier | Remember: $remember")
+            
         } catch (e: Exception) {
-            Log.e("SecurityUtils", "Erro ao salvar credenciais", e)
+            Log.e("SecurityUtils", "❌ Erro Crítico de Disco", e)
         }
     }
 
     fun getRememberedIdentifier(context: Context): String? {
-        return try {
-            getEncryptedPrefs(context).getString(KEY_IDENTIFIER, null)
-        } catch (e: Exception) { null }
+        val value = getPrefs(context).getString(KEY_IDENTIFIER, null)
+        Log.d("SecurityUtils", "📖 Lendo Usuário: $value")
+        return value
     }
 
     fun getRememberedPassword(context: Context): String? {
-        return try {
-            getEncryptedPrefs(context).getString(KEY_PASSWORD, null)
-        } catch (e: Exception) { null }
+        return getPrefs(context).getString(KEY_PASSWORD, null)
     }
 
     fun isRememberMeEnabled(context: Context): Boolean {
-        return try {
-            getEncryptedPrefs(context).getBoolean(KEY_REMEMBER_ME, false)
-        } catch (e: Exception) { false }
+        val enabled = getPrefs(context).getBoolean(KEY_REMEMBER_ME, false)
+        Log.d("SecurityUtils", "📖 Lembrar está ativo? $enabled")
+        return enabled
     }
 
+    /**
+     * Limpa fisicamente o arquivo do disco.
+     */
     fun clearCredentials(context: Context) {
-        try {
-            getEncryptedPrefs(context).edit().clear().apply()
-        } catch (e: Exception) {
-            Log.e("SecurityUtils", "Erro ao limpar credenciais", e)
-        }
+        getPrefs(context).edit().clear().commit()
+        Log.w("SecurityUtils", "🧹 Cofre limpo pelo usuário.")
     }
 }

@@ -130,7 +130,7 @@ fun EconomyUpdateScreen(
                     onValueChange = { hdNumber = it }, 
                     label = "Nº Hidrômetro (HD)",
                     leadingIcon = Icons.Default.WaterDrop,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text) // SÊNIOR FIX: Aceita Letras e Números
                 )
                 Spacer(Modifier.height(12.dp))
                 AppTextField(

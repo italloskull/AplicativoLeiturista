@@ -22,7 +22,9 @@ import com.example.oaplicativo.model.Customer
 import com.example.oaplicativo.model.UserProfile
 import com.example.oaplicativo.util.GeoFencingHelper
 import com.example.oaplicativo.util.LocationHelper
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -41,15 +43,23 @@ class RoleData {
     var qualDoc by mutableStateOf("")
 }
 
-class RecadastroViewModel(application: Application) : AndroidViewModel(application) {
+class RecadastroViewModel(
+    application: android.app.Application,
+    private val savedStateHandle: androidx.lifecycle.SavedStateHandle // SÊNIOR QA FIX: Sobrevive ao Process Death
+) : androidx.lifecycle.AndroidViewModel(application) {
     private val authRepository = AuthRepositoryImpl.getInstance()
     private val customerRepository: CustomerRepository = CustomerRepositoryImpl.getInstance()
-    private val localDb = LocalDatabase(application)
+    private val localDb = LocalDatabase.getInstance(application)
     private val locationHelper = LocationHelper(application)
     private val client = SupabaseClient.client
     
     var isDataCensoredInitial by mutableStateOf(false)
     val currentUserProfile = authRepository.currentUserProfile
+    
+    // SÊNIOR QA FIX: ID persistente mesmo se o Android matar o processo
+    private var editingCustomerId: String?
+        get() = savedStateHandle["editing_id"]
+        set(value) { savedStateHandle["editing_id"] = value }
 
     // --- ESTADO DO IMÓVEL ---
     var matricula by mutableStateOf("")
@@ -113,16 +123,23 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
 
     val registrationProgress: Float
         get() {
-            var score = 0
-            if (matricula.isNotBlank()) score++
-            if (latitude != null) score++
-            if (responsavelData.nomeCompleto.isNotBlank()) score++
-            if (responsavelData.cpfCnpj.isNotBlank()) score++
-            if (logradouro.isNotBlank()) score++
-            if (numero.isNotBlank()) score++
-            if (bairro.isNotBlank()) score++
-            if (celular1.isNotBlank()) score++
-            return score / 8f
+            var score = 0f
+            // Cada campo preenchido soma 1 ponto de "riqueza de dado"
+            if (matricula.isNotBlank() && matricula != "0") score += 1f
+            if (latitude != null) score += 1f
+            if (responsavelData.nomeCompleto.isNotBlank()) score += 1f
+            if (responsavelData.cpfCnpj.isNotBlank()) score += 1f
+            if (celular1.isNotBlank()) score += 1f
+            if (logradouro.isNotBlank()) score += 1f
+            if (numero.isNotBlank()) score += 1f
+            if (bairro.isNotBlank()) score += 1f
+            if (email.isNotBlank()) score += 1f
+            if (pavimentoRua != null) score += 1f
+            if (fonteAbastecimento != null) score += 1f
+            if (economias.isNotBlank()) score += 1f
+            
+            // Máximo de 12 pontos possíveis
+            return score / 12f
         }
 
     private fun getLeituristaCidadeNome(cidadeId: String?): String? {
@@ -137,6 +154,7 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
 
     fun loadCustomerForEdit(customerId: String?) {
         if (customerId == null) return
+        editingCustomerId = customerId // SÊNIOR FIX: Registra o ID para o salvamento atômico
         viewModelScope.launch {
             val customer = customerRepository.getCustomerById(customerId) ?: return@launch
             isDataCensoredInitial = com.example.oaplicativo.util.privacy.PrivacyUtils.shouldMaskSensitiveData(customer.createdAt)
@@ -221,13 +239,16 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
         
         val sEco = economias.toIntOrNull()
 
+        // SÊNIOR UX FIX: Impede cliques duplicados (Reentrancy protection)
+        if (isCapturingLocation) return 
+        
         viewModelScope.launch {
             try {
-                // MODO "INDSTRUTÍVEL": Removemos qualquer trava de obrigatoriedade.
-                // Se o leiturista quiser salvar só com o nome ou só com o GPS, ele pode.
-
+                isCapturingLocation = true // Usamos como flag de "Processando"
+                
                 val user = authRepository.currentUserProfile.value ?: run {
                     onError("Sessão inválida. Faça login novamente.")
+                    isCapturingLocation = false
                     return@launch
                 }
 
@@ -271,7 +292,7 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
                 } else baseStatus
 
                 val customer = Customer(
-                    id = java.util.UUID.randomUUID().toString(),
+                    id = editingCustomerId ?: java.util.UUID.randomUUID().toString(), // REUTILIZA ID SE FOR EDIÇÃO
                     cidadeId = finalCidadeId,
                     leituristaId = finalLeituristaId,
                     name = sNome.orSpace(), // Até o nome vira espaço se estiver vazio
@@ -334,7 +355,7 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
                     existeRedeAgua = existeRedeAgua.orSpace(),
                     localInstalacao = localInstalacao.orSpace(),
                     acessibilidade = acessibilidade.orSpace(),
-                    observacao = snapshotObs,
+                    observacao = if (snapshotObs.length > 1000) snapshotObs.take(1000) else snapshotObs,
                     grupoSugerido = GeoFencingHelper.findSuggestedGroup(finalCidade, snapshotLat, snapshotLng),
                     rotaSugerida = GeoFencingHelper.findSuggestedRoute(finalCidade, snapshotLat, snapshotLng),
                     isSynced = false
@@ -347,13 +368,23 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
                 customerRepository.updateLocalCustomers(pending)
 
                 val syncRequest = OneTimeWorkRequestBuilder<SyncWorker>()
-                    .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                    .setConstraints(Constraints.Builder()
+                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .build()) // REMOVIDO: setRequiresBatteryNotLow, etc. Prioridade máxima.
+                    .setBackoffCriteria(BackoffPolicy.LINEAR, 30, java.util.concurrent.TimeUnit.SECONDS)
                     .build()
-                WorkManager.getInstance(getApplication()).enqueueUniqueWork("immediate_sync", ExistingWorkPolicy.REPLACE, syncRequest)
+                
+                WorkManager.getInstance(getApplication()).enqueueUniqueWork(
+                    "immediate_sync", 
+                    ExistingWorkPolicy.APPEND_OR_REPLACE, // APPEND garante que as filas offline acumulem e rodem em ordem
+                    syncRequest
+                )
                 onSuccess()
             } catch (e: Exception) {
                 Log.e("RecadastroVM", "ERRO AO SALVAR", e)
                 onError("Erro técnico: ${e.message ?: "Falha no SQLite"}")
+            } finally {
+                isCapturingLocation = false // Libera o botão independente do resultado
             }
         }
     }
@@ -366,24 +397,46 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    private fun fetchAddress(cepCode: String) {
+    fun fetchAddress(cepCode: String) {
         if (isGenericCep(cepCode)) return
         
         cepJob?.cancel()
-        cepJob = viewModelScope.launch {
+        cepJob = viewModelScope.launch(Dispatchers.IO) {
             isCepLoading = true
             cepError = false
             try {
                 delay(500)
-                val addresses = geocoder.getFromLocationName("CEP $cepCode, Brasil", 1)
-                if (!addresses.isNullOrEmpty()) {
-                    handleGoogleAddress(addresses[0])
+                // SÊNIOR QA FIX: Adicionamos verificação de escopo ativo antes de disparar o listener
+                if (!isActive) return@launch
+                
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                    geocoder.getFromLocationName("CEP $cepCode, Brasil", 1, object : Geocoder.GeocodeListener {
+                        override fun onGeocode(addresses: List<Address>) {
+                            if (!isActive) return // Corta execução se o usuário saiu da tela
+                            if (addresses.isNotEmpty()) {
+                                handleGoogleAddress(addresses[0])
+                            } else {
+                                refineCepWithViaCep(cepCode, null, null)
+                            }
+                            isCepLoading = false
+                        }
+                        override fun onError(errorMessage: String?) {
+                            cepError = true
+                            isCepLoading = false
+                        }
+                    })
                 } else {
-                    refineCepWithViaCep(cepCode, null, null)
+                    @Suppress("DEPRECATION")
+                    val addresses = geocoder.getFromLocationName("CEP $cepCode, Brasil", 1)
+                    if (!addresses.isNullOrEmpty()) {
+                        handleGoogleAddress(addresses[0])
+                    } else {
+                        refineCepWithViaCep(cepCode, null, null)
+                    }
+                    isCepLoading = false
                 }
             } catch (e: Exception) {
                 cepError = true
-            } finally {
                 isCepLoading = false
             }
         }
@@ -395,11 +448,23 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
         lastResolvedLat = lat
         lastResolvedLng = lng
         
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
-                val addresses = geocoder.getFromLocation(lat, lng, 1)
-                if (!addresses.isNullOrEmpty()) {
-                    handleGoogleAddress(addresses[0])
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                    geocoder.getFromLocation(lat, lng, 1, object : Geocoder.GeocodeListener {
+                        override fun onGeocode(addresses: List<Address>) {
+                            if (addresses.isNotEmpty()) handleGoogleAddress(addresses[0])
+                        }
+                        override fun onError(errorMessage: String?) {
+                            Log.e("GeoCoder", "Erro assíncrono: $errorMessage")
+                        }
+                    })
+                } else {
+                    @Suppress("DEPRECATION")
+                    val addresses = geocoder.getFromLocation(lat, lng, 1)
+                    if (!addresses.isNullOrEmpty()) {
+                        handleGoogleAddress(addresses[0])
+                    }
                 }
             } catch (e: Exception) {
                 Log.e("RecadastroVM", "Erro Geocoder", e)
@@ -441,10 +506,53 @@ class RecadastroViewModel(application: Application) : AndroidViewModel(applicati
     private fun calculateDataQuality(): String {
         val progress = registrationProgress
         return when {
-            progress >= 0.85f -> "Boa"
-            progress >= 0.50f -> "Regular"
-            else -> "Ruim"
+            progress >= 0.75f -> "Boa"     // 9 ou mais pontos
+            progress >= 0.33f -> "Regular" // 4 a 8 pontos
+            else -> "Ruim"                 // 0 a 3 pontos
         }
+    }
+
+    fun resetForm() {
+        editingCustomerId = null
+        matricula = ""
+        registrationDigit = ""
+        setor = ""
+        quadra = ""
+        latitude = null
+        longitude = null
+        responsavelTipo = "Proprietário"
+        entrevistadoEhOResponsavel = "Sim"
+        responsavelData = RoleData()
+        entrevistadoNomeApenas = ""
+        email = ""
+        telefone = ""
+        celular1 = ""
+        logradouro = ""
+        numero = ""
+        complemento = ""
+        bairro = ""
+        cidade = ""
+        uf = ""
+        cep = ""
+        pavimentoRua = null
+        pavimentoCalcada = null
+        fonteAbastecimento = null
+        existeRedeAgua = null
+        possuiPiscina = null
+        possuiCaixaAgua = null
+        beneficiarioSocial = null
+        usaAguaVizinho = null
+        possuiHidrometro = null
+        isStandardMeasurementBox = null
+        isStandardizedSeals = null
+        isHdAccessible = null
+        isVacationer = null
+        locationStatus = null
+        localInstalacao = null
+        acessibilidade = null
+        numeroHidrometro = ""
+        economias = ""
+        observacao = ""
     }
 
     private fun String?.orSpace(): String? = if (this.isNullOrBlank()) " " else this

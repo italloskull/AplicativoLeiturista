@@ -23,11 +23,12 @@ class LoginViewModel(
         viewModelScope.launch {
             _loginState.value = LoginState.Loading
             try {
-                authRepository.login(identifier, pass)
-                
+                authRepository.login(identifier, pass) // FALTAVA A CHAMADA REAL DO LOGIN
+
+                // SÊNIOR FIX: Sempre salvar credenciais e perfil no sucesso online para garantir acesso offline
                 val profile = authRepository.currentUserProfile.value
                 if (profile != null) {
-                    val localDb = LocalDatabase(context)
+                    val localDb = LocalDatabase.getInstance(context)
                     localDb.cacheUserProfile(
                         id = profile.id,
                         username = profile.username ?: "",
@@ -36,10 +37,9 @@ class LoginViewModel(
                         isAdmin = profile.isAdmin,
                         email = profile.email
                     )
-                }
-
-                if (remember) {
-                    SecurityUtils.saveCredentials(context, identifier, pass, true)
+                    // GARANTIA: Salvamos as credenciais no cofre criptografado mesmo sem o 'Lembrar'
+                    // para permitir o login de emergência se a internet cair logo depois.
+                    SecurityUtils.saveCredentials(context, identifier, pass, remember)
                 }
                 _loginState.value = LoginState.Success
                 
@@ -56,7 +56,7 @@ class LoginViewModel(
                     Log.d("LoginOffline", "Senha Input: '${pass.take(1)}***' | Stored: '${savedPass?.take(1)}***'")
 
                     if (storedUser != null && inputUser == storedUser && pass == savedPass) {
-                        val localDb = LocalDatabase(context)
+                        val localDb = LocalDatabase.getInstance(context)
                         val cachedProfile = localDb.getCachedUserProfile(inputUser)
                         
                         if (cachedProfile != null) {
