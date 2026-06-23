@@ -57,7 +57,6 @@ fun RecadastroFormScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val locationHelper = remember { LocationHelper(context) }
-    var isCapturingGpsOnSave by remember { mutableStateOf(false) }
 
     LaunchedEffect(customerId) {
         if (customerId != null) {
@@ -153,14 +152,14 @@ fun RecadastroFormScreen(
             ) {
                 Box(modifier = Modifier.padding(24.dp)) {
                     AppButton(
-                        text = if (isCapturingGpsOnSave) "Capturando GPS..." else "Salvar Recadastro",
-                        icon = if (isCapturingGpsOnSave) null else Icons.Default.CloudUpload,
-                        isLoading = isCapturingGpsOnSave,
+                        text = if (viewModel.isCapturingGpsOnSave) "Capturando GPS..." else "Salvar Recadastro",
+                        icon = if (viewModel.isCapturingGpsOnSave) null else Icons.Default.CloudUpload,
+                        isLoading = viewModel.isCapturingGpsOnSave,
                         onClick = {
                             scope.launch {
                                 // Se as coordenadas estão nulas, tentamos capturar no "vôo"
                                 if (viewModel.latitude == null || viewModel.longitude == null) {
-                                    isCapturingGpsOnSave = true
+                                    viewModel.isCapturingGpsOnSave = true
                                     val fineLoc = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
                                     if (fineLoc == PackageManager.PERMISSION_GRANTED) {
                                         // Tentativa rápida de captura (locationHelper deve ter um timeout interno)
@@ -172,10 +171,10 @@ fun RecadastroFormScreen(
                                     } else {
                                         // Se não tem permissão, pedimos apenas uma vez
                                         locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
-                                        isCapturingGpsOnSave = false
+                                        viewModel.isCapturingGpsOnSave = false
                                         return@launch
                                     }
-                                    isCapturingGpsOnSave = false
+                                    viewModel.isCapturingGpsOnSave = false
                                 }
                                 
                                 // SALVA DE QUALQUER JEITO: Com ou sem GPS obtido na tentativa acima
@@ -236,8 +235,52 @@ fun RecadastroFormScreen(
                             AppTextField(value = viewModel.quadra, onValueChange = { viewModel.quadra = it }, label = "Quadra", leadingIcon = Icons.Default.GridOn)
                         }
                     }
+
+                    // SÊNIOR UX: PAINEL DE INTELIGÊNCIA GEOGRÁFICA (ALTA VISIBILIDADE)
+                    // Reposicionado para baixo de Setor e Quadra conforme solicitado
+                    if (viewModel.grupoSugerido != null || viewModel.rotaSugerida != null) {
+                        Spacer(Modifier.height(20.dp))
+                        HorizontalDivider(thickness = 0.5.dp, color = Color(0xFF10B981).copy(alpha = 0.3f))
+                        Spacer(Modifier.height(20.dp))
+
+                        Text(
+                            "📍 SETOR DETECTADO (OFICIAL):",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF059669),
+                            fontWeight = FontWeight.Black
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            viewModel.grupoSugerido?.let { g ->
+                                Surface(
+                                    color = Color(0xFFECFDF5),
+                                    shape = MaterialTheme.shapes.medium,
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF10B981)),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("GRUPO", style = MaterialTheme.typography.labelSmall, color = Color(0xFF059669))
+                                        Text(g, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = Color(0xFF064E3B))
+                                    }
+                                }
+                            }
+                            viewModel.rotaSugerida?.let { r ->
+                                Surface(
+                                    color = Color(0xFFECFDF5),
+                                    shape = MaterialTheme.shapes.medium,
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF10B981)),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("ROTA", style = MaterialTheme.typography.labelSmall, color = Color(0xFF059669))
+                                        Text(r, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = Color(0xFF064E3B))
+                                    }
+                                }
+                            }
+                        }
+                    }
                     
-                    Spacer(Modifier.height(20.dp))
+                    Spacer(Modifier.height(24.dp))
                     
                     GpsStatusCard(
                         latitude = viewModel.latitude,
@@ -480,12 +523,6 @@ fun RecadastroFormScreen(
             item {
                 AppCard(title = "Observações", icon = Icons.Default.NoteAlt) {
                     AppTextField(value = viewModel.observacao, onValueChange = { viewModel.observacao = it }, label = "Notas de Campo", leadingIcon = Icons.AutoMirrored.Filled.Comment)
-                    Spacer(Modifier.height(20.dp))
-                    Button(onClick = { }, modifier = Modifier.fillMaxWidth().height(56.dp), shape = MaterialTheme.shapes.medium, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)) {
-                        Icon(Icons.Default.PhotoCamera, contentDescription = null)
-                        Spacer(Modifier.width(12.dp))
-                        Text("ANEXAR EVIDÊNCIA FOTOGRÁFICA")
-                    }
                 }
             }
             item { Spacer(Modifier.height(40.dp)) }

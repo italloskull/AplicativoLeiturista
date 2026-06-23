@@ -2,6 +2,7 @@
 package com.example.oaplicativo.data.repository
 
 import android.util.Log
+import java.util.UUID
 import com.example.oaplicativo.data.SupabaseClient
 import com.example.oaplicativo.domain.repository.CustomerRepository
 import com.example.oaplicativo.model.Customer
@@ -95,14 +96,14 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
     private fun combineAndEmit() {
         scope.launch(Dispatchers.Default) {
             refreshMutex.withLock {
-                val remoteKeys = remoteCustomers.mapNotNull { it.registrationNumber }.filter { it.isNotBlank() }.toSet()
-                val uniqueLocal = localPendingCustomers.filter { local ->
-                    val key = local.registrationNumber
-                    if (key.isNullOrBlank()) true 
-                    else !remoteKeys.contains(key)
-                }
-                val combined = uniqueLocal + remoteCustomers
+                // SÊNIOR FIX: Garantia absoluta de unicidade por ID para evitar crash de 'LazyColumn Key'
+                // Registros locais (pendentes) têm prioridade visual
+                val combined = (localPendingCustomers + remoteCustomers)
+                    .distinctBy { it.id ?: UUID.randomUUID().toString() }
+                    .filter { it.id != null }
+                
                 _customers.value = combined
+                Log.d("CustomerRepo", "📊 Lista combinada emitida: ${combined.size} clientes únicos.")
             }
         }
     }

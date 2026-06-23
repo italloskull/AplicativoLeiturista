@@ -1,3 +1,4 @@
+@file:Suppress("SpellCheckingInspection")
 package com.example.oaplicativo.ui.navigation
 
 import androidx.compose.runtime.Composable
@@ -56,17 +57,15 @@ fun SetupNavGraph(
             MenuScreen(
                 isDarkTheme = isDarkTheme,
                 onToggleTheme = onToggleTheme,
-                onNavigateToRecadastro = {
-                    navController.navigate(Screen.CustomerList.route)
-                },
-                onNavigateToEconomias = {
-                    navController.navigate(Screen.EconomyUpdateList.route)
-                },
-                onNavigateToVisitas = {
-                    navController.navigate(Screen.VisitasDashboard.route)
-                },
-                onNavigateToUserRegistration = {
-                    navController.navigate(Screen.UserRegistration.route)
+                onNavigate = { routeName ->
+                    val finalRoute = when (routeName) {
+                        "customer_list" -> Screen.CustomerList.route
+                        "economy_update_list" -> Screen.EconomyUpdateList.route
+                        "visitas" -> Screen.VisitasDashboard.route
+                        "user_registration" -> Screen.UserRegistration.route
+                        else -> routeName
+                    }
+                    navController.navigate(finalRoute)
                 },
                 onLogout = { onLogoutGlobal() }
             )
@@ -75,18 +74,18 @@ fun SetupNavGraph(
         composable(route = Screen.CustomerList.route) {
             CustomerListScreen(
                 isDarkTheme = isDarkTheme,
-                onToggleTheme = onToggleTheme,
+                onBack = { navController.popBackStack() },
                 onAddCustomer = {
                     navController.navigate(Screen.RecadastroForm.route)
                 },
                 onCustomerClick = { customer ->
                     navController.navigate(Screen.CustomerForm.createRoute(customer.id))
                 },
+                onLogout = { onLogoutGlobal() },
+                onToggleTheme = onToggleTheme,
                 onNavigateToUserRegistration = {
                     navController.navigate(Screen.UserRegistration.route)
-                },
-                onLogout = { onLogoutGlobal() },
-                onBack = { navController.popBackStack() } // SÊNIOR FIX: Volta para o Menu e não para o Login
+                }
             )
         }
 

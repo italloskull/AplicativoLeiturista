@@ -25,8 +25,15 @@ class EconomyRepositoryImpl private constructor() : EconomyRepository {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val mutex = Mutex()
 
-    init {
-        // Carga inicial assíncrona
+    private var context: android.content.Context? = null
+
+    fun initialize(context: android.content.Context) {
+        if (this.context == null) {
+            this.context = context.applicationContext
+            scope.launch {
+                fetchEconomyUpdates()
+            }
+        }
     }
 
     override suspend fun fetchEconomyUpdates() {
@@ -44,10 +51,9 @@ class EconomyRepositoryImpl private constructor() : EconomyRepository {
                     emptyList()
                 }
                 
-                // 2. SÊNIOR FIX: Mesclagem inteligente com o banco local usando o Singleton Database
-                // O contexto é obtido via referência global segura no Singleton
+                // 2. SÊNIOR FIX: Injeção segura via context inicializado para evitar Crash por morte de Activity
                 val localPending = try {
-                    val db = LocalDatabase.getInstance(com.example.oaplicativo.MainActivity.contextReference ?: throw Exception("Context not ready"))
+                    val db = context?.let { LocalDatabase.getInstance(it) } ?: throw Exception("Context not ready")
                     db.getPendingEconomyUpdates().map { it.second.copy(isSynced = false) }
                 } catch (e: Exception) {
                     Log.e("EconomyRepo", "Erro ao acessar banco local: ${e.message}")
@@ -106,9 +112,7 @@ class EconomyRepositoryImpl private constructor() : EconomyRepository {
         private var instance: EconomyRepositoryImpl? = null
         fun getInstance(): EconomyRepositoryImpl {
             return instance ?: synchronized(this) {
-                instance ?: EconomyRepositoryImpl().also { 
-                    instance = it 
-                }
+                instance ?: EconomyRepositoryImpl().also { instance = it }
             }
         }
     }

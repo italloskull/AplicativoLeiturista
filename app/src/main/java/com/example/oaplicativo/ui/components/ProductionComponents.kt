@@ -122,7 +122,7 @@ fun GlobalActionMenu(
                     leadingIcon = { Icon(Icons.Default.GroupAdd, null) },
                     onClick = {
                         HapticFeedback.tick(context)
-                        onNavigateToUserRegistration()
+                        onNavigateToUserRegistration?.invoke()
                         showMenu = false
                     }
                 )

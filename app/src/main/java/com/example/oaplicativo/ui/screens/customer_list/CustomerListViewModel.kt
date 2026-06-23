@@ -2,6 +2,7 @@
 package com.example.oaplicativo.ui.screens.customer_list
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.oaplicativo.data.local.LocalDatabase
@@ -22,6 +23,7 @@ class CustomerListViewModel(
     private val customerRepository: CustomerRepository = CustomerRepositoryImpl.getInstance(),
     private val authRepository: AuthRepository = AuthRepositoryImpl.getInstance()
 ) : AndroidViewModel(application) {
+    
     val customers: StateFlow<List<Customer>> = customerRepository.customers
     val currentUserProfile: StateFlow<UserProfile?> = authRepository.currentUserProfile
 
@@ -43,16 +45,14 @@ class CustomerListViewModel(
     }
 
     private fun updateLocalData() {
-        viewModelScope.launch {
-            val pending = localDb.getPendingCustomers().map { it.second }
-            customerRepository.updateLocalCustomers(pending)
-        }
+        val pending = localDb.getPendingCustomers().map { it.second }
+        customerRepository.updateLocalCustomers(pending)
     }
 
     private fun startPeriodicRefresh() {
         viewModelScope.launch {
             while (true) {
-                delay(30000)
+                delay(30000) // Atualiza a cada 30s se a tela estiver aberta
                 updateLocalData()
                 customerRepository.fetchCustomers()
             }
@@ -65,6 +65,8 @@ class CustomerListViewModel(
             try {
                 updateLocalData()
                 customerRepository.fetchCustomers()
+            } catch (e: Exception) {
+                Log.e("CustomerListVM", "Erro ao atualizar: ${e.message}")
             } finally {
                 _isRefreshing.value = false
             }

@@ -15,6 +15,13 @@ import java.util.concurrent.TimeUnit
 @Composable
 fun SanitationApp() {
     val context = LocalContext.current
+    
+    // SÊNIOR FIX: Inicialização segura de repositórios globais com o Contexto da Aplicação
+    // Isso evita que os repositórios fiquem orfãos se a Activity for recriada.
+    LaunchedEffect(Unit) {
+        com.example.oaplicativo.data.repository.EconomyRepositoryImpl.getInstance().initialize(context)
+    }
+
     val navController = rememberNavController()
     
     // GESTÃO DE TEMA GLOBAL (Ref. Item 4 das Diretrizes)

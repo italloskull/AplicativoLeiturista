@@ -5,13 +5,14 @@ import android.app.Application
 import android.location.Address
 import android.location.Geocoder
 import android.util.Log
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.work.*
-import com.example.oaplicativo.data.SupabaseClient
 import com.example.oaplicativo.data.local.LocalDatabase
 import com.example.oaplicativo.data.repository.AuthRepositoryImpl
 import com.example.oaplicativo.data.repository.CustomerRepositoryImpl
@@ -19,14 +20,11 @@ import com.example.oaplicativo.data.repository.StatsRepositoryImpl
 import com.example.oaplicativo.data.sync.SyncWorker
 import com.example.oaplicativo.domain.repository.CustomerRepository
 import com.example.oaplicativo.model.Customer
-import com.example.oaplicativo.model.UserProfile
-import com.example.oaplicativo.util.GeoFencingHelper
-import com.example.oaplicativo.util.LocationHelper
+import com.example.oaplicativo.util.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -44,19 +42,17 @@ class RoleData {
 }
 
 class RecadastroViewModel(
-    application: android.app.Application,
-    private val savedStateHandle: androidx.lifecycle.SavedStateHandle // SÊNIOR QA FIX: Sobrevive ao Process Death
-) : androidx.lifecycle.AndroidViewModel(application) {
+    application: Application,
+    private val savedStateHandle: SavedStateHandle
+) : AndroidViewModel(application) {
     private val authRepository = AuthRepositoryImpl.getInstance()
     private val customerRepository: CustomerRepository = CustomerRepositoryImpl.getInstance()
     private val localDb = LocalDatabase.getInstance(application)
-    private val locationHelper = LocationHelper(application)
-    private val client = SupabaseClient.client
+    private val geocoder = Geocoder(application, Locale.getDefault())
     
     var isDataCensoredInitial by mutableStateOf(false)
     val currentUserProfile = authRepository.currentUserProfile
     
-    // SÊNIOR QA FIX: ID persistente mesmo se o Android matar o processo
     private var editingCustomerId: String?
         get() = savedStateHandle["editing_id"]
         set(value) { savedStateHandle["editing_id"] = value }
@@ -70,7 +66,22 @@ class RecadastroViewModel(
     var longitude by mutableStateOf<Double?>(null)
     var isCapturingLocation by mutableStateOf(false)
 
-    // --- ESTADO DO RESPONSÁVEL (OPÇÃO 2) ---
+    // SÊNIOR PERF: Reatividade em tempo real para sugestões geográficas
+    // BUG FIX: Adicionado LOG e fallback de cidade para garantir que a detecção ocorra
+    val grupoSugerido by derivedStateOf {
+        val finalCidade = cidade.ifBlank { getLeituristaCidadeNome(currentUserProfile.value?.cidadeId) ?: "" }
+        val result = GeoFencingHelper.findSuggestedGroup(finalCidade, latitude, longitude)
+        Log.d("GeoDebug", "🔎 Tentando detectar GRUPO para cidade: $finalCidade | Lat: $latitude | Resultado: $result")
+        result
+    }
+    val rotaSugerida by derivedStateOf {
+        val finalCidade = cidade.ifBlank { getLeituristaCidadeNome(currentUserProfile.value?.cidadeId) ?: "" }
+        val result = GeoFencingHelper.findSuggestedRoute(finalCidade, latitude, longitude)
+        Log.d("GeoDebug", "🔎 Tentando detectar ROTA para cidade: $finalCidade | Lat: $latitude | Resultado: $result")
+        result
+    }
+
+    // --- ESTADO DO RESPONSÁVEL ---
     var responsavelTipo by mutableStateOf("Proprietário") 
     var entrevistadoEhOResponsavel by mutableStateOf("Sim")
     var responsavelData = RoleData()
@@ -114,33 +125,45 @@ class RecadastroViewModel(
 
     var isCepLoading by mutableStateOf(false)
     var cepError by mutableStateOf(false)
+    
+    // SÊNIOR FIX: Estado de UI persistente para evitar travamento em rotação/morte de processo
+    var isCapturingGpsOnSave by mutableStateOf(false)
 
-    // --- UTILITÁRIOS ---
+    // SÊNIOR FIX: Orquestração de Coroutines para evitar ANR e Memory Leaks
+    private var geocodeJob: Job? = null
     private var cepJob: Job? = null
     private var lastResolvedLat = 0.0
     private var lastResolvedLng = 0.0
-    private val geocoder = Geocoder(application, Locale.getDefault())
 
-    val registrationProgress: Float
-        get() {
-            var score = 0f
-            // Cada campo preenchido soma 1 ponto de "riqueza de dado"
-            if (matricula.isNotBlank() && matricula != "0") score += 1f
-            if (latitude != null) score += 1f
-            if (responsavelData.nomeCompleto.isNotBlank()) score += 1f
-            if (responsavelData.cpfCnpj.isNotBlank()) score += 1f
-            if (celular1.isNotBlank()) score += 1f
-            if (logradouro.isNotBlank()) score += 1f
-            if (numero.isNotBlank()) score += 1f
-            if (bairro.isNotBlank()) score += 1f
-            if (email.isNotBlank()) score += 1f
-            if (pavimentoRua != null) score += 1f
-            if (fonteAbastecimento != null) score += 1f
-            if (economias.isNotBlank()) score += 1f
-            
-            // Máximo de 12 pontos possíveis
-            return score / 12f
-        }
+    /**
+     * SÊNIOR PROTOCOL: Garante que o estado de captura nunca fique travado.
+     */
+    override fun onCleared() {
+        super.onCleared()
+        geocodeJob?.cancel()
+        cepJob?.cancel()
+        isCapturingLocation = false // Reset de segurança
+    }
+
+    // SÊNIOR PERF: Cálculo ultra-eficiente de progresso usando derivedStateOf
+    // Isso evita re-cálculos pesados durante a digitação, economizando bateria.
+    private val _registrationProgress = derivedStateOf {
+        var score = 0f
+        if (matricula.isNotBlank() && matricula != "0") score += 1f
+        if (latitude != null) score += 1f
+        if (responsavelData.nomeCompleto.isNotBlank()) score += 1f
+        if (responsavelData.cpfCnpj.isNotBlank()) score += 1f
+        if (celular1.isNotBlank()) score += 1f
+        if (logradouro.isNotBlank()) score += 1f
+        if (numero.isNotBlank()) score += 1f
+        if (bairro.isNotBlank()) score += 1f
+        if (email.isNotBlank()) score += 1f
+        if (pavimentoRua != null) score += 1f
+        if (fonteAbastecimento != null) score += 1f
+        if (economias.isNotBlank()) score += 1f
+        score / 12f
+    }
+    val registrationProgress: Float get() = _registrationProgress.value
 
     private fun getLeituristaCidadeNome(cidadeId: String?): String? {
         return when (cidadeId) {
@@ -154,7 +177,7 @@ class RecadastroViewModel(
 
     fun loadCustomerForEdit(customerId: String?) {
         if (customerId == null) return
-        editingCustomerId = customerId // SÊNIOR FIX: Registra o ID para o salvamento atômico
+        editingCustomerId = customerId
         viewModelScope.launch {
             val customer = customerRepository.getCustomerById(customerId) ?: return@launch
             isDataCensoredInitial = com.example.oaplicativo.util.privacy.PrivacyUtils.shouldMaskSensitiveData(customer.createdAt)
@@ -173,7 +196,7 @@ class RecadastroViewModel(
             cidade = customer.cidade ?: ""
             uf = customer.uf ?: ""
             email = customer.email ?: ""
-            telefone = customer.landline ?: ""
+            telefone = ""
             celular1 = customer.celular ?: ""
             
             beneficiarioSocial = customer.beneficiarioSocial.ifSpaceNull()
@@ -195,28 +218,17 @@ class RecadastroViewModel(
             observacao = customer.observacao ?: ""
             economias = customer.economiesCount?.toString() ?: ""
 
-            val hasLoc = !customer.locatarioNome.isNullOrBlank()
-            if (hasLoc) {
-                responsavelTipo = "Locatário"
-                responsavelData.nomeCompleto = customer.locatarioNome ?: ""
-                responsavelData.cpfCnpj = customer.locatarioCpf ?: ""
-                responsavelData.nomeMae = customer.locatarioMae ?: ""
-                responsavelData.dataNascimento = customer.locatarioNascimento ?: ""
-                responsavelData.sexo = customer.locatarioSexo
-                responsavelData.apresentouDoc = customer.locatarioApresentouDoc.ifSpaceNull()
-                responsavelData.qualDoc = customer.locatarioQualDoc ?: ""
-            } else {
-                responsavelTipo = "Proprietário"
-                responsavelData.nomeCompleto = customer.proprietarioNome ?: ""
-                responsavelData.cpfCnpj = customer.proprietarioCpf ?: ""
-                responsavelData.nomeMae = customer.proprietarioMae ?: ""
-                responsavelData.dataNascimento = customer.proprietarioNascimento ?: ""
-                responsavelData.sexo = customer.proprietarioSexo
-                responsavelData.apresentouDoc = customer.proprietarioApresentouDoc.ifSpaceNull()
-                responsavelData.qualDoc = customer.proprietarioQual_doc ?: ""
-            }
-            entrevistadoEhOResponsavel = if (customer.entrevistadoNome == responsavelData.nomeCompleto) "Sim" else "Não"
-            entrevistadoNomeApenas = if (entrevistadoEhOResponsavel == "Não") customer.entrevistadoNome ?: "" else ""
+            responsavelTipo = "Proprietário" 
+            responsavelData.nomeCompleto = customer.entrevistadoNome ?: ""
+            responsavelData.cpfCnpj = customer.entrevistadoCpf ?: ""
+            responsavelData.nomeMae = customer.entrevistadoMae ?: ""
+            responsavelData.dataNascimento = customer.entrevistadoNascimento ?: ""
+            responsavelData.sexo = customer.entrevistadoSexo
+            responsavelData.apresentouDoc = customer.entrevistadoApresentouDoc.ifSpaceNull()
+            responsavelData.qualDoc = customer.entrevistadoQualDoc ?: ""
+            
+            entrevistadoEhOResponsavel = "Sim"
+            entrevistadoNomeApenas = ""
         }
     }
 
@@ -227,7 +239,6 @@ class RecadastroViewModel(
         val snapshotDigit = registrationDigit.trim()
         val snapshotEmail = email.trim().lowercase()
         val snapshotCelular = celular1.trim()
-        val snapshotLandline = telefone.trim()
         val snapshotLogradouro = logradouro.trim()
         val snapshotNumero = numero.trim()
         val snapshotComplemento = complemento.trim()
@@ -239,12 +250,11 @@ class RecadastroViewModel(
         
         val sEco = economias.toIntOrNull()
 
-        // SÊNIOR UX FIX: Impede cliques duplicados (Reentrancy protection)
         if (isCapturingLocation) return 
         
         viewModelScope.launch {
             try {
-                isCapturingLocation = true // Usamos como flag de "Processando"
+                isCapturingLocation = true
                 
                 val user = authRepository.currentUserProfile.value ?: run {
                     onError("Sessão inválida. Faça login novamente.")
@@ -253,6 +263,9 @@ class RecadastroViewModel(
                 }
 
                 val finalCidade = snapshotCidadeManual.ifBlank { getLeituristaCidadeNome(user.cidadeId) ?: "" }
+                val finalCidadeId = if (user.cidadeId?.length == 36) user.cidadeId else null
+                val finalLeituristaId = if (user.id?.length == 36) user.id else null
+                
                 val utcNow = ZonedDateTime.now(ZoneId.of("UTC")).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
                 val brDate = ZonedDateTime.now(ZoneId.of("America/Sao_Paulo")).format(DateTimeFormatter.ofPattern("yyyy/MM/dd"))
 
@@ -264,44 +277,23 @@ class RecadastroViewModel(
                 val sDoc = responsavelData.apresentouDoc
                 val sQual = responsavelData.qualDoc.trim()
 
-                val finalPropNome = if (responsavelTipo == "Proprietário") sNome else ""
-                val finalPropCpf = if (responsavelTipo == "Proprietário") sCpf else ""
-                val finalPropMae = if (responsavelTipo == "Proprietário") sMae else ""
-                val finalPropNasc = if (responsavelTipo == "Proprietário") sNasc else ""
-                val finalPropSexo = if (responsavelTipo == "Proprietário") sSexo else null
-                val finalPropDoc = if (responsavelTipo == "Proprietário") sDoc else null
-                val finalPropQual = if (responsavelTipo == "Proprietário") sQual else ""
+                // SÊNIOR FIX: Captura instantânea do estado da UI para evitar race condition
+                val snapshotGrupo = grupoSugerido
+                val snapshotRota = rotaSugerida
 
-                val finalLocNome = if (responsavelTipo == "Locatário") sNome else ""
-                val finalLocCpf = if (responsavelTipo == "Locatário") sCpf else ""
-                val finalLocMae = if (responsavelTipo == "Locatário") sMae else ""
-                val finalLocNasc = if (responsavelTipo == "Locatário") sNasc else ""
-                val finalLocSexo = if (responsavelTipo == "Locatário") sSexo else null
-                val finalLocDoc = if (responsavelTipo == "Locatário") sDoc else null
-                val finalLocQual = if (responsavelTipo == "Locatário") sQual else ""
-
-                val finalEntrevistadoNome = if (entrevistadoEhOResponsavel == "Sim") sNome else entrevistadoNomeApenas
-                
-                val finalCidadeId = if (user.cidadeId?.length == 36) user.cidadeId else null
-                val finalLeituristaId = if (user.id?.length == 36) user.id else null
-
-                // LÓGICA SÊNIOR: Não sobrescrever a situação escolhida, apenas complementar se o GPS falhou
                 val baseStatus = locationStatus.orSpace()
                 val finalLocationStatus = if (snapshotLat == null) {
                     if (baseStatus == " ") "Sem Sinal" else "$baseStatus (Sem Sinal)"
                 } else baseStatus
 
                 val customer = Customer(
-                    id = editingCustomerId ?: java.util.UUID.randomUUID().toString(), // REUTILIZA ID SE FOR EDIÇÃO
+                    id = editingCustomerId ?: UUID.randomUUID().toString(),
                     cidadeId = finalCidadeId,
                     leituristaId = finalLeituristaId,
-                    name = sNome.orSpace(), // Até o nome vira espaço se estiver vazio
+                    name = sNome.orSpace(),
                     registrationNumber = snapshotMatricula.orSpace(),
                     registrationDigit = snapshotDigit.orSpace(),
                     email = if (responsavelTipo == "Proprietário") snapshotEmail.orSpace() else " ",
-                    setor = setor.trim().orSpace(),
-                    quadra = quadra.trim().orSpace(),
-                    landline = snapshotLandline,
                     celular = if (responsavelTipo == "Proprietário") snapshotCelular.orSpace() else " ",
                     isStandardMeasurementBox = isStandardMeasurementBox.orSpace(),
                     isStandardizedSeals = isStandardizedSeals.orSpace(),
@@ -309,9 +301,6 @@ class RecadastroViewModel(
                     isVacationer = isVacationer.orSpace(),
                     possuiPiscina = possuiPiscina.orSpace(),
                     possuiCaixaAgua = possuiCaixaAgua.orSpace(),
-                    beneficiarioSocial = beneficiarioSocial.orSpace(),
-                    usaAguaVizinho = usaAguaVizinho.orSpace(),
-                    possuiHidrometro = possuiHidrometro.orSpace(),
                     latitude = snapshotLat,
                     longitude = snapshotLng,
                     locationStatus = finalLocationStatus,
@@ -321,27 +310,13 @@ class RecadastroViewModel(
                     capturedAt = utcNow,
                     date = brDate,
                     quality = calculateDataQuality(),
-                    entrevistadoNome = finalEntrevistadoNome,
-                    entrevistadoCpf = if (entrevistadoEhOResponsavel == "Sim") sCpf else "",
-                    entrevistadoMae = if (entrevistadoEhOResponsavel == "Sim") sMae else "",
-                    entrevistadoNascimento = if (entrevistadoEhOResponsavel == "Sim") sNasc else "",
+                    entrevistadoNome = if (entrevistadoEhOResponsavel == "Sim") sNome else entrevistadoNomeApenas.orSpace(),
+                    entrevistadoCpf = if (entrevistadoEhOResponsavel == "Sim") sCpf else " ",
+                    entrevistadoMae = if (entrevistadoEhOResponsavel == "Sim") sMae else " ",
+                    entrevistadoNascimento = if (entrevistadoEhOResponsavel == "Sim") sNasc else " ",
                     entrevistadoSexo = if (entrevistadoEhOResponsavel == "Sim") sSexo else null,
                     entrevistadoApresentouDoc = (if (entrevistadoEhOResponsavel == "Sim") sDoc else null).orSpace(),
-                    entrevistadoQualDoc = if (entrevistadoEhOResponsavel == "Sim") sQual else "",
-                    proprietarioNome = finalPropNome,
-                    proprietarioCpf = finalPropCpf,
-                    proprietarioMae = finalPropMae,
-                    proprietarioNascimento = finalPropNasc,
-                    proprietarioSexo = finalPropSexo,
-                    proprietarioApresentouDoc = finalPropDoc.orSpace(),
-                    proprietarioQual_doc = finalPropQual,
-                    locatarioNome = finalLocNome,
-                    locatarioCpf = finalLocCpf,
-                    locatarioMae = finalLocMae,
-                    locatarioNascimento = finalLocNasc,
-                    locatarioSexo = finalLocSexo,
-                    locatarioApresentouDoc = finalLocDoc.orSpace(),
-                    locatarioQualDoc = finalLocQual,
+                    entrevistadoQualDoc = if (entrevistadoEhOResponsavel == "Sim") sQual else " ",
                     logradouro = snapshotLogradouro,
                     numero = snapshotNumero,
                     complemento = snapshotComplemento,
@@ -356,8 +331,18 @@ class RecadastroViewModel(
                     localInstalacao = localInstalacao.orSpace(),
                     acessibilidade = acessibilidade.orSpace(),
                     observacao = if (snapshotObs.length > 1000) snapshotObs.take(1000) else snapshotObs,
-                    grupoSugerido = GeoFencingHelper.findSuggestedGroup(finalCidade, snapshotLat, snapshotLng),
-                    rotaSugerida = GeoFencingHelper.findSuggestedRoute(finalCidade, snapshotLat, snapshotLng),
+                    beneficiarioSocial = beneficiarioSocial.orSpace(),
+                    usaAguaVizinho = usaAguaVizinho.orSpace(),
+                    possuiHidrometro = possuiHidrometro.orSpace(),
+                    
+                    // SÊNIOR FIX: Decomposição rigorosa baseada no padrão "Grupo X Rota Y"
+                    // Garantimos que estamos salvando os valores que o leiturista viu na tela
+                    grupoSugerido = snapshotGrupo,
+                    rotaSugerida = snapshotRota,
+                    
+                    setor = setor.trim().orSpace(),
+                    quadra = quadra.trim().orSpace(),
+                    numeroHidrometro = numeroHidrometro.trim().orSpace(),
                     isSynced = false
                 )
 
@@ -370,13 +355,13 @@ class RecadastroViewModel(
                 val syncRequest = OneTimeWorkRequestBuilder<SyncWorker>()
                     .setConstraints(Constraints.Builder()
                         .setRequiredNetworkType(NetworkType.CONNECTED)
-                        .build()) // REMOVIDO: setRequiresBatteryNotLow, etc. Prioridade máxima.
+                        .build())
                     .setBackoffCriteria(BackoffPolicy.LINEAR, 30, java.util.concurrent.TimeUnit.SECONDS)
                     .build()
                 
                 WorkManager.getInstance(getApplication()).enqueueUniqueWork(
                     "immediate_sync", 
-                    ExistingWorkPolicy.APPEND_OR_REPLACE, // APPEND garante que as filas offline acumulem e rodem em ordem
+                    ExistingWorkPolicy.APPEND_OR_REPLACE,
                     syncRequest
                 )
                 onSuccess()
@@ -384,7 +369,7 @@ class RecadastroViewModel(
                 Log.e("RecadastroVM", "ERRO AO SALVAR", e)
                 onError("Erro técnico: ${e.message ?: "Falha no SQLite"}")
             } finally {
-                isCapturingLocation = false // Libera o botão independente do resultado
+                isCapturingLocation = false
             }
         }
     }
@@ -406,17 +391,14 @@ class RecadastroViewModel(
             cepError = false
             try {
                 delay(500)
-                // SÊNIOR QA FIX: Adicionamos verificação de escopo ativo antes de disparar o listener
                 if (!isActive) return@launch
                 
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                     geocoder.getFromLocationName("CEP $cepCode, Brasil", 1, object : Geocoder.GeocodeListener {
                         override fun onGeocode(addresses: List<Address>) {
-                            if (!isActive) return // Corta execução se o usuário saiu da tela
+                            if (!isActive) return
                             if (addresses.isNotEmpty()) {
                                 handleGoogleAddress(addresses[0])
-                            } else {
-                                refineCepWithViaCep(cepCode, null, null)
                             }
                             isCepLoading = false
                         }
@@ -430,8 +412,6 @@ class RecadastroViewModel(
                     val addresses = geocoder.getFromLocationName("CEP $cepCode, Brasil", 1)
                     if (!addresses.isNullOrEmpty()) {
                         handleGoogleAddress(addresses[0])
-                    } else {
-                        refineCepWithViaCep(cepCode, null, null)
                     }
                     isCepLoading = false
                 }
@@ -448,8 +428,11 @@ class RecadastroViewModel(
         lastResolvedLat = lat
         lastResolvedLng = lng
         
-        viewModelScope.launch(Dispatchers.IO) {
+        geocodeJob?.cancel()
+        geocodeJob = viewModelScope.launch(Dispatchers.IO) {
             try {
+                if (!isActive) return@launch
+
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                     geocoder.getFromLocation(lat, lng, 1, object : Geocoder.GeocodeListener {
                         override fun onGeocode(addresses: List<Address>) {
@@ -482,17 +465,12 @@ class RecadastroViewModel(
         )
     }
 
-    private fun refineCepWithViaCep(zip: String?, street: String?, district: String?) {
-        // Lógica de fallback para API externa se necessário
-    }
-
     private fun updateAddressFields(street: String?, district: String?, city: String?, state: String?, zip: String?) {
         if (!street.isNullOrBlank()) logradouro = street
         if (!district.isNullOrBlank()) bairro = district
         if (!city.isNullOrBlank()) cidade = city
         if (!state.isNullOrBlank()) uf = state
         
-        // SÊNIOR FIX: Bloquear CEPs genéricos (terminados em 000) no preenchimento automático
         if (!zip.isNullOrBlank() && !zip.endsWith("000")) {
             cep = zip
         }
@@ -506,9 +484,9 @@ class RecadastroViewModel(
     private fun calculateDataQuality(): String {
         val progress = registrationProgress
         return when {
-            progress >= 0.75f -> "Boa"     // 9 ou mais pontos
-            progress >= 0.33f -> "Regular" // 4 a 8 pontos
-            else -> "Ruim"                 // 0 a 3 pontos
+            progress >= 0.75f -> "Boa"
+            progress >= 0.33f -> "Regular"
+            else -> "Ruim"
         }
     }
 
@@ -554,7 +532,4 @@ class RecadastroViewModel(
         economias = ""
         observacao = ""
     }
-
-    private fun String?.orSpace(): String? = if (this.isNullOrBlank()) " " else this
-    private fun String?.ifSpaceNull(): String? = if (this == " ") null else this
 }

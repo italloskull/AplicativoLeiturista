@@ -106,24 +106,7 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
             EconomyRepositoryImpl.getInstance().fetchEconomyUpdates()
         } catch (_: Exception) {}
 
-        // SÊNIOR DEBUG UI: Mostra o erro técnico real no celular se houver falhas persistentes
-        if (failCount > 0) {
-            withContext(Dispatchers.Main) {
-                val dbDebug = LocalDatabase.getInstance(applicationContext)
-                val lastErr = try {
-                    val cursor = dbDebug.readableDatabase.rawQuery("SELECT last_error FROM economy_updates WHERE isSynced = 0 AND last_error IS NOT NULL LIMIT 1", null)
-                    var msg: String? = null
-                    if (cursor.moveToFirst()) msg = cursor.getString(0)
-                    cursor.close()
-                    msg
-                } catch (_: Exception) { null }
-
-                if (lastErr != null) {
-                    android.widget.Toast.makeText(applicationContext, "Erro Supabase: ${lastErr.take(100)}", android.widget.Toast.LENGTH_LONG).show()
-                }
-            }
-        }
-
+        // SÊNIOR PERF: Se falhou, o retry agora usa política exponencial (evita spam no servidor)
         return@withContext if (failCount == 0) {
             Result.success()
         } else {

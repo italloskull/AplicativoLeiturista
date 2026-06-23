@@ -19,7 +19,7 @@ data class VisitasStats(
 
 class VisitasViewModel(
     application: Application,
-    private val repository: StatsRepository = StatsRepositoryImpl.getInstance(application)
+    private val repository: StatsRepository = com.example.oaplicativo.data.repository.StatsRepositoryImpl.getInstance(application)
 ) : AndroidViewModel(application) {
 
     val stats: StateFlow<VisitasStats> = repository.stats

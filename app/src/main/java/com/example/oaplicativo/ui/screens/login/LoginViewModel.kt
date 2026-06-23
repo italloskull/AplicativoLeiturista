@@ -72,7 +72,7 @@ class LoginViewModel(
                         _loginState.value = LoginState.Error("Usuário ou senha incorretos (Modo Offline)")
                     }
                 } else {
-                    Log.e("LoginState", "Erro de autenticação normal: ${e.message}")
+                    Log.e("LoginState", "Erro de autenticação: ${e.message}")
                     _loginState.value = LoginState.Error(e.message ?: "Erro ao autenticar")
                 }
             }

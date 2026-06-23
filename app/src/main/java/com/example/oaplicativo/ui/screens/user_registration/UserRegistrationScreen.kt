@@ -160,7 +160,7 @@ fun UserRegistrationScreen(
                 Surface(
                     color = MaterialTheme.colorScheme.errorContainer,
                     shape = MaterialTheme.shapes.medium,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
                 ) {
                     Text(
                         text = (registrationState as RegistrationState.Error).message,

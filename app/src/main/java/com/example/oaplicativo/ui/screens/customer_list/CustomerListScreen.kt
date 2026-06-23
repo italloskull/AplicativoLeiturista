@@ -1,24 +1,17 @@
 @file:Suppress("SpellCheckingInspection")
 package com.example.oaplicativo.ui.screens.customer_list
 
-import android.Manifest
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import android.app.Application
+import android.location.Location
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Navigation
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,120 +19,89 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.oaplicativo.data.repository.AuthRepositoryImpl
+import com.example.oaplicativo.data.repository.CustomerRepositoryImpl
 import com.example.oaplicativo.model.Customer
-import com.example.oaplicativo.presentation.components.DistanceBadge
 import com.example.oaplicativo.presentation.components.SyncIndicator
 import com.example.oaplicativo.ui.components.AppStatusBadge
+import com.example.oaplicativo.ui.components.AsyncDataContainer
 import com.example.oaplicativo.ui.components.GlobalActionMenu
-import com.example.oaplicativo.util.navigation.NavigationUtils
 import com.example.oaplicativo.util.LocationHelper
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import com.example.oaplicativo.util.navigation.NavigationUtils
 
-/**
- * CUSTOMER LIST SCREEN
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CustomerListScreen(
     isDarkTheme: Boolean,
-    onToggleTheme: () -> Unit,
+    onBack: () -> Unit,
     onAddCustomer: () -> Unit,
     onCustomerClick: (Customer) -> Unit,
-    onNavigateToUserRegistration: () -> Unit,
     onLogout: () -> Unit,
-    onBack: () -> Unit, // SÊNIOR FIX: Adicionado callback de volta
-    viewModel: CustomerListViewModel = viewModel(factory = androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner.current?.let {
-        androidx.lifecycle.viewmodel.viewModelFactory {
-            addInitializer(CustomerListViewModel::class) {
-                CustomerListViewModel(application = (this[androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY] as android.app.Application))
-            }
-        }
-    } ?: androidx.lifecycle.viewmodel.viewModelFactory { })
+    onToggleTheme: () -> Unit,
+    onNavigateToUserRegistration: () -> Unit
 ) {
-    val customers by viewModel.customers.collectAsState()
-    val isRefreshing by viewModel.isRefreshing.collectAsState()
-    val userProfile by viewModel.currentUserProfile.collectAsState() // Restaurado
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val locationHelper = remember(context) { LocationHelper(context) }
     
-    val userLocationState = remember { mutableStateOf<android.location.Location?>(null) }
-    val searchQueryState = remember { mutableStateOf("") }
-    val showAboutDialogState = remember { mutableStateOf(false) }
-
-    val locationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        if (permissions.values.any { it }) {
-            scope.launch {
-                userLocationState.value = locationHelper.getCurrentLocation()
+    // SÊNIOR FIX DEFINITIVO: Fábrica manual para evitar o NoSuchMethodException
+    val factory = remember {
+        object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                return CustomerListViewModel(
+                    application = context.applicationContext as Application,
+                    customerRepository = CustomerRepositoryImpl.getInstance(),
+                    authRepository = AuthRepositoryImpl.getInstance()
+                ) as T
             }
         }
     }
+    
+    val viewModel: CustomerListViewModel = viewModel(factory = factory)
+    
+    val customers by viewModel.customers.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
+    val locationHelper = remember { LocationHelper(context) }
+    val authRepository = remember { AuthRepositoryImpl.getInstance() }
+    val userProfile by authRepository.currentUserProfile.collectAsState()
+    
+    val searchQueryState = remember { mutableStateOf("") }
+    val userLocationState = remember { mutableStateOf<Location?>(null) }
 
     LaunchedEffect(Unit) {
         viewModel.loadData()
-        locationPermissionLauncher.launch(
-            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-        )
-        while (true) {
-            val newLocation = locationHelper.getCurrentLocation()
-            if (newLocation != null && (userLocationState.value == null || 
-                locationHelper.calculateDistance(userLocationState.value!!.latitude, userLocationState.value!!.longitude, newLocation.latitude, newLocation.longitude) > 10)) {
-                userLocationState.value = newLocation
-            }
-            delay(60000)
+        val fineLoc = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION)
+        if (fineLoc == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            userLocationState.value = locationHelper.getCurrentLocation()
         }
     }
 
     val filteredCustomers by remember(customers, searchQueryState.value, userLocationState.value) {
         derivedStateOf {
-            val query = searchQueryState.value.trim()
+            val query = searchQueryState.value
+            val baseList = if (query.isBlank()) customers 
+                          else customers.filter { it.name?.contains(query, true) == true || it.registrationNumber?.contains(query, true) == true }
             
-            // 1. FILTRAGEM INICIAL (Pesquisa ou Todos)
-            val baseList = if (query.isBlank()) {
-                customers
-            } else {
-                customers.filter {
-                    (it.name?.contains(query, ignoreCase = true) == true) ||
-                            (it.registrationNumber?.contains(query, ignoreCase = true) == true)
-                }
-            }
-
-            // 2. INTELIGÊNCIA GEOGRÁFICA
-            if (userLocationState.value != null) {
+            val currentLoc = userLocationState.value
+            if (currentLoc != null) {
                 val sortedList = baseList.sortedBy { customer ->
                     if (customer.latitude != null && customer.longitude != null) {
-                        locationHelper.calculateDistance(
-                            userLocationState.value!!.latitude, userLocationState.value!!.longitude,
-                            customer.latitude, customer.longitude
-                        )
-                    } else {
-                        Float.MAX_VALUE
-                    }
+                        locationHelper.calculateDistance(currentLoc.latitude, currentLoc.longitude, customer.latitude, customer.longitude)
+                    } else Float.MAX_VALUE
                 }
-                
-                // REGRA DE OURO: Mostrar apenas 10 se não estiver pesquisando
-                if (query.isBlank()) {
-                    sortedList.take(10)
-                } else {
-                    sortedList
-                }
-            } else {
-                // Fallback se GPS estiver desligado: mostrar primeiros 20
-                baseList.take(20)
-            }
+                if (query.isBlank()) sortedList.take(10) else sortedList
+            } else baseList.take(20)
         }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Recadastro de Clientes", fontWeight = FontWeight.Bold) },
+                title = { Text("Lista de Clientes", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { // SÊNIOR FIX: Agora chama onBack e não onLogout
+                    IconButton(onClick = onBack) { 
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
                     }
                 },
@@ -149,7 +111,7 @@ fun CustomerListScreen(
                     }
                     GlobalActionMenu(
                         isDarkTheme = isDarkTheme,
-                        isAdmin = userProfile?.isAdmin ?: false,
+                        isAdmin = userProfile?.cargo == "administrador",
                         onToggleTheme = onToggleTheme,
                         onLogout = onLogout,
                         onNavigateToUserRegistration = onNavigateToUserRegistration,
@@ -159,51 +121,30 @@ fun CustomerListScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = onAddCustomer,
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Adicionar Cliente")
+            FloatingActionButton(onClick = onAddCustomer, containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary) {
+                Icon(Icons.Default.Add, contentDescription = "Novo Recadastro")
             }
         }
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
+        Column(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
             OutlinedTextField(
                 value = searchQueryState.value,
                 onValueChange = { searchQueryState.value = it },
-                placeholder = { Text("Pesquisar por nome ou matrícula...") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
+                placeholder = { Text("Buscar por Nome ou Matrícula...") },
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 shape = MaterialTheme.shapes.medium,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-                )
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = MaterialTheme.colorScheme.primary, unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
             )
 
-            PullToRefreshBox(
-                isRefreshing = isRefreshing,
-                onRefresh = { viewModel.refreshCustomers() },
-                modifier = Modifier.fillMaxSize()
-            ) {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 80.dp)
-                ) {
-                    // SOLUÇÃO SÊNIOR: Fallback de chave para evitar conflito de IDs vazios/nulos
-                    items(
-                        items = filteredCustomers,
-                        key = { customer -> 
-                            customer.id ?: "temp_${filteredCustomers.indexOf(customer)}_${System.currentTimeMillis()}" 
-                        }
-                    ) { customer ->
+            AsyncDataContainer(
+                items = filteredCustomers,
+                isLoading = isRefreshing && filteredCustomers.isEmpty(),
+                error = null,
+                onRetry = { viewModel.refreshCustomers() }
+            ) { data ->
+                LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 80.dp)) {
+                    items(items = data, key = { it.id ?: it.hashCode() }) { customer ->
                         CustomerListItem(
                             customer = customer,
                             userLocation = userLocationState.value,
@@ -216,25 +157,12 @@ fun CustomerListScreen(
             }
         }
     }
-
-    if (showAboutDialogState.value) {
-        AlertDialog(
-            onDismissRequest = { showAboutDialogState.value = false },
-            title = { Text("Sobre o Sistema") },
-            text = { Text("Recadastre.IA\nVersão 0.9.2.6.4\nSistema de Saneamento em Campo.") },
-            confirmButton = {
-                TextButton(onClick = { showAboutDialogState.value = false }) {
-                    Text("OK")
-                }
-            }
-        )
-    }
 }
 
 @Composable
 fun CustomerListItem(
     customer: Customer,
-    userLocation: android.location.Location?,
+    userLocation: Location?,
     locationHelper: LocationHelper,
     onCustomerClick: (Customer) -> Unit,
     onNavigateClick: (Customer) -> Unit
@@ -242,16 +170,14 @@ fun CustomerListItem(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(horizontal = 16.dp, vertical = 6.dp)
             .clickable { onCustomerClick(customer) },
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Row(
-            modifier = Modifier
-                .padding(16.dp)
-                .fillMaxWidth(),
+            modifier = Modifier.padding(16.dp).fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
@@ -260,16 +186,12 @@ fun CustomerListItem(
                 color = MaterialTheme.colorScheme.primaryContainer
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        Icons.Default.Person,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
+                    Icon(Icons.Default.Person, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
                 }
             }
-
+            
             Spacer(Modifier.width(16.dp))
-
+            
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = customer.name ?: "Sem Nome",
@@ -277,50 +199,38 @@ fun CustomerListItem(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Matrícula: ${customer.registrationNumber ?: "N/A"}",
-                    style = MaterialTheme.typography.bodySmall,
+                    text = "Matrícula: ${customer.registrationNumber ?: "0"}",
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(top = 4.dp)
+                    modifier = Modifier.padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     AppStatusBadge(customer.quality)
-                    
                     Spacer(Modifier.width(8.dp))
                     
-                    // SÊNIOR PERFORMANCE FIX: Espaço reservado para o Badge de Distância para evitar reflow
                     val distLabel = remember(userLocation, customer) {
                         if (userLocation != null && customer.latitude != null && customer.longitude != null) {
-                            val dist = locationHelper.calculateDistance(
-                                userLocation.latitude, userLocation.longitude,
-                                customer.latitude, customer.longitude
-                            )
-                            String.format("%.1fm", dist)
+                            val d = locationHelper.calculateDistance(userLocation.latitude, userLocation.longitude, customer.latitude, customer.longitude)
+                            locationHelper.formatDistance(d)
                         } else null
                     }
-
-                    Surface(
-                        color = if (distLabel != null) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                        contentColor = if (distLabel != null) MaterialTheme.colorScheme.onPrimaryContainer else Color.Transparent,
-                        shape = MaterialTheme.shapes.extraSmall
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    
+                    if (distLabel != null) {
+                        Surface(
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp),
+                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Place,
-                                contentDescription = null,
-                                modifier = Modifier.size(12.dp),
-                                tint = if (distLabel != null) LocalContentColor.current else Color.Transparent
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = distLabel ?: "000.0m", // Reserva o espaço aproximado
-                                style = MaterialTheme.typography.labelSmall
-                            )
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Place, contentDescription = null, modifier = Modifier.size(10.dp), tint = MaterialTheme.colorScheme.secondary)
+                                Spacer(Modifier.width(4.dp))
+                                Text(text = distLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                            }
                         }
                     }
                     
@@ -330,11 +240,7 @@ fun CustomerListItem(
             }
 
             IconButton(onClick = { onNavigateClick(customer) }) {
-                Icon(
-                    Icons.Default.Navigation,
-                    contentDescription = "Navegar",
-                    tint = MaterialTheme.colorScheme.primary
-                )
+                Icon(Icons.Default.Navigation, contentDescription = "Navegar", tint = MaterialTheme.colorScheme.primary)
             }
         }
     }

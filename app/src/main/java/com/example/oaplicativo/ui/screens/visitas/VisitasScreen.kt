@@ -1,5 +1,7 @@
+@file:Suppress("SpellCheckingInspection")
 package com.example.oaplicativo.ui.screens.visitas
 
+import android.app.Application
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -11,30 +13,56 @@ import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.oaplicativo.data.repository.StatsRepositoryImpl
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VisitasScreen(
-    onBack: () -> Unit,
-    viewModel: VisitasViewModel = viewModel(factory = androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner.current?.let {
-        androidx.lifecycle.viewmodel.viewModelFactory {
-            addInitializer(VisitasViewModel::class) {
-                VisitasViewModel(application = (this[androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY] as android.app.Application))
+    onBack: () -> Unit
+) {
+    val context = LocalContext.current
+    
+    // SÊNIOR FIX DEFINITIVO: Fábrica manual para evitar o NoSuchMethodException
+    val factory = remember {
+        object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                return VisitasViewModel(
+                    application = context.applicationContext as Application,
+                    repository = StatsRepositoryImpl.getInstance(context.applicationContext as Application)
+                ) as T
             }
         }
-    } ?: androidx.lifecycle.viewmodel.viewModelFactory { })
-) {
+    }
+    
+    val viewModel: VisitasViewModel = viewModel(factory = factory)
     val stats by viewModel.stats.collectAsState()
+
+    // SÊNIOR PERF: Monitoramento do Ciclo de Vida para atualização instantânea
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        // Toda vez que a tela voltar ao primeiro plano, as estatísticas são recalculadas
+        lifecycleOwner.lifecycle.addObserver(object : androidx.lifecycle.DefaultLifecycleObserver {
+            override fun onResume(owner: androidx.lifecycle.LifecycleOwner) {
+                viewModel.loadStats()
+            }
+        })
+    }
 
     Scaffold(
         topBar = {

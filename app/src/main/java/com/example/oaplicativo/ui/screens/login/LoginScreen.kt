@@ -27,6 +27,7 @@ import com.example.oaplicativo.ui.components.AppButton
 import com.example.oaplicativo.ui.components.AppTextField
 import com.example.oaplicativo.util.SecurityUtils
 import com.example.oaplicativo.data.UpdateManager
+import com.example.oaplicativo.data.AppUpdateInfo
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -44,6 +45,10 @@ fun LoginScreen(
     var passwordVisible by remember { mutableStateOf(false) }
     var rememberMe by remember { mutableStateOf(false) }
 
+    var updateInfo by remember { mutableStateOf<AppUpdateInfo?>(null) }
+    var isDownloading by remember { mutableStateOf(false) }
+    var downloadProgress by remember { mutableStateOf(0f) }
+
     // SÊNIOR FIX: Carregamento inicial ultra-agressivo
     LaunchedEffect(Unit) {
         val isEnabled = SecurityUtils.isRememberMeEnabled(context)
@@ -57,7 +62,10 @@ fun LoginScreen(
             if (!savedPass.isNullOrBlank()) password = savedPass
             rememberMe = true
         }
-        checkUpdates(context, scope)
+        
+        // VERIFICAÇÃO DE ATUALIZAÇÃO SÊNIOR
+        val manager = UpdateManager(context)
+        updateInfo = manager.checkForUpdates()
     }
 
     LaunchedEffect(loginState) {
@@ -282,14 +290,58 @@ fun LoginScreen(
             Spacer(Modifier.height(24.dp))
         }
     }
-}
-
-private fun checkUpdates(context: Context, scope: kotlinx.coroutines.CoroutineScope) {
-    scope.launch {
-        val updateManager = UpdateManager(context)
-        val updateInfo = updateManager.checkForUpdates()
-        if (updateInfo != null) { 
-            Log.d("UpdateManager", "Nova atualização disponível: ${updateInfo.version_name}")
-        }
+    // --- DIÁLOGO DE ATUALIZAÇÃO SÊNIOR ---
+    if (updateInfo != null) {
+        AlertDialog(
+            onDismissRequest = { },
+            title = { Text("Nova Versão Disponível 🚀", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text("Uma nova versão (v${updateInfo!!.version_name}) está disponível.")
+                    if (updateInfo!!.changelog.isNotBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(updateInfo!!.changelog, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                    }
+                    if (isDownloading) {
+                        Spacer(Modifier.height(16.dp))
+                        LinearProgressIndicator(
+                            progress = { downloadProgress },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(
+                            "Baixando: ${(downloadProgress * 100).toInt()}%",
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.align(Alignment.End)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (!isDownloading) {
+                            scope.launch {
+                                isDownloading = true
+                                val manager = UpdateManager(context)
+                                manager.downloadAndInstallApk(updateInfo!!.apk_url) { progress ->
+                                    downloadProgress = progress
+                                }
+                                isDownloading = false
+                            }
+                        }
+                    },
+                    enabled = !isDownloading
+                ) {
+                    Text(if (isDownloading) "Baixando..." else "ATUALIZAR AGORA")
+                }
+            },
+            dismissButton = {
+                if (!isDownloading) {
+                    TextButton(onClick = { updateInfo = null }) {
+                        Text("DEPOIS")
+                    }
+                }
+            }
+        )
     }
 }
