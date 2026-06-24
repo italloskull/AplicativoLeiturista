@@ -1,6 +1,5 @@
 package com.example.oaplicativo.ui.screens.login
 
-import android.content.Context
 import android.util.Log
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background

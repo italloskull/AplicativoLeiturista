@@ -166,11 +166,13 @@ class RecadastroViewModel(
     val registrationProgress: Float get() = _registrationProgress.value
 
     private fun getLeituristaCidadeNome(cidadeId: String?): String? {
-        return when (cidadeId) {
-            "342080a2-f2a8-47c1-8409-906d4e2808be" -> "Itapoá"
-            "00b96845-f027-4638-8e6c-7f55f69c5e31" -> "Garuva"
-            "c5643444-2396-4f4d-8724-4f014798c897" -> "Araquari"
-            "13437e42-706f-44be-993d-d143c7b7440e" -> "Balneário Barra do Sul"
+        return when (cidadeId?.lowercase()) {
+            "c2be642b-2823-41b9-8f54-0b8c84db9a14" -> "Itapoá"
+            "ff9166b8-63b1-4481-a26a-64778181fa08" -> "Guabiruba"
+            "74df760a-0120-42b4-bb4d-03cfd92e79b0" -> "Gaivota"
+            "93fee74f-6cbb-4638-868d-ef5c17b081a4" -> "Gravatal"
+            "9ed90b8c-1b63-44b7-88cd-c2b9b6babcc7" -> "Sombrio"
+            "c5643444-2396-4f4d-8724-4f014798c897" -> "Araquari" // Backup Legado
             else -> null
         }
     }
@@ -277,6 +279,11 @@ class RecadastroViewModel(
                 val sDoc = responsavelData.apresentouDoc
                 val sQual = responsavelData.qualDoc.trim()
 
+                // SÊNIOR FIX DEFINITIVO: Mapeamento rigoroso de Nomes de Cidade para o Supabase
+                // Prioridade absoluta para a cidade do perfil do usuário para nunca ficar 'Desconhecida'
+                val friendlyCityName = getLeituristaCidadeNome(user.cidadeId) 
+                    ?: snapshotCidadeManual.ifBlank { "Cidade Itapoá" } // Fallback seguro para a sede
+
                 // SÊNIOR FIX: Captura instantânea do estado da UI para evitar race condition
                 val snapshotGrupo = grupoSugerido
                 val snapshotRota = rotaSugerida
@@ -321,7 +328,7 @@ class RecadastroViewModel(
                     numero = snapshotNumero,
                     complemento = snapshotComplemento,
                     bairro = snapshotBairro,
-                    cidade = finalCidade,
+                    cidade = friendlyCityName,
                     uf = snapshotUf,
                     cep = snapshotCep,
                     pavimentoRua = pavimentoRua.orSpace(),

@@ -23,8 +23,8 @@ object SupabaseClient {
         httpEngine = OkHttp.create()
         defaultSerializer = KotlinXSerializer(Json {
             ignoreUnknownKeys = true
-            explicitNulls = true // SÊNIOR FIX: Garante que campos NULL sejam enviados explicitamente
-            encodeDefaults = false
+            explicitNulls = true 
+            encodeDefaults = true // SÊNIOR FIX: Garante que o serializador envie o objeto completo
         })
         install(Auth)
         install(Postgrest)

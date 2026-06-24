@@ -1,5 +1,6 @@
 package com.example.oaplicativo.ui.screens.user_registration
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.oaplicativo.data.SupabaseClient
@@ -25,10 +26,30 @@ class UserRegistrationViewModel(
     fun loadCidades() {
         viewModelScope.launch {
             try {
-                val list = SupabaseClient.client.postgrest["cidades"].select().decodeList<Cidade>()
-                // SÊNIOR FIX: Removemos 'São Francisco do Sul' da lista dinamicamente
-                _cidades.value = list.filter { !it.nome.contains("São Francisco do Sul", ignoreCase = true) }
+                val supabaseUrl = com.example.oaplicativo.BuildConfig.SUPABASE_URL
+                val supabaseKey = com.example.oaplicativo.BuildConfig.SUPABASE_KEY
+                
+                Log.d("PROD_DEBUG", "🌐 URL: ${supabaseUrl.take(15)}...${supabaseUrl.takeLast(5)}")
+                Log.d("PROD_DEBUG", "🔑 KEY: ${supabaseKey.take(10)}...${supabaseKey.takeLast(10)}")
+
+                // 1. Busca a resposta bruta para inspeção visual no Logcat
+                val result = SupabaseClient.client.postgrest["cidades"]
+                    .select()
+                
+                Log.d("PROD_DEBUG", "📡 Status: OK | Body: ${result.data}")
+
+                // 2. Tenta a decodificação manual para capturar erro exato de schema
+                val list = try {
+                    result.decodeList()
+                } catch (decodeError: Exception) {
+                    Log.e("PROD_DEBUG", "❌ Falha no Mapeamento JSON: ${decodeError.message}")
+                    emptyList<Cidade>()
+                }
+
+                Log.d("PROD_DEBUG", "✅ Finalizado: ${list.size} cidades carregadas.")
+                _cidades.value = list
             } catch (e: Exception) {
+                Log.e("PROD_DEBUG", "❌ Falha de Rede ou Autenticação: ${e.message}", e)
                 _cidades.value = emptyList()
             }
         }

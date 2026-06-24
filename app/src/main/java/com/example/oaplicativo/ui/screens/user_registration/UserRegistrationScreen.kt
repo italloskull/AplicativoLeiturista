@@ -1,5 +1,6 @@
 package com.example.oaplicativo.ui.screens.user_registration
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -94,21 +95,34 @@ fun UserRegistrationScreen(
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showCidadeMenu) },
                     modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
                     shape = MaterialTheme.shapes.medium,
-                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
+                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                    supportingText = {
+                        if (cidades.isEmpty()) {
+                            Text("Aguardando carregamento do Supabase...", color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
                 )
                 ExposedDropdownMenu(
                     expanded = showCidadeMenu,
-                    onDismissRequest = { showCidadeMenu = false }
+                    onDismissRequest = { showCidadeMenu = false },
+                    modifier = Modifier.background(MaterialTheme.colorScheme.surface)
                 ) {
-                    cidades.forEach { cidade ->
+                    if (cidades.isEmpty()) {
                         DropdownMenuItem(
-                            text = { Text(cidade.nome) },
-                            onClick = {
-                                selectedCidadeId = cidade.id
-                                selectedCidadeNome = cidade.nome
-                                showCidadeMenu = false
-                            }
+                            text = { Text("Nenhuma cidade disponível", color = MaterialTheme.colorScheme.error) },
+                            onClick = { showCidadeMenu = false }
                         )
+                    } else {
+                        cidades.forEach { cidade ->
+                            DropdownMenuItem(
+                                text = { Text(cidade.nome) },
+                                onClick = {
+                                    selectedCidadeId = cidade.id
+                                    selectedCidadeNome = cidade.nome
+                                    showCidadeMenu = false
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -175,7 +189,17 @@ fun UserRegistrationScreen(
                 onClick = {
                     val cleanUsername = username.lowercase().trim()
                     val autoEmail = "${cleanUsername}@leiturista.app"
-                    viewModel.register(fullName.trim(), cleanUsername, autoEmail, password, cargo, selectedCidadeId)
+                    // SÊNIOR FIX: Ordem dos parâmetros corrigida para bater com o ViewModel
+                    // De: (name, user, email, pass, role, cidadeId)
+                    // Para: (name, email, pass, user, role, cidadeId)
+                    viewModel.register(
+                        name = fullName.trim(),
+                        email = autoEmail,
+                        pass = password,
+                        user = cleanUsername,
+                        role = cargo,
+                        cidadeId = selectedCidadeId
+                    )
                 },
                 modifier = Modifier.fillMaxWidth().height(56.dp),
                 enabled = isFormValid && registrationState !is RegistrationState.Loading,

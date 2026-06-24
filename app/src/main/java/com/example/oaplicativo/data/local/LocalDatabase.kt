@@ -96,6 +96,10 @@ class LocalDatabase private constructor(context: Context) : SQLiteOpenHelper(con
                 put("numero_hidrometro", customer.numeroHidrometro)
                 put("isSynced", 0)
             }
+            
+            // SÊNIOR DEBUG LOG: Rastreando o valor da cidade antes de gravar no SQLite
+            Log.d("LocalDB", "💾 Gravando no SQLite - Cidade: ${customer.cidade} | ID: ${customer.cidadeId}")
+
             db.insertWithOnConflict("customers", null, values, SQLiteDatabase.CONFLICT_REPLACE)
             db.setTransactionSuccessful()
             Log.d("LocalDB", "✅ Recadastro salvo. Qualidade: ${customer.quality} | Data: ${customer.date}")
