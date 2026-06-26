@@ -191,26 +191,40 @@ class LocalDatabase private constructor(context: Context) : SQLiteOpenHelper(con
         try {
             val values = ContentValues().apply {
                 put("id", item.id ?: java.util.UUID.randomUUID().toString())
-                put("cidade_id", item.cidadeId)
                 put("leiturista_id", item.leituristaId)
-                put("hdNumber", item.hdNumber)
-                put("buildingName", item.buildingName)
-                put("constructionCompany", item.constructionCompany)
-                put("economiesCount", item.economiesCount)
-                put("floorsCount", item.floorsCount)
-                put("electricityMeterNumber", item.electricityMeterNumber)
+                put("numero_hd", item.hdNumber)
+                put("nome_edificio", item.buildingName)
+                put("construtora", item.constructionCompany)
+                put("qtd_economias", item.economiesCount)
+                put("qtd_pavimentos", item.floorsCount)
+                put("medidor_energia", item.electricityMeterNumber)
                 put("latitude", item.latitude)
                 put("longitude", item.longitude)
-                put("addedBy", item.addedBy)
+                put("cidade", item.cidade)
+                put("grupo_sugerido", item.grupoSugerido)
+                put("rota_sugerida", item.rotaSugerida)
+                put("adicionado_por", item.addedBy)
                 put("createdAt", item.createdAt)
                 put("date", item.date)
                 put("isSynced", 0)
             }
-            db.insertWithOnConflict("economy_updates", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+            // SÊNIOR DEBUG LOG: Rastreamento físico de escrita no disco
+            Log.d("LocalDB", "💾 [ECONOMY] Gravando no SQLite: ${item.buildingName} | ID: ${item.id} | HD: ${item.hdNumber}")
+            
+            // SÊNIOR FIX: Unificação do nome da tabela interna para 'grandes_empreendimentos'
+            val tableName = "grandes_empreendimentos"
+            
+            val rowId = db.insertWithOnConflict(tableName, null, values, SQLiteDatabase.CONFLICT_REPLACE)
+            
+            if (rowId == -1L) {
+                Log.e("LocalDB", "❌ [ECONOMY] FALHA CRÍTICA DE ESCRITA: O SQLite recusou o registro!")
+            } else {
+                Log.d("LocalDB", "✅ [ECONOMY] Sucesso SQLite: Linha $rowId gravada.")
+            }
+            
             db.setTransactionSuccessful()
-            Log.d("LocalDB", "✅ Economia salva. Data: ${item.date}")
         } catch (e: Exception) {
-            Log.e("LocalDB", "❌ ERRO AO SALVAR ECONOMIA", e)
+            Log.e("LocalDB", "❌ [ECONOMY] ERRO FÍSICO NO SQLITE: ${e.message}", e)
         } finally {
             db.endTransaction()
         }
@@ -219,23 +233,25 @@ class LocalDatabase private constructor(context: Context) : SQLiteOpenHelper(con
     fun getPendingEconomyUpdates(): List<Pair<String, EconomyUpdate>> {
         val list = mutableListOf<Pair<String, EconomyUpdate>>()
         val db = readableDatabase
-        val cursor = db.rawQuery("SELECT * FROM economy_updates WHERE isSynced = 0 AND sync_attempts < 5 ORDER BY createdAt ASC", null)
+        val cursor = db.rawQuery("SELECT * FROM grandes_empreendimentos WHERE isSynced = 0 AND sync_attempts < 5 ORDER BY createdAt ASC", null)
         if (cursor.moveToFirst()) {
             do {
                 val localId = cursor.getString(cursor.getColumnIndexOrThrow("id"))
                 val item = EconomyUpdate(
                     id = localId,
-                    cidadeId = cursor.getString(cursor.getColumnIndexOrThrow("cidade_id")),
                     leituristaId = cursor.getString(cursor.getColumnIndexOrThrow("leiturista_id")),
-                    hdNumber = cursor.getString(cursor.getColumnIndexOrThrow("hdNumber")),
-                    buildingName = cursor.getString(cursor.getColumnIndexOrThrow("buildingName")),
-                    constructionCompany = cursor.getString(cursor.getColumnIndexOrThrow("constructionCompany")),
-                    economiesCount = cursor.getInt(cursor.getColumnIndexOrThrow("economiesCount")),
-                    floorsCount = cursor.getInt(cursor.getColumnIndexOrThrow("floorsCount")),
-                    electricityMeterNumber = cursor.getString(cursor.getColumnIndexOrThrow("electricityMeterNumber")),
+                    hdNumber = cursor.getString(cursor.getColumnIndexOrThrow("numero_hd")),
+                    buildingName = cursor.getString(cursor.getColumnIndexOrThrow("nome_edificio")),
+                    constructionCompany = cursor.getString(cursor.getColumnIndexOrThrow("construtora")),
+                    economiesCount = if (cursor.isNull(cursor.getColumnIndexOrThrow("qtd_economias"))) null else cursor.getInt(cursor.getColumnIndexOrThrow("qtd_economias")),
+                    floorsCount = if (cursor.isNull(cursor.getColumnIndexOrThrow("qtd_pavimentos"))) null else cursor.getInt(cursor.getColumnIndexOrThrow("qtd_pavimentos")),
+                    electricityMeterNumber = cursor.getString(cursor.getColumnIndexOrThrow("medidor_energia")),
                     latitude = if (cursor.isNull(cursor.getColumnIndexOrThrow("latitude"))) null else cursor.getDouble(cursor.getColumnIndexOrThrow("latitude")),
                     longitude = if (cursor.isNull(cursor.getColumnIndexOrThrow("longitude"))) null else cursor.getDouble(cursor.getColumnIndexOrThrow("longitude")),
-                    addedBy = cursor.getString(cursor.getColumnIndexOrThrow("addedBy")),
+                    cidade = cursor.getString(cursor.getColumnIndexOrThrow("cidade")),
+                    grupoSugerido = cursor.getString(cursor.getColumnIndexOrThrow("grupo_sugerido")),
+                    rotaSugerida = cursor.getString(cursor.getColumnIndexOrThrow("rota_sugerida")),
+                    addedBy = cursor.getString(cursor.getColumnIndexOrThrow("adicionado_por")),
                     createdAt = cursor.getString(cursor.getColumnIndexOrThrow("createdAt")),
                     date = cursor.getString(cursor.getColumnIndexOrThrow("date")),
                     isSynced = false
@@ -248,7 +264,7 @@ class LocalDatabase private constructor(context: Context) : SQLiteOpenHelper(con
     }
 
     fun deleteSyncedEconomyUpdate(localId: String) {
-        writableDatabase.delete("economy_updates", "id = ?", arrayOf(localId))
+        writableDatabase.delete("grandes_empreendimentos", "id = ?", arrayOf(localId))
     }
 
     fun incrementSyncAttempt(table: String, id: String, lastError: String? = null) {
@@ -282,10 +298,10 @@ class LocalDatabase private constructor(context: Context) : SQLiteOpenHelper(con
         var total = 0
         var pending = 0
         try {
-            val cursorTotal = readableDatabase.rawQuery("SELECT COUNT(*) FROM economy_updates", null)
+            val cursorTotal = readableDatabase.rawQuery("SELECT COUNT(*) FROM grandes_empreendimentos", null)
             if (cursorTotal.moveToFirst()) total = cursorTotal.getInt(0)
             cursorTotal.close()
-            val cursorPending = readableDatabase.rawQuery("SELECT COUNT(*) FROM economy_updates WHERE isSynced = 0 AND sync_attempts < 5", null)
+            val cursorPending = readableDatabase.rawQuery("SELECT COUNT(*) FROM grandes_empreendimentos WHERE isSynced = 0 AND sync_attempts < 5", null)
             if (cursorPending.moveToFirst()) pending = cursorPending.getInt(0)
             cursorPending.close()
         } catch (_: Exception) {}
@@ -316,9 +332,9 @@ class LocalDatabase private constructor(context: Context) : SQLiteOpenHelper(con
             }
             cursorCustomers.close()
             
-            // Economias (Sempre contam como Boa)
+            // Grandes Empreendimentos (Sempre contam como Boa)
             val cursorEconomy = readableDatabase.rawQuery(
-                "SELECT COUNT(*) FROM economy_updates WHERE date = ?", 
+                "SELECT COUNT(*) FROM grandes_empreendimentos WHERE date = ?",
                 arrayOf(today)
             )
             if (cursorEconomy.moveToFirst()) {
@@ -391,7 +407,7 @@ class LocalDatabase private constructor(context: Context) : SQLiteOpenHelper(con
         }
 
         private const val DATABASE_NAME = "sanitation_final_v6.db"
-        private const val DATABASE_VERSION = 35
+        private const val DATABASE_VERSION = 36
 
         private const val CREATE_TABLE_CUSTOMERS = """
             CREATE TABLE customers (
@@ -457,19 +473,21 @@ class LocalDatabase private constructor(context: Context) : SQLiteOpenHelper(con
         private const val CREATE_TABLE_USER_CACHE = "CREATE TABLE IF NOT EXISTS user_profile_cache (id TEXT PRIMARY KEY, username TEXT, full_name TEXT, cidade_id TEXT, is_admin INTEGER, email TEXT)"
 
         private const val CREATE_TABLE_ECONOMY_UPDATES = """
-            CREATE TABLE economy_updates (
+            CREATE TABLE grandes_empreendimentos (
                 id TEXT PRIMARY KEY,
-                cidade_id TEXT,
                 leiturista_id TEXT,
-                hdNumber TEXT,
-                buildingName TEXT,
-                constructionCompany TEXT,
-                economiesCount INTEGER,
-                floorsCount INTEGER,
-                electricityMeterNumber TEXT,
+                numero_hd TEXT,
+                nome_edificio TEXT,
+                construtora TEXT,
+                qtd_economias INTEGER,
+                qtd_pavimentos INTEGER,
+                medidor_energia TEXT,
                 latitude REAL,
                 longitude REAL,
-                addedBy TEXT,
+                cidade TEXT,
+                grupo_sugerido TEXT,
+                rota_sugerida TEXT,
+                adicionado_por TEXT,
                 createdAt TEXT,
                 date TEXT,
                 isSynced INTEGER DEFAULT 0,
@@ -479,7 +497,7 @@ class LocalDatabase private constructor(context: Context) : SQLiteOpenHelper(con
         """
 
         private const val IDX_CUSTOMERS_SYNC = "CREATE INDEX IF NOT EXISTS idx_customers_sync ON customers (isSynced, sync_attempts)"
-        private const val IDX_ECONOMY_SYNC = "CREATE INDEX IF NOT EXISTS idx_economy_sync ON economy_updates (isSynced, sync_attempts)"
+        private const val IDX_ECONOMY_SYNC = "CREATE INDEX IF NOT EXISTS idx_economy_sync ON grandes_empreendimentos (isSynced, sync_attempts)"
         private const val IDX_CUSTOMERS_CITY = "CREATE INDEX IF NOT EXISTS idx_customers_city ON customers (cidade_id)"
     }
 }

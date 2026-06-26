@@ -26,12 +26,6 @@ class UserRegistrationViewModel(
     fun loadCidades() {
         viewModelScope.launch {
             try {
-                val supabaseUrl = com.example.oaplicativo.BuildConfig.SUPABASE_URL
-                val supabaseKey = com.example.oaplicativo.BuildConfig.SUPABASE_KEY
-                
-                Log.d("PROD_DEBUG", "🌐 URL: ${supabaseUrl.take(15)}...${supabaseUrl.takeLast(5)}")
-                Log.d("PROD_DEBUG", "🔑 KEY: ${supabaseKey.take(10)}...${supabaseKey.takeLast(10)}")
-
                 // 1. Busca a resposta bruta para inspeção visual no Logcat
                 val result = SupabaseClient.client.postgrest["cidades"]
                     .select()

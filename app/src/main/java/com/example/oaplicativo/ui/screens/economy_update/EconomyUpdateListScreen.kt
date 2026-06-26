@@ -8,13 +8,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.*
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -24,6 +21,7 @@ import com.example.oaplicativo.presentation.components.SyncIndicator
 import com.example.oaplicativo.ui.components.AsyncDataContainer
 import com.example.oaplicativo.util.LocationHelper
 import com.example.oaplicativo.util.navigation.NavigationUtils
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,25 +34,32 @@ fun EconomyUpdateListScreen(
     val items by viewModel.items.collectAsState()
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val locationHelper = remember { LocationHelper(context) }
     
     var searchQuery by remember { mutableStateOf("") }
     var userLocation by remember { mutableStateOf<android.location.Location?>(null) }
 
-    // --- ATUALIZAÇÃO AUTOMÁTICA ---
-    LaunchedEffect(Unit) {
-        viewModel.fetchEconomyUpdates()
-        // SÊNIOR FIX: Verificação de permissão antes de capturar GPS na listagem
-        val fineLoc = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION)
-        if (fineLoc == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            userLocation = locationHelper.getCurrentLocation()
+    // SÊNIOR FIX: Monitoramento do Ciclo de Vida para atualização instantânea ao voltar do formulário
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        val observer = object : androidx.lifecycle.DefaultLifecycleObserver {
+            override fun onResume(owner: androidx.lifecycle.LifecycleOwner) {
+                viewModel.fetchEconomyUpdates()
+                
+                val fineLoc = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION)
+                if (fineLoc == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    scope.launch { userLocation = locationHelper.getCurrentLocation() }
+                }
+            }
         }
+        lifecycleOwner.lifecycle.addObserver(observer)
     }
 
     val filteredItems by remember(items, searchQuery, userLocation) {
         derivedStateOf {
             val base = if (searchQuery.isBlank()) items 
-                      else items.filter { it.buildingName.contains(searchQuery, true) || it.hdNumber.contains(searchQuery, true) }
+                      else items.filter { (it.buildingName?.contains(searchQuery, true) == true) || (it.hdNumber?.contains(searchQuery, true) == true) }
             
             val currentLoc = userLocation
             if (currentLoc != null) {
@@ -67,68 +72,57 @@ fun EconomyUpdateListScreen(
         }
     }
 
-    // SÊNIOR FIX: Refresh ao retornar para a tela (Garante visibilidade do registro novo)
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    val lifecycleState by lifecycleOwner.lifecycle.currentStateFlow.collectAsState()
-    
-    LaunchedEffect(lifecycleState) {
-        if (lifecycleState == androidx.lifecycle.Lifecycle.State.RESUMED) {
-            viewModel.fetchEconomyUpdates()
-        }
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("ECONOMIAS PREDIAIS", fontWeight = FontWeight.Black) },
+                title = { Text("GRANDES EMPREENDIMENTOS", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black) },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar") }
                 },
                 actions = {
-                    IconButton(onClick = { viewModel.fetchEconomyUpdates() }) { Icon(Icons.Default.Refresh, contentDescription = "Atualizar") }
+                    // SÊNIOR UX: Indicador visual enquanto o robô trabalha
+                    if (state is EconomyUpdateState.Loading) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                    }
+                    
+                    IconButton(onClick = { 
+                        viewModel.forceSyncAll()
+                        // Pequeno Toast para o usuário saber que o robô foi chamado
+                        android.widget.Toast.makeText(context, "Robô de Sincronização acionado! 🤖", android.widget.Toast.LENGTH_SHORT).show()
+                    }) {
+                        Icon(Icons.Default.Sync, contentDescription = "Sincronizar Tudo", tint = MaterialTheme.colorScheme.primary)
+                    }
                 }
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = onAddClick, containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary) {
-                Icon(Icons.Default.Add, contentDescription = "Nova Atualização")
+            FloatingActionButton(onClick = onAddClick, containerColor = MaterialTheme.colorScheme.primary) {
+                Icon(Icons.Default.Add, contentDescription = "Adicionar")
             }
         }
     ) { paddingValues ->
         Column(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
-            TextField(
+            OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text("Buscar por Edifício ou HD...") },
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                shape = MaterialTheme.shapes.medium,
-                colors = TextFieldDefaults.colors(focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent)
+                placeholder = { Text("Buscar por Edifício ou HD...") },
+                leadingIcon = { Icon(Icons.Default.Search, null) },
+                shape = MaterialTheme.shapes.medium
             )
 
-            PullToRefreshBox(
-                isRefreshing = state is EconomyUpdateState.Loading,
-                onRefresh = { viewModel.fetchEconomyUpdates() },
-                modifier = Modifier.fillMaxSize()
-            ) {
-                AsyncDataContainer(
-                    items = filteredItems,
-                    isLoading = state is EconomyUpdateState.Loading,
-                    error = (state as? EconomyUpdateState.Error)?.message,
-                    onRetry = { viewModel.fetchEconomyUpdates() }
-                ) { data: List<EconomyUpdate> ->
-                    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 80.dp)) {
-                        items(
-                            items = data,
-                            key = { it.id ?: it.hdNumber } // PERFORMANCE FIX: Chave estável para evitar recomposição
-                        ) { item ->
-                            EconomyItemRow(
-                                item = item,
-                                userLocation = userLocation,
-                                locationHelper = locationHelper,
-                                onClick = { item.id?.let { onItemClick(it) } },
-                                onNavigate = { NavigationUtils.openNavigation(context, item.latitude, item.longitude) }
-                            )
+            AsyncDataContainer(
+                items = filteredItems,
+                isLoading = state is EconomyUpdateState.Loading && items.isEmpty(),
+                onRetry = { viewModel.fetchEconomyUpdates() },
+                error = if (state is EconomyUpdateState.Error) (state as EconomyUpdateState.Error).message else null
+            ) { list ->
+                LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 80.dp)) {
+                    items(list, key = { it.id ?: "" }) { item ->
+                        EconomyItemRow(item, userLocation, locationHelper, { onItemClick(item.id ?: "") }) {
+                            if (item.latitude != null && item.longitude != null) {
+                                NavigationUtils.openNavigation(context, item.latitude, item.longitude)
+                            }
                         }
                     }
                 }
@@ -143,66 +137,51 @@ fun EconomyItemRow(
     userLocation: android.location.Location?,
     locationHelper: LocationHelper,
     onClick: () -> Unit,
-    onNavigate: () -> Unit
+    onNavClick: () -> Unit
 ) {
-
-    ListItem(
-        modifier = Modifier.clickable(onClick = onClick),
-        headlineContent = { Text(item.buildingName, fontWeight = FontWeight.Bold) },
-        supportingContent = {
-            Column {
-                Text("HD: ${item.hdNumber} • ${item.economiesCount} Econ.")
-                
-                // SÊNIOR PERFORMANCE FIX: Espaço reservado para o Badge de Distância para evitar reflow
-                Spacer(Modifier.height(4.dp))
-                
-                val distLabel = remember(userLocation, item) {
-                    if (userLocation != null && item.latitude != null && item.longitude != null) {
-                        val d = locationHelper.calculateDistance(userLocation.latitude, userLocation.longitude, item.latitude, item.longitude)
-                        locationHelper.formatDistance(d)
-                    } else null
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).clickable { onClick() },
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+    ) {
+        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                modifier = Modifier.size(40.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Business, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                 }
-
-                Surface(
-                    color = if (distLabel != null) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                    contentColor = if (distLabel != null) MaterialTheme.colorScheme.onPrimaryContainer else Color.Transparent,
-                    shape = MaterialTheme.shapes.extraSmall
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+            }
+            
+            Spacer(Modifier.width(16.dp))
+            
+            Column(modifier = Modifier.weight(1f)) {
+                Text(item.buildingName ?: "Sem Nome", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text("HD: ${item.hdNumber ?: "Vazio"} • ${item.economiesCount ?: 0} Econ.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                
+                if (item.latitude != null && item.longitude != null && userLocation != null) {
+                    val dist = locationHelper.calculateDistance(userLocation.latitude, userLocation.longitude, item.latitude, item.longitude)
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f),
+                        shape = MaterialTheme.shapes.small,
+                        modifier = Modifier.padding(top = 4.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Place,
-                            contentDescription = null,
-                            modifier = Modifier.size(12.dp),
-                            tint = if (distLabel != null) LocalContentColor.current else Color.Transparent
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = distLabel ?: "000.0m", // Reserva o espaço aproximado
-                            style = MaterialTheme.typography.labelSmall
-                        )
+                        Row(Modifier.padding(horizontal = 6.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Place, null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.secondary)
+                            Spacer(Modifier.width(4.dp))
+                            Text(locationHelper.formatDistance(dist), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
+                        }
                     }
                 }
                 
-                // SÊNIOR FIX: Adicionado indicador de nuvem (sincronização)
-                Spacer(Modifier.height(4.dp))
-                SyncIndicator(item.isSynced)
+                SyncIndicator(isSynced = item.isSynced)
             }
-        },
-        leadingContent = { 
-            Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = CircleShape, modifier = Modifier.size(40.dp)) {
-                Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Apartment, contentDescription = null, modifier = Modifier.size(20.dp)) }
-            }
-        },
-        trailingContent = {
-            if (item.latitude != null) {
-                IconButton(onClick = onNavigate) {
-                    Icon(Icons.Default.Navigation, contentDescription = "Navegar", tint = MaterialTheme.colorScheme.primary)
-                }
+            
+            IconButton(onClick = onNavClick) {
+                Icon(Icons.Default.Navigation, null, tint = MaterialTheme.colorScheme.primary)
             }
         }
-    )
-    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+    }
 }

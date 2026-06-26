@@ -177,7 +177,7 @@ fun MenuScreen(
                 )
                 MenuCard(
                     modifier = Modifier.weight(1f),
-                    title = "Economias",
+                    title = "Grandes Emp.",
                     subtitle = if (economiasPending > 0) "$economiasPending Pendentes" else "Sincronizado",
                     icon = Icons.Default.Business,
                     color = if (economiasPending > 0) Color(0xFFF59E0B) else Color(0xFF10B981),

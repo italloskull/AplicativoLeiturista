@@ -19,6 +19,9 @@ class MainActivity : androidx.activity.ComponentActivity() {
         // SÊNIOR FIX: Carregamento do perfil assim que a Activity inicia
         authRepository.loadProfileFromCache(applicationContext)
         
+        // SÊNIOR FIX: Inicialização dos repositórios de economia para garantir acesso ao SQLite
+        com.example.oaplicativo.data.repository.EconomyRepositoryImpl.getInstance().initialize(applicationContext)
+        
         // Ativa o desenho por baixo das barras do sistema (Inicia o Edge-to-Edge)
         enableEdgeToEdge()
         

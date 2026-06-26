@@ -90,7 +90,7 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
                         successCount++
                         Log.d("SyncWorker", "✅ Sincronizado individualmente: $localId")
                     } catch (inner: Exception) {
-                        db.incrementSyncAttempt("economy_updates", localId, inner.message)
+                        db.incrementSyncAttempt("grandes_empreendimentos", localId, inner.message)
                         failCount++
                         Log.e("SyncWorker", "❌ Erro fatal na economia $localId: ${inner.message}")
                     }

@@ -5,6 +5,7 @@ import com.example.oaplicativo.data.SupabaseClient
 import com.example.oaplicativo.data.local.LocalDatabase
 import com.example.oaplicativo.domain.repository.EconomyRepository
 import com.example.oaplicativo.model.EconomyUpdate
+import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.CoroutineScope
@@ -39,31 +40,41 @@ class EconomyRepositoryImpl private constructor() : EconomyRepository {
     override suspend fun fetchEconomyUpdates() {
         mutex.withLock {
             try {
-                // 1. Busca do servidor (registros oficiais)
+                // 1. SÊNIOR FIX: Carregamento LOCAL obrigatório (A base da verdade)
+                val localPending = try {
+                    val db = context?.let { LocalDatabase.getInstance(it) } ?: throw Exception("Context not ready")
+                    val list = db.getPendingEconomyUpdates().map { it.second.copy(isSynced = false) }
+                    Log.d("EconomyRepo", "🏠 [LOCAL] Carregados ${list.size} registros pendentes do celular.")
+                    list
+                } catch (e: Exception) {
+                    Log.e("EconomyRepo", "❌ Erro ao acessar banco local: ${e.message}")
+                    emptyList()
+                }
+
+                // Emite os dados locais imediatamente para a UI não ficar em branco caso a rede demore
+                if (localPending.isNotEmpty()) {
+                    _items.value = localPending
+                }
+
+                // 2. Busca do servidor (registros oficiais) - Tenta em segundo plano
                 val remoteList = try {
-                    client.postgrest["atualizacao_economias"]
+                    Log.d("EconomyRepo", "🌐 [NETWORK] Buscando Grandes Empreendimentos...")
+                    val result = client.postgrest["grandes_empreendimentos"]
                         .select {
                             order("criado_em", order = Order.DESCENDING)
                             limit(100)
                         }.decodeList<EconomyUpdate>()
+                    Log.d("EconomyRepo", "✅ [NETWORK] Busca concluída: ${result.size} itens do servidor.")
+                    result
                 } catch (e: Exception) {
-                    Log.w("EconomyRepo", "Offline: Não foi possível buscar do Supabase.")
-                    emptyList()
+                    Log.w("EconomyRepo", "⚠️ [NETWORK] Modo Offline ativo: ${e.message}")
+                    emptyList<EconomyUpdate>()
                 }
                 
-                // 2. SÊNIOR FIX: Injeção segura via context inicializado para evitar Crash por morte de Activity
-                val localPending = try {
-                    val db = context?.let { LocalDatabase.getInstance(it) } ?: throw Exception("Context not ready")
-                    db.getPendingEconomyUpdates().map { it.second.copy(isSynced = false) }
-                } catch (e: Exception) {
-                    Log.e("EconomyRepo", "Erro ao acessar banco local: ${e.message}")
-                    emptyList()
-                }
-
-                // 3. Mescla as duas listas (IDs locais têm prioridade na visualização para mostrar a nuvem vermelha)
+                // 3. Mescla Final: IDs locais têm prioridade absoluta (Nuvem Vermelha)
                 val combined = (localPending + remoteList).distinctBy { it.id }
-                
                 _items.value = combined
+                Log.d("EconomyRepo", "📊 [FINAL] Lista atualizada com ${combined.size} itens (Local + Nuvem).")
             } catch (e: Exception) {
                 Log.e("EconomyRepo", "Erro ao processar lista de economias: ${e.message}")
             }
@@ -81,17 +92,29 @@ class EconomyRepositoryImpl private constructor() : EconomyRepository {
     override suspend fun saveEconomyUpdates(items: List<EconomyUpdate>) {
         if (items.isEmpty()) return
         try {
+        try {
             // SÊNIOR DEBUG: Log do payload exato para conferência
             items.forEach { 
-                Log.d("EconomyRepo", "📦 Payload HD: ${it.hdNumber}, Edifício: ${it.buildingName}, ID: ${it.id}") 
+                Log.d("EconomyRepo", "📦 [TENTATIVA GE] HD: ${it.hdNumber} | Edifício: ${it.buildingName} | ID: ${it.id}") 
             }
 
-            // SÊNIOR FIX: Garantia absoluta de UPSERT por ID
-            client.postgrest["atualizacao_economias"].upsert(items) {
-                onConflict = "id"
-            }
-            Log.d("EconomyRepo", "✅ Sucesso Supabase: Lote de ${items.size} enviado.")
+            Log.d("EconomyRepo", "🚀 [SUPABASE] Enviando INSERT para grandes_empreendimentos...")
+            
+            // SÊNIOR FIX: Apontando para a nova tabela oficial 'grandes_empreendimentos'
+            client.postgrest["grandes_empreendimentos"].insert(items)
+            
+            Log.d("EconomyRepo", "✅ [SUPABASE] Sucesso: Grandes Empreendimentos aceitos.")
             fetchEconomyUpdates()
+        } catch (e: Exception) {
+            val errorMsg = e.message ?: "Erro desconhecido"
+            Log.e("EconomyRepo", "❌ [SUPABASE] FALHA CRÍTICA NO ENVIO: $errorMsg")
+            
+            // SÊNIOR DIAGNOSTIC: Verifica se o erro é de permissão (RLS)
+            if (errorMsg.contains("403") || errorMsg.contains("permission", ignoreCase = true)) {
+                Log.e("EconomyRepo", "🚨 ALERTA: Verifique a política de RLS (INSERT) no Supabase!")
+            }
+            throw e
+        }
         } catch (e: Exception) {
             val errorMsg = e.message ?: "Erro desconhecido no Supabase"
             Log.e("EconomyRepo", "❌ FALHA NO SUPABASE: $errorMsg")

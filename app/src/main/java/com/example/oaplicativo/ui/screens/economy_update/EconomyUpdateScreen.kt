@@ -78,7 +78,7 @@ fun EconomyUpdateScreen(
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("ATUALIZAÇÃO PREDIAL", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black) },
+                title = { Text("GRANDES EMPREENDIMENTOS", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black) },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar") }
                 }
@@ -207,6 +207,55 @@ fun EconomyUpdateScreen(
                         Spacer(Modifier.width(8.dp))
                         Text("Capturar GPS do Edifício")
                     }
+
+                    // SÊNIOR UX: PAINEL DE INTELIGÊNCIA GEOGRÁFICA (MESMO PADRÃO DO RECADASTRO)
+                    val suggestedGroup = remember(latitude, longitude) {
+                        com.example.oaplicativo.util.GeoFencingHelper.findSuggestedGroup("Itapoá", latitude, longitude)
+                    }
+                    val suggestedRoute = remember(latitude, longitude) {
+                        com.example.oaplicativo.util.GeoFencingHelper.findSuggestedRoute("Itapoá", latitude, longitude)
+                    }
+
+                    if (suggestedGroup != null || suggestedRoute != null) {
+                        Spacer(Modifier.height(20.dp))
+                        HorizontalDivider(thickness = 0.5.dp, color = Color(0xFF10B981).copy(alpha = 0.3f))
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            "📍 SETOR DETECTADO (OFICIAL):",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF059669),
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            suggestedGroup?.let { g ->
+                                Surface(
+                                    color = Color(0xFFECFDF5),
+                                    shape = MaterialTheme.shapes.medium,
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF10B981)),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("GRUPO", style = MaterialTheme.typography.labelSmall, color = Color(0xFF059669))
+                                        Text(g, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = Color(0xFF064E3B))
+                                    }
+                                }
+                            }
+                            suggestedRoute?.let { r ->
+                                Surface(
+                                    color = Color(0xFFECFDF5),
+                                    shape = MaterialTheme.shapes.medium,
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF10B981)),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("ROTA", style = MaterialTheme.typography.labelSmall, color = Color(0xFF059669))
+                                        Text(r, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = Color(0xFF064E3B))
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             
@@ -222,19 +271,20 @@ fun EconomyUpdateScreen(
                         
                         // LÓGICA "INDSTRUTÍVEL": Todos os campos são opcionais.
                         // Aplicamos trim() e tratamos nulos/vazios.
-                        viewModel.saveEconomyUpdate(
-                            EconomyUpdate(
-                                id = existingItem?.id,
-                                hdNumber = hdNumber.trim().ifBlank { "Sem HD" }, // Único campo que precisa de um valor base para o Upsert
-                                buildingName = buildingName.trim().ifBlank { "Sem Nome" },
-                                constructionCompany = constructionCompany.trim().ifBlank { " " },
-                                economiesCount = economiesCount.toIntOrNull() ?: 0,
-                                floorsCount = floorsCount.toIntOrNull() ?: 0,
-                                electricityMeterNumber = electricityMeter.trim().ifBlank { " " },
-                                latitude = latitude,
-                                longitude = longitude
-                            )
+                        val itemToSave = EconomyUpdate(
+                            id = existingItem?.id,
+                            hdNumber = hdNumber.trim().ifBlank { null }, 
+                            buildingName = buildingName.trim().ifBlank { null },
+                            constructionCompany = constructionCompany.trim().ifBlank { null },
+                            economiesCount = economiesCount.toIntOrNull(),
+                            floorsCount = floorsCount.toIntOrNull(),
+                            electricityMeterNumber = electricityMeter.trim().ifBlank { null },
+                            latitude = latitude,
+                            longitude = longitude
                         )
+                        
+                        Log.d("EconomyScreen", "🟢 Botão Salvar clicado. Enviando para o ViewModel: Edifício: ${itemToSave.buildingName}")
+                        viewModel.saveEconomyUpdate(itemToSave)
                     }
                 },
                 isLoading = state is EconomyUpdateState.Loading,
