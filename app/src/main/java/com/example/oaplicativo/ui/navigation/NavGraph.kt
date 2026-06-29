@@ -85,13 +85,25 @@ fun SetupNavGraph(
                 onToggleTheme = onToggleTheme,
                 onNavigateToUserRegistration = {
                     navController.navigate(Screen.UserRegistration.route)
+                },
+                onNavigateToAdminPanel = {
+                    navController.navigate(Screen.AdminDashboard.route)
                 }
+            )
+        }
+
+        composable(route = Screen.AdminDashboard.route) {
+            com.example.oaplicativo.ui.screens.admin.AdminDashboardScreen(
+                onBack = { navController.popBackStack() }
             )
         }
 
         composable(route = Screen.VisitasDashboard.route) {
             VisitasScreen(
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onNavigateToAdminPanel = {
+                    navController.navigate(Screen.AdminDashboard.route)
+                }
             )
         }
 
@@ -101,6 +113,9 @@ fun SetupNavGraph(
                 onAddClick = { navController.navigate(Screen.EconomyUpdateForm.createRoute()) },
                 onItemClick = { itemId -> 
                     navController.navigate(Screen.EconomyUpdateForm.createRoute(itemId))
+                },
+                onNavigateToAdminPanel = {
+                    navController.navigate(Screen.AdminDashboard.route)
                 }
             )
         }

@@ -197,7 +197,18 @@ fun RecadastroFormScreen(
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             item {
-                AppCard(title = "Localização do Imóvel", icon = Icons.Default.Map) {
+                AppCard(title = "Localização e Hidrometria", icon = Icons.Default.Map) {
+                    // SÊNIOR UX: A primeira e mais importante pergunta (Faturamento First)
+                    BooleanOption(label = "Medição via Hidrômetro?", selectedOption = viewModel.possuiHidrometro) { viewModel.possuiHidrometro = it }
+                    if (viewModel.possuiHidrometro == "Sim") {
+                        Spacer(Modifier.height(12.dp))
+                        AppTextField(value = viewModel.numeroHidrometro, onValueChange = { viewModel.numeroHidrometro = it }, label = "Nº de Série do Hidrômetro", leadingIcon = Icons.Default.Pin)
+                    }
+
+                    Spacer(Modifier.height(24.dp))
+                    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+                    Spacer(Modifier.height(20.dp))
+
                     Row(
                         modifier = Modifier.fillMaxWidth(), 
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -343,7 +354,7 @@ fun RecadastroFormScreen(
                     BooleanOption(label = "É imóvel de veranista?", selectedOption = viewModel.isVacationer) { viewModel.isVacationer = it }
                     
                     Spacer(Modifier.height(8.dp))
-                    SpinnerOption(label = "Situação do Local", options = listOf("Terreno Baldio", "Construção", "Habitado", "Comércio", "Outros"), selectedOption = viewModel.locationStatus, onOptionSelected = { viewModel.locationStatus = it })
+                    SpinnerOption(label = "Situação do Local", options = listOf("Terreno Baldio", "Construção", "Residencial", "Comércio", "Outros"), selectedOption = viewModel.locationStatus, onOptionSelected = { viewModel.locationStatus = it })
                     SpinnerOption(label = "Tipo de Pavimento da Rua", options = listOf("Asfalto", "Paralelepípedo", "Terra", "Outro"), selectedOption = viewModel.pavimentoRua, onOptionSelected = { viewModel.pavimentoRua = it })
                     SpinnerOption(label = "Tipo de Pavimento da Calçada", options = listOf("Asfalto", "Paver", "Concreto", "Terra", "Outro"), selectedOption = viewModel.pavimentoCalcada, onOptionSelected = { viewModel.pavimentoCalcada = it })
                 }
@@ -355,13 +366,6 @@ fun RecadastroFormScreen(
                     BooleanOption(label = "Lacres Padronizados?", selectedOption = viewModel.isStandardizedSeals) { viewModel.isStandardizedSeals = it }
                     BooleanOption(label = "Hidrômetro Acessível?", selectedOption = viewModel.isHdAccessible) { viewModel.isHdAccessible = it }
                     
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
-
-                    BooleanOption(label = "Medição via Hidrômetro?", selectedOption = viewModel.possuiHidrometro) { viewModel.possuiHidrometro = it }
-                    if (viewModel.possuiHidrometro == "Sim") {
-                        Spacer(Modifier.height(12.dp))
-                        AppTextField(value = viewModel.numeroHidrometro, onValueChange = { viewModel.numeroHidrometro = it }, label = "Nº de Série do Hidrômetro", leadingIcon = Icons.Default.Pin)
-                    }
                     Spacer(Modifier.height(12.dp))
                     SpinnerOption(label = "Possui reservatório (Caixa)?", options = listOf("Sim", "Não", "Não Visível"), selectedOption = viewModel.possuiCaixaAgua, onOptionSelected = { viewModel.possuiCaixaAgua = it })
                     AppTextField(value = viewModel.economias, onValueChange = { if (it.all { c -> c.isDigit() }) viewModel.economias = it }, label = "Nº de Economias", leadingIcon = Icons.Default.MapsHomeWork, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))

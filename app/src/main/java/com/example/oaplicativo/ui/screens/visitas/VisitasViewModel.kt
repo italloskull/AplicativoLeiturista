@@ -3,6 +3,7 @@ package com.example.oaplicativo.ui.screens.visitas
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.oaplicativo.data.repository.AuthRepositoryImpl
 import com.example.oaplicativo.data.repository.StatsRepositoryImpl
 import com.example.oaplicativo.domain.repository.StatsRepository
 import kotlinx.coroutines.flow.StateFlow
@@ -30,7 +31,11 @@ class VisitasViewModel(
 
     fun loadStats() {
         viewModelScope.launch {
-            repository.refreshStats()
+            val user = AuthRepositoryImpl.getInstance().currentUserProfile.value
+            repository.refreshStats(
+                cidadeId = user?.cidadeId,
+                isAdmin = user?.cargo?.lowercase() == "desenvolvedor"
+            )
         }
     }
 }

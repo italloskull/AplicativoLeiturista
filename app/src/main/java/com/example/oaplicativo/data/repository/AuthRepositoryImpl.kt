@@ -142,7 +142,12 @@ class AuthRepositoryImpl private constructor() : AuthRepository {
 
     override suspend fun logout() {
         try {
+            // SÊNIOR FIX: Kill Switch Global - Limpa a memória de todos os dados antes de sair
+            CustomerRepositoryImpl.getInstance().clearCache()
+            EconomyRepositoryImpl.getInstance().clearCache()
+            
             client.auth.signOut()
+            Log.d("debugs", "🔒 [AUTH] Logout realizado e memória global limpa.")
         } catch (_: Exception) {}
         _currentUserProfile.value = null
     }

@@ -1,6 +1,7 @@
 @file:Suppress("SpellCheckingInspection")
 package com.example.oaplicativo.ui.screens.menu
 
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -98,16 +99,20 @@ fun MenuScreen(
                     )
                 }
                 
+                val isPowerUser = userProfile?.cargo?.lowercase()?.let { 
+                    it == "administrador" || it == "desenvolvedor" 
+                } ?: false
+
                 GlobalActionMenu(
                     isDarkTheme = isDarkTheme,
-                    isAdmin = userProfile?.cargo == "administrador",
+                    isAdmin = isPowerUser,
                     onToggleTheme = onToggleTheme,
                     onLogout = onLogout,
                     onNavigateToUserRegistration = { onNavigate("user_registration") },
+                    onNavigateToAdminPanel = { onNavigate("admin_dashboard") },
                     onForceSync = {
-                        localDb.resetSyncAttempts()
                         val syncRequest = androidx.work.OneTimeWorkRequestBuilder<com.example.oaplicativo.data.sync.SyncWorker>().build()
-                        androidx.work.WorkManager.getInstance(context).enqueueUniqueWork("force_sync_manual", androidx.work.ExistingWorkPolicy.REPLACE, syncRequest)
+                        androidx.work.WorkManager.getInstance(context).enqueueUniqueWork("force_sync_menu", androidx.work.ExistingWorkPolicy.REPLACE, syncRequest)
                         Toast.makeText(context, "Sincronização iniciada!", Toast.LENGTH_SHORT).show()
                     }
                 )
@@ -144,7 +149,7 @@ fun MenuScreen(
                         }
                         Text(saudacao, style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.7f))
                         Text(
-                            text = userProfile?.fullName?.split(" ")?.firstOrNull() ?: "Leiturista",
+                            text = userProfile?.fullName?.split(" ")?.firstOrNull() ?: "Equipe de Campo",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
@@ -229,13 +234,34 @@ fun MenuScreen(
 
                     TextButton(
                         onClick = {
+                            // SÊNIOR FIX: Blindagem Anti-Crash e Verificação de Conectividade
+                            val netHelper = com.example.oaplicativo.util.NetworkHelper(context)
+                            if (!netHelper.isNetworkAvailable()) {
+                                Toast.makeText(context, "⚠️ Sem internet! Tente mais tarde.", Toast.LENGTH_SHORT).show()
+                                return@TextButton
+                            }
+
                             isSyncingManual = true
                             scope.launch {
-                                localDb.resetSyncAttempts()
-                                val syncRequest = androidx.work.OneTimeWorkRequestBuilder<com.example.oaplicativo.data.sync.SyncWorker>().build()
-                                androidx.work.WorkManager.getInstance(context).enqueueUniqueWork("force_sync_${System.currentTimeMillis()}", androidx.work.ExistingWorkPolicy.REPLACE, syncRequest)
-                                repeat(5) { delay(2000); recadastroPending = localDb.getRecadastroStats().second; economiasPending = localDb.getEconomyStats().second }
-                                isSyncingManual = false
+                                try {
+                                    localDb.resetSyncAttempts()
+                                    val syncRequest = androidx.work.OneTimeWorkRequestBuilder<com.example.oaplicativo.data.sync.SyncWorker>().build()
+                                    androidx.work.WorkManager.getInstance(context).enqueueUniqueWork(
+                                        "force_sync_${System.currentTimeMillis()}", 
+                                        androidx.work.ExistingWorkPolicy.REPLACE, 
+                                        syncRequest
+                                    )
+                                    // Feedback visual de espera
+                                    repeat(5) { 
+                                        delay(2000)
+                                        recadastroPending = localDb.getRecadastroStats().second
+                                        economiasPending = localDb.getEconomyStats().second 
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e("debugs", "❌ [MENU] Erro ao disparar sincronismo: ${e.message}")
+                                } finally {
+                                    isSyncingManual = false
+                                }
                             }
                         }
                     ) {

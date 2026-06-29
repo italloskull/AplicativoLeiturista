@@ -70,40 +70,92 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
         }
     }
 
-    override suspend fun fetchCustomers() {
+    override suspend fun fetchCustomers(cidadeId: String?, isAdmin: Boolean) {
         refreshMutex.withLock {
             try {
+                val userCityName = when(cidadeId) {
+                    "c2be642b-2823-41b9-8f54-0b8c84db9a14" -> "Itapoá"
+                    "ff9166b8-63b1-4481-a26a-64778181fa08" -> "Guabiruba"
+                    "74df760a-0120-42b4-bb4d-03cfd92e79b0" -> "Gaivota"
+                    "93fee74f-6cbb-4638-868d-ef5c17b081a4" -> "Gravatal"
+                    "9ed90b8c-1b63-44b7-88cd-c2b9b6babcc7" -> "Sombrio"
+                    else -> null
+                }
+
+                Log.d("debugs", "🔍 [RECADASTRO] Iniciando busca... Cidade: $userCityName | GodMode: $isAdmin")
+                
                 val list = withContext(Dispatchers.IO) {
                     client.postgrest["clientes"]
                         .select {
-                            order("criado_em", order = Order.DESCENDING)
-                            limit(100)
+                            // SÊNIOR FIX: Injeção de Filtro Territorial via Nome Legível
+                            if (!isAdmin && userCityName != null) {
+                                filter { eq("cidade", userCityName) }
+                            }
+                            order("criado_em", order = io.github.jan.supabase.postgrest.query.Order.DESCENDING)
+                            limit(150)
                         }.decodeList<Customer>()
                 }
+                
+                Log.d("debugs", "✅ [RECADASTRO] Recebidos ${list.size} itens da nuvem.")
+                
+                // SÊNIOR DEBUG: Se a lista veio vazia, avisa no log para checarmos o RLS ou o ID
+                if (list.isEmpty()) {
+                    Log.w("debugs", "⚠️ [RECADASTRO] Supabase retornou ZERO. Verifique se os registros no banco possuem o cidade_id: $cidadeId")
+                }
+
                 remoteCustomers = list
                 combineAndEmit()
             } catch (e: Exception) {
-                Log.e("CustomerRepositoryImpl", "Erro ao buscar dados: ${e.message}")
+                val msg = e.message ?: ""
+                val shortError = when {
+                    msg.contains("Unable to resolve host") -> "Sem Internet (DNS)"
+                    msg.contains("timeout") -> "Tempo Esgotado"
+                    msg.contains("401") || msg.contains("403") -> "Acesso Negado"
+                    else -> "Falha de Conexão"
+                }
+                Log.e("debugs", "❌ [RECADASTRO] Falha: $shortError | Detalhe: ${e.message}")
             }
         }
     }
 
     override fun updateLocalCustomers(localCustomers: List<Customer>) {
         localPendingCustomers = localCustomers.map { it.copy(isSynced = false) }
+        Log.d("debugs", "🏠 [RECADASTRO] Cache local atualizado: ${localPendingCustomers.size} pendentes.")
         combineAndEmit()
+    }
+
+    override fun clearCache() {
+        remoteCustomers = emptyList()
+        localPendingCustomers = emptyList()
+        _customers.value = emptyList()
+        Log.d("debugs", "🧹 [RECADASTRO] Cache de memória limpo.")
     }
 
     private fun combineAndEmit() {
         scope.launch(Dispatchers.Default) {
             refreshMutex.withLock {
-                // SÊNIOR FIX: Garantia absoluta de unicidade por ID para evitar crash de 'LazyColumn Key'
-                // Registros locais (pendentes) têm prioridade visual
+                val profile = AuthRepositoryImpl.getInstance().currentUserProfile.value
+                val isDev = profile?.cargo?.lowercase() == "desenvolvedor"
+                val userCidadeId = profile?.cidadeId
+                val userCityName = when(userCidadeId) {
+                    "c2be642b-2823-41b9-8f54-0b8c84db9a14" -> "Itapoá"
+                    "ff9166b8-63b1-4481-a26a-64778181fa08" -> "Guabiruba"
+                    "74df760a-0120-42b4-bb4d-03cfd92e79b0" -> "Gaivota"
+                    "93fee74f-6cbb-4638-868d-ef5c17b081a4" -> "Gravatal"
+                    "9ed90b8c-1b63-44b7-88cd-c2b9b6babcc7" -> "Sombrio"
+                    else -> null
+                }
+
+                // SÊNIOR FIX: Blindagem Territorial Absoluta via Nome Legível
+                // Remove qualquer dado que não pertença à cidade do usuário logado antes de mostrar na tela
                 val combined = (localPendingCustomers + remoteCustomers)
+                    .filter { item ->
+                        isDev || userCityName == null || item.cidade == userCityName
+                    }
                     .distinctBy { it.id ?: UUID.randomUUID().toString() }
-                    .filter { it.id != null }
                 
                 _customers.value = combined
-                Log.d("CustomerRepo", "📊 Lista combinada emitida: ${combined.size} clientes únicos.")
+                Log.d("debugs", "📊 [RECADASTRO] Lista combinada emitida: ${combined.size} clientes únicos.")
             }
         }
     }

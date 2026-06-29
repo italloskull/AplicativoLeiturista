@@ -15,4 +15,5 @@ data class UserProfile(
     val cidadeId: String? = null
 ) {
     val isAdmin: Boolean get() = cargo.lowercase() == "administrador"
+    val isDeveloper: Boolean get() = cargo.lowercase() == "desenvolvedor"
 }

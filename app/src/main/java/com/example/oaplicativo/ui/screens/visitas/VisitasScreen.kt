@@ -33,7 +33,8 @@ import com.example.oaplicativo.data.repository.StatsRepositoryImpl
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VisitasScreen(
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onNavigateToAdminPanel: () -> Unit // SÊNIOR FIX: Adicionado parâmetro de navegação
 ) {
     val context = LocalContext.current
     
@@ -72,6 +73,27 @@ fun VisitasScreen(
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
                     }
+                },
+                actions = {
+                    val profile by com.example.oaplicativo.data.repository.AuthRepositoryImpl.getInstance().currentUserProfile.collectAsState()
+                    val isPowerUser = profile?.cargo?.lowercase()?.let { 
+                        it == "administrador" || it == "desenvolvedor" 
+                    } ?: false
+
+                    com.example.oaplicativo.ui.components.GlobalActionMenu(
+                        isDarkTheme = false, // TODO
+                        isAdmin = isPowerUser,
+                        onToggleTheme = { /* TODO */ },
+                        onLogout = { /* TODO */ },
+                        onNavigateToUserRegistration = { /* TODO */ },
+                        onNavigateToAdminPanel = onNavigateToAdminPanel,
+                        onForceSync = {
+                            val syncRequest = androidx.work.OneTimeWorkRequestBuilder<com.example.oaplicativo.data.sync.SyncWorker>().build()
+                            androidx.work.WorkManager.getInstance(context).enqueueUniqueWork("force_sync_visitas", androidx.work.ExistingWorkPolicy.REPLACE, syncRequest)
+                            android.widget.Toast.makeText(context, "Sincronização iniciada!", android.widget.Toast.LENGTH_SHORT).show()
+                            viewModel.loadStats()
+                        }
+                    )
                 }
             )
         }
@@ -87,51 +109,51 @@ fun VisitasScreen(
                 )
                 .verticalScroll(rememberScrollState())
                 .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             // --- HEADER: RECORDE ---
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.extraLarge,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary)
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
             ) {
                 Row(
                     modifier = Modifier.padding(24.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Surface(
-                        modifier = Modifier.size(64.dp),
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.2f)
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .background(Color.White.copy(alpha = 0.2f), CircleShape),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.EmojiEvents, contentDescription = null, tint = Color.Yellow, modifier = Modifier.size(32.dp))
-                        }
+                        Icon(Icons.Default.EmojiEvents, null, tint = Color.Yellow, modifier = Modifier.size(32.dp))
                     }
                     Spacer(Modifier.width(20.dp))
                     Column {
-                        Text("SEU RECORDE DIÁRIO", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f))
-                        Text("${stats.recordePessoal} Cadastros", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onPrimary)
-                        Text("Apenas cadastros úteis (Boa/Regular)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f))
+                        Text("SEU RECORDE DIÁRIO", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.7f))
+                        Text("${stats.recordePessoal}", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Black, color = Color.White)
+                        Text("Cadastros Úteis (Boa/Regular)", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.6f))
                     }
                 }
             }
 
             // --- CONTADORES RÁPIDOS ---
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 StatsMiniCard(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).height(120.dp),
                     title = "Visitas Hoje",
                     value = stats.hojeTotal.toString(),
                     icon = Icons.AutoMirrored.Filled.TrendingUp,
-                    color = MaterialTheme.colorScheme.secondary
+                    color = Color(0xFF6366F1)
                 )
                 StatsMiniCard(
-                    modifier = Modifier.weight(1f),
-                    title = "Recorde Histórico",
+                    modifier = Modifier.weight(1f).height(120.dp),
+                    title = "Recorde",
                     value = stats.recordePessoal.toString(),
                     icon = Icons.Default.History,
-                    color = MaterialTheme.colorScheme.tertiary
+                    color = Color(0xFFF59E0B)
                 )
             }
 
@@ -139,17 +161,19 @@ fun VisitasScreen(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.large,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Text("Qualidade das Visitas", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Impacto no faturamento e auditoria", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.height(20.dp))
                     
-                    QualityProgressBar(label = "Qualidade BOA", percentage = stats.percentualBoa, color = Color(0xFF4CAF50))
-                    Spacer(modifier = Modifier.height(12.dp))
-                    QualityProgressBar(label = "Qualidade REGULAR", percentage = stats.percentualRegular, color = Color(0xFFFFC107))
-                    Spacer(modifier = Modifier.height(12.dp))
-                    QualityProgressBar(label = "Qualidade RUIM", percentage = stats.percentualRuim, color = Color(0xFFF44336))
+                    QualityProgressBar(label = "Qualidade BOA", percentage = stats.percentualBoa, color = Color(0xFF10B981), count = (stats.hojeTotal * stats.percentualBoa).toInt())
+                    Spacer(modifier = Modifier.height(16.dp))
+                    QualityProgressBar(label = "Qualidade REGULAR", percentage = stats.percentualRegular, color = Color(0xFFF59E0B), count = (stats.hojeTotal * stats.percentualRegular).toInt())
+                    Spacer(modifier = Modifier.height(16.dp))
+                    QualityProgressBar(label = "Qualidade RUIM", percentage = stats.percentualRuim, color = Color(0xFFEF4444), count = (stats.hojeTotal * stats.percentualRuim).toInt())
                 }
             }
             
@@ -175,16 +199,20 @@ fun StatsMiniCard(modifier: Modifier, title: String, value: String, icon: ImageV
 }
 
 @Composable
-fun QualityProgressBar(label: String, percentage: Float, color: Color) {
+fun QualityProgressBar(label: String, percentage: Float, color: Color, count: Int) {
     Column {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(label, style = MaterialTheme.typography.labelSmall)
-            Text("${(percentage * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text(label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("$count", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = color)
+                Text(" • ", color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                Text("${(percentage * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(6.dp))
         LinearProgressIndicator(
             progress = { percentage },
-            modifier = Modifier.fillMaxWidth().height(8.dp),
+            modifier = Modifier.fillMaxWidth().height(10.dp),
             color = color,
             trackColor = color.copy(alpha = 0.1f),
             strokeCap = androidx.compose.ui.graphics.StrokeCap.Round

@@ -9,39 +9,41 @@ import com.example.oaplicativo.model.Customer
 import com.example.oaplicativo.model.EconomyUpdate
 import com.example.oaplicativo.model.UserProfile
 import com.example.oaplicativo.util.normalizeQuality
-import kotlinx.coroutines.sync.Mutex
 import java.time.ZonedDateTime
-import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.Locale
 
-class LocalDatabase private constructor(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
-    // SÊNIOR FIX: Mutex de controle de concorrência global para evitar "Database is locked"
+class LocalDatabase(context: Context) :
+    SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
+    
     private val dbLock = Any()
 
     override fun onCreate(db: SQLiteDatabase) {
-        db.execSQL(CREATE_TABLE_CUSTOMERS)
-        db.execSQL(CREATE_TABLE_STATS)
-        db.execSQL(CREATE_TABLE_HISTORY)
-        db.execSQL(CREATE_TABLE_USER_CACHE)
-        db.execSQL(CREATE_TABLE_ECONOMY_UPDATES)
-        db.execSQL(IDX_CUSTOMERS_SYNC)
-        db.execSQL(IDX_ECONOMY_SYNC)
-        db.execSQL(IDX_CUSTOMERS_CITY)
+        synchronized(dbLock) {
+            db.execSQL(CREATE_TABLE_CUSTOMERS)
+            db.execSQL(CREATE_TABLE_ECONOMY_UPDATES)
+            db.execSQL(CREATE_TABLE_STATS)
+            db.execSQL(CREATE_TABLE_HISTORY)
+            db.execSQL(CREATE_TABLE_USER_CACHE)
+            db.execSQL(IDX_CUSTOMERS_SYNC)
+            db.execSQL(IDX_ECONOMY_SYNC)
+            db.execSQL(IDX_CUSTOMERS_CITY)
+        }
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        if (oldVersion < newVersion) {
+        synchronized(dbLock) {
             db.execSQL("DROP TABLE IF EXISTS customers")
-            db.execSQL("DROP TABLE IF EXISTS economy_updates")
+            db.execSQL("DROP TABLE IF EXISTS grandes_empreendimentos")
+            db.execSQL("DROP TABLE IF EXISTS stats")
+            db.execSQL("DROP TABLE IF EXISTS history")
+            db.execSQL("DROP TABLE IF EXISTS user_profile_cache")
             onCreate(db)
         }
     }
 
-    fun saveCustomerOffline(customer: Customer) = synchronized(dbLock) {
+    fun saveCustomerOffline(customer: Customer): Int {
         val db = writableDatabase
-        db.beginTransaction()
-        try {
+        synchronized(dbLock) {
             val values = ContentValues().apply {
                 put("id", customer.id)
                 put("cidade_id", customer.cidadeId)
@@ -61,10 +63,8 @@ class LocalDatabase private constructor(context: Context) : SQLiteOpenHelper(con
                 put("longitude", customer.longitude)
                 put("situacao_local", customer.locationStatus)
                 put("qtd_economias", customer.economiesCount)
-                put("criado_em", customer.createdAt)
                 put("adicionado_por", customer.addedBy)
                 put("capturado_em", customer.capturedAt)
-                put("sincronizado_em", customer.synchronizedAt)
                 put("date", customer.date)
                 put("qualidade", customer.quality)
                 put("entrevistado_nome", customer.entrevistadoNome)
@@ -89,40 +89,38 @@ class LocalDatabase private constructor(context: Context) : SQLiteOpenHelper(con
                 put("beneficiario_social", customer.beneficiarioSocial)
                 put("usa_agua_vizinho", customer.usaAguaVizinho)
                 put("possui_hidrometro", customer.possuiHidrometro)
-                put("grupo_sugerido", customer.grupoSugerido) 
+                put("grupo_sugerido", customer.grupoSugerido)
                 put("setor", customer.setor)
                 put("quadra", customer.quadra)
+                put("local_instalacao", customer.localInstalacao)
+                put("acessibilidade", customer.acessibilidade)
                 put("rota_sugerida", customer.rotaSugerida)
                 put("numero_hidrometro", customer.numeroHidrometro)
                 put("isSynced", 0)
             }
             
-            // SÊNIOR DEBUG LOG: Rastreando o valor da cidade antes de gravar no SQLite
-            Log.d("LocalDB", "💾 Gravando no SQLite - Cidade: ${customer.cidade} | ID: ${customer.cidadeId}")
-
-            db.insertWithOnConflict("customers", null, values, SQLiteDatabase.CONFLICT_REPLACE)
-            db.setTransactionSuccessful()
-            Log.d("LocalDB", "✅ Recadastro salvo. Qualidade: ${customer.quality} | Data: ${customer.date}")
-        } catch (e: Exception) {
-            Log.e("LocalDB", "❌ ERRO CRÍTICO AO SALVAR RECADASTRO", e)
-        } finally {
-            db.endTransaction()
+            Log.d("debugs", "💾 [SQLITE] Gravando Recadastro: ${customer.name} | Cidade: ${customer.cidade}")
+            return db.insertWithOnConflict("customers", null, values, SQLiteDatabase.CONFLICT_REPLACE).toInt()
         }
     }
 
-    fun getPendingCustomers(): List<Pair<String, Customer>> {
+    fun getPendingCustomers(cityName: String? = null, bypass: Boolean = false): List<Pair<String, Customer>> {
         val list = mutableListOf<Pair<String, Customer>>()
-        val cursor = readableDatabase.query("customers", null, "isSynced = 0 AND sync_attempts < 5", null, null, null, "criado_em ASC")
-        while (cursor.moveToNext()) {
-            val id = cursor.getString(cursor.getColumnIndexOrThrow("id"))
-            
-            fun getStrOrNull(column: String): String? {
-                val idx = cursor.getColumnIndexOrThrow(column)
-                return if (cursor.isNull(idx)) null else cursor.getString(idx)
-            }
+        val selection = if (bypass || cityName == null) "isSynced = 0 AND sync_attempts < 5" 
+                        else "isSynced = 0 AND sync_attempts < 5 AND cidade = ?"
+        val selectionArgs = if (bypass || cityName == null) null else arrayOf(cityName)
 
+        val cursor = readableDatabase.query("customers", null, selection, selectionArgs, null, null, "date ASC")
+        
+        fun getStrOrNull(col: String): String? {
+            val idx = cursor.getColumnIndex(col)
+            return if (idx != -1 && !cursor.isNull(idx)) cursor.getString(idx) else null
+        }
+
+        while (cursor.moveToNext()) {
+            val localId = cursor.getString(cursor.getColumnIndexOrThrow("id"))
             val customer = Customer(
-                id = id,
+                id = localId,
                 cidadeId = getStrOrNull("cidade_id"),
                 leituristaId = getStrOrNull("leiturista_id"),
                 name = getStrOrNull("name"),
@@ -140,10 +138,8 @@ class LocalDatabase private constructor(context: Context) : SQLiteOpenHelper(con
                 longitude = if (cursor.isNull(cursor.getColumnIndexOrThrow("longitude"))) null else cursor.getDouble(cursor.getColumnIndexOrThrow("longitude")),
                 locationStatus = getStrOrNull("situacao_local"),
                 economiesCount = if (cursor.isNull(cursor.getColumnIndexOrThrow("qtd_economias"))) null else cursor.getInt(cursor.getColumnIndexOrThrow("qtd_economias")),
-                createdAt = getStrOrNull("criado_em"),
                 addedBy = getStrOrNull("adicionado_por"),
                 capturedAt = getStrOrNull("capturado_em"),
-                synchronizedAt = getStrOrNull("sincronizado_em"),
                 date = getStrOrNull("date"),
                 quality = getStrOrNull("qualidade"),
                 entrevistadoNome = getStrOrNull("entrevistado_nome"),
@@ -171,18 +167,20 @@ class LocalDatabase private constructor(context: Context) : SQLiteOpenHelper(con
                 grupoSugerido = getStrOrNull("grupo_sugerido"),
                 setor = getStrOrNull("setor"),
                 quadra = getStrOrNull("quadra"),
+                localInstalacao = getStrOrNull("local_instalacao"),
+                acessibilidade = getStrOrNull("acessibilidade"),
                 rotaSugerida = getStrOrNull("rota_sugerida"),
                 numeroHidrometro = getStrOrNull("numero_hidrometro"),
                 isSynced = false
             )
-            list.add(Pair(id, customer))
+            list.add(localId to customer)
         }
         cursor.close()
         return list
     }
 
-    fun deleteSyncedCustomer(localId: String) {
-        writableDatabase.delete("customers", "id = ?", arrayOf(localId))
+    fun deleteSyncedCustomer(id: String) {
+        writableDatabase.delete("customers", "id = ?", arrayOf(id))
     }
 
     fun saveEconomyUpdateOffline(item: EconomyUpdate) = synchronized(dbLock) {
@@ -206,58 +204,50 @@ class LocalDatabase private constructor(context: Context) : SQLiteOpenHelper(con
                 put("adicionado_por", item.addedBy)
                 put("createdAt", item.createdAt)
                 put("date", item.date)
+                put("qualidade", "Boa") 
                 put("isSynced", 0)
             }
-            // SÊNIOR DEBUG LOG: Rastreamento físico de escrita no disco
-            Log.d("LocalDB", "💾 [ECONOMY] Gravando no SQLite: ${item.buildingName} | ID: ${item.id} | HD: ${item.hdNumber}")
-            
-            // SÊNIOR FIX: Unificação do nome da tabela interna para 'grandes_empreendimentos'
-            val tableName = "grandes_empreendimentos"
-            
-            val rowId = db.insertWithOnConflict(tableName, null, values, SQLiteDatabase.CONFLICT_REPLACE)
-            
-            if (rowId == -1L) {
-                Log.e("LocalDB", "❌ [ECONOMY] FALHA CRÍTICA DE ESCRITA: O SQLite recusou o registro!")
-            } else {
-                Log.d("LocalDB", "✅ [ECONOMY] Sucesso SQLite: Linha $rowId gravada.")
-            }
-            
+            db.insertWithOnConflict("grandes_empreendimentos", null, values, SQLiteDatabase.CONFLICT_REPLACE)
             db.setTransactionSuccessful()
+            Log.d("debugs", "✅ [SQLITE] GE Gravado: ${item.buildingName} | Cidade: ${item.cidade}")
         } catch (e: Exception) {
-            Log.e("LocalDB", "❌ [ECONOMY] ERRO FÍSICO NO SQLITE: ${e.message}", e)
+            Log.e("debugs", "❌ [SQLITE] Falha GE: ${e.message}")
         } finally {
             db.endTransaction()
         }
     }
 
-    fun getPendingEconomyUpdates(): List<Pair<String, EconomyUpdate>> {
+    fun getPendingEconomyUpdates(cityName: String? = null, bypass: Boolean = false): List<Pair<String, EconomyUpdate>> {
         val list = mutableListOf<Pair<String, EconomyUpdate>>()
         val db = readableDatabase
-        val cursor = db.rawQuery("SELECT * FROM grandes_empreendimentos WHERE isSynced = 0 AND sync_attempts < 5 ORDER BY createdAt ASC", null)
-        if (cursor.moveToFirst()) {
-            do {
-                val localId = cursor.getString(cursor.getColumnIndexOrThrow("id"))
-                val item = EconomyUpdate(
-                    id = localId,
-                    leituristaId = cursor.getString(cursor.getColumnIndexOrThrow("leiturista_id")),
-                    hdNumber = cursor.getString(cursor.getColumnIndexOrThrow("numero_hd")),
-                    buildingName = cursor.getString(cursor.getColumnIndexOrThrow("nome_edificio")),
-                    constructionCompany = cursor.getString(cursor.getColumnIndexOrThrow("construtora")),
-                    economiesCount = if (cursor.isNull(cursor.getColumnIndexOrThrow("qtd_economias"))) null else cursor.getInt(cursor.getColumnIndexOrThrow("qtd_economias")),
-                    floorsCount = if (cursor.isNull(cursor.getColumnIndexOrThrow("qtd_pavimentos"))) null else cursor.getInt(cursor.getColumnIndexOrThrow("qtd_pavimentos")),
-                    electricityMeterNumber = cursor.getString(cursor.getColumnIndexOrThrow("medidor_energia")),
-                    latitude = if (cursor.isNull(cursor.getColumnIndexOrThrow("latitude"))) null else cursor.getDouble(cursor.getColumnIndexOrThrow("latitude")),
-                    longitude = if (cursor.isNull(cursor.getColumnIndexOrThrow("longitude"))) null else cursor.getDouble(cursor.getColumnIndexOrThrow("longitude")),
-                    cidade = cursor.getString(cursor.getColumnIndexOrThrow("cidade")),
-                    grupoSugerido = cursor.getString(cursor.getColumnIndexOrThrow("grupo_sugerido")),
-                    rotaSugerida = cursor.getString(cursor.getColumnIndexOrThrow("rota_sugerida")),
-                    addedBy = cursor.getString(cursor.getColumnIndexOrThrow("adicionado_por")),
-                    createdAt = cursor.getString(cursor.getColumnIndexOrThrow("createdAt")),
-                    date = cursor.getString(cursor.getColumnIndexOrThrow("date")),
-                    isSynced = false
-                )
-                list.add(localId to item)
-            } while (cursor.moveToNext())
+        
+        val selection = if (bypass || cityName == null) "isSynced = 0 AND sync_attempts < 5"
+                        else "isSynced = 0 AND sync_attempts < 5 AND cidade = ?" 
+        val selectionArgs = if (bypass || cityName == null) null else arrayOf(cityName)
+
+        val cursor = db.query("grandes_empreendimentos", null, selection, selectionArgs, null, null, "createdAt ASC")
+        while (cursor.moveToNext()) {
+            val localId = cursor.getString(cursor.getColumnIndexOrThrow("id"))
+            val item = EconomyUpdate(
+                id = localId,
+                leituristaId = cursor.getString(cursor.getColumnIndexOrThrow("leiturista_id")),
+                hdNumber = cursor.getString(cursor.getColumnIndexOrThrow("numero_hd")),
+                buildingName = cursor.getString(cursor.getColumnIndexOrThrow("nome_edificio")),
+                constructionCompany = cursor.getString(cursor.getColumnIndexOrThrow("construtora")),
+                economiesCount = if (cursor.isNull(cursor.getColumnIndexOrThrow("qtd_economias"))) null else cursor.getInt(cursor.getColumnIndexOrThrow("qtd_economias")),
+                floorsCount = if (cursor.isNull(cursor.getColumnIndexOrThrow("qtd_pavimentos"))) null else cursor.getInt(cursor.getColumnIndexOrThrow("qtd_pavimentos")),
+                electricityMeterNumber = cursor.getString(cursor.getColumnIndexOrThrow("medidor_energia")),
+                latitude = if (cursor.isNull(cursor.getColumnIndexOrThrow("latitude"))) null else cursor.getDouble(cursor.getColumnIndexOrThrow("latitude")),
+                longitude = if (cursor.isNull(cursor.getColumnIndexOrThrow("longitude"))) null else cursor.getDouble(cursor.getColumnIndexOrThrow("longitude")),
+                cidade = cursor.getString(cursor.getColumnIndexOrThrow("cidade")),
+                grupoSugerido = cursor.getString(cursor.getColumnIndexOrThrow("grupo_sugerido")),
+                rotaSugerida = cursor.getString(cursor.getColumnIndexOrThrow("rota_sugerida")),
+                addedBy = cursor.getString(cursor.getColumnIndexOrThrow("adicionado_por")),
+                createdAt = cursor.getString(cursor.getColumnIndexOrThrow("createdAt")),
+                date = cursor.getString(cursor.getColumnIndexOrThrow("date")),
+                isSynced = false
+            )
+            list.add(localId to item)
         }
         cursor.close()
         return list
@@ -267,124 +257,113 @@ class LocalDatabase private constructor(context: Context) : SQLiteOpenHelper(con
         writableDatabase.delete("grandes_empreendimentos", "id = ?", arrayOf(localId))
     }
 
-    fun incrementSyncAttempt(table: String, id: String, lastError: String? = null) {
-        val errorMsg = lastError ?: "Erro desconhecido"
-        writableDatabase.execSQL(
-            "UPDATE $table SET sync_attempts = sync_attempts + 1, last_error = ? WHERE id = ?", 
-            arrayOf(errorMsg, id)
-        )
-    }
-
-    fun resetSyncAttempts() {
-        writableDatabase.execSQL("UPDATE customers SET sync_attempts = 0, last_error = NULL")
-        writableDatabase.execSQL("UPDATE economy_updates SET sync_attempts = 0, last_error = NULL")
-    }
-
-    fun getRecadastroStats(): Pair<Int, Int> {
-        var total = 0
-        var pending = 0
+    fun getTodayStats(cityName: String? = null, bypass: Boolean = false): Map<String, Int> {
+        val stats = mutableMapOf("Boa" to 0, "Regular" to 0, "Ruim" to 0, "Total" to 0)
+        val today = ZonedDateTime.now(java.time.ZoneId.of("America/Sao_Paulo")).format(DateTimeFormatter.ofPattern("yyyy/MM/dd"))
         try {
-            val cursorTotal = readableDatabase.rawQuery("SELECT COUNT(*) FROM customers", null)
-            if (cursorTotal.moveToFirst()) total = cursorTotal.getInt(0)
-            cursorTotal.close()
-            val cursorPending = readableDatabase.rawQuery("SELECT COUNT(*) FROM customers WHERE isSynced = 0 AND sync_attempts < 5", null)
-            if (cursorPending.moveToFirst()) pending = cursorPending.getInt(0)
-            cursorPending.close()
-        } catch (_: Exception) {}
-        return Pair(total, pending)
-    }
-
-    fun getEconomyStats(): Pair<Int, Int> {
-        var total = 0
-        var pending = 0
-        try {
-            val cursorTotal = readableDatabase.rawQuery("SELECT COUNT(*) FROM grandes_empreendimentos", null)
-            if (cursorTotal.moveToFirst()) total = cursorTotal.getInt(0)
-            cursorTotal.close()
-            val cursorPending = readableDatabase.rawQuery("SELECT COUNT(*) FROM grandes_empreendimentos WHERE isSynced = 0 AND sync_attempts < 5", null)
-            if (cursorPending.moveToFirst()) pending = cursorPending.getInt(0)
-            cursorPending.close()
-        } catch (_: Exception) {}
-        return Pair(total, pending)
-    }
-
-    fun getTodayStats(): Map<String, Int> {
-        val stats = mutableMapOf<String, Int>()
-        val today = ZonedDateTime.now(ZoneId.of("America/Sao_Paulo")).format(DateTimeFormatter.ofPattern("yyyy/MM/dd"))
-        
-        Log.d("LocalDB", "📊 Buscando estatísticas para a data: $today")
-        
-        try {
-            // Clientes (Agrupados por Qualidade)
-            val cursorCustomers = readableDatabase.rawQuery(
-                "SELECT qualidade, COUNT(*) FROM customers WHERE date = ? GROUP BY qualidade", 
-                arrayOf(today)
-            )
+            val selectionArgs = if (bypass || cityName == null) arrayOf(today) else arrayOf(today, cityName)
             
-            var total = 0
+            // 1. Clientes
+            val queryCustomers = if (bypass || cityName == null) "SELECT qualidade, COUNT(*) FROM customers WHERE date = ? GROUP BY qualidade"
+                                 else "SELECT qualidade, COUNT(*) FROM customers WHERE date = ? AND cidade = ? GROUP BY qualidade"
+
+            val cursorCustomers = readableDatabase.rawQuery(queryCustomers, selectionArgs)
             while (cursorCustomers.moveToNext()) {
-                val q = cursorCustomers.getString(0)
-                val c = cursorCustomers.getInt(1)
-                // SÊNIOR PERF: Usando Extension Function para normalização centralizada
-                val normalizedQ = q.normalizeQuality()
-                stats[normalizedQ] = (stats[normalizedQ] ?: 0) + c
-                total += c
+                val q = cursorCustomers.getString(0) ?: "Ruim"
+                val count = cursorCustomers.getInt(1)
+                val norm = q.normalizeQuality()
+                stats[norm] = (stats[norm] ?: 0) + count
+                stats["Total"] = (stats["Total"] ?: 0) + count
             }
             cursorCustomers.close()
             
-            // Grandes Empreendimentos (Sempre contam como Boa)
-            val cursorEconomy = readableDatabase.rawQuery(
-                "SELECT COUNT(*) FROM grandes_empreendimentos WHERE date = ?",
-                arrayOf(today)
-            )
-            if (cursorEconomy.moveToFirst()) {
-                val countEcon = cursorEconomy.getInt(0)
-                stats["Boa"] = (stats["Boa"] ?: 0) + countEcon
-                total += countEcon
+            // 2. Grandes Empreendimentos
+            val queryEconomy = if (bypass || cityName == null) "SELECT qualidade, COUNT(*) FROM grandes_empreendimentos WHERE date = ? GROUP BY qualidade"
+                               else "SELECT qualidade, COUNT(*) FROM grandes_empreendimentos WHERE date = ? AND cidade = ? GROUP BY qualidade"
+            
+            val cursorEconomy = readableDatabase.rawQuery(queryEconomy, selectionArgs)
+            while (cursorEconomy.moveToNext()) {
+                val q = cursorEconomy.getString(0) ?: "Boa"
+                val count = cursorEconomy.getInt(1)
+                val norm = q.normalizeQuality()
+                stats[norm] = (stats[norm] ?: 0) + count
+                stats["Total"] = (stats["Total"] ?: 0) + count
             }
             cursorEconomy.close()
-
-            stats["Total"] = total
-            Log.d("LocalDB", "📊 Estatísticas Consolidadas: $stats")
         } catch (e: Exception) {
-            Log.e("LocalDB", "Erro ao calcular estatísticas", e)
+            Log.e("debugs", "❌ [SQLITE] Erro Stats: ${e.message}")
         }
         return stats
     }
 
-    fun updateRecordIfHigher(current: Int) {
-        val db = writableDatabase
-        val existing = getPersonalRecord()
-        if (current > existing) {
-            db.execSQL("INSERT OR REPLACE INTO stats (id, record_value, date_achieved) VALUES (1, ?, date('now'))", arrayOf(current))
+    fun getRecadastroStats(cityName: String? = null, bypass: Boolean = false): Pair<Int, Int> {
+        var total = 0; var pending = 0
+        try {
+            val args = if (bypass || cityName == null) null else arrayOf(cityName)
+            val qTotal = if (bypass || cityName == null) "SELECT COUNT(*) FROM customers" else "SELECT COUNT(*) FROM customers WHERE cidade = ?"
+            val cTotal = readableDatabase.rawQuery(qTotal, args)
+            if (cTotal.moveToFirst()) total = cTotal.getInt(0)
+            cTotal.close()
+
+            val qPend = if (bypass || cityName == null) "SELECT COUNT(*) FROM customers WHERE isSynced = 0" else "SELECT COUNT(*) FROM customers WHERE isSynced = 0 AND cidade = ?"
+            val cPend = readableDatabase.rawQuery(qPend, args)
+            if (cPend.moveToFirst()) pending = cPend.getInt(0)
+            cPend.close()
+        } catch (_: Exception) {}
+        return Pair(total, pending)
+    }
+
+    fun getEconomyStats(cityName: String? = null, bypass: Boolean = false): Pair<Int, Int> {
+        var total = 0; var pending = 0
+        try {
+            val args = if (bypass || cityName == null) null else arrayOf(cityName)
+            val qTotal = if (bypass || cityName == null) "SELECT COUNT(*) FROM grandes_empreendimentos" else "SELECT COUNT(*) FROM grandes_empreendimentos WHERE cidade = ?"
+            val cTotal = readableDatabase.rawQuery(qTotal, args)
+            if (cTotal.moveToFirst()) total = cTotal.getInt(0)
+            cTotal.close()
+
+            val qPend = if (bypass || cityName == null) "SELECT COUNT(*) FROM grandes_empreendimentos WHERE isSynced = 0" else "SELECT COUNT(*) FROM grandes_empreendimentos WHERE isSynced = 0 AND cidade = ?"
+            val cPend = readableDatabase.rawQuery(qPend, args)
+            if (cPend.moveToFirst()) pending = cPend.getInt(0)
+            cPend.close()
+        } catch (_: Exception) {}
+        return Pair(total, pending)
+    }
+
+    fun incrementSyncAttempt(tableName: String, id: String, error: String?) {
+        val sql = "UPDATE $tableName SET sync_attempts = sync_attempts + 1, last_error = ? WHERE id = ?"
+        writableDatabase.execSQL(sql, arrayOf(error, id))
+    }
+
+    fun resetSyncAttempts() {
+        writableDatabase.execSQL("UPDATE customers SET sync_attempts = 0")
+        writableDatabase.execSQL("UPDATE grandes_empreendimentos SET sync_attempts = 0")
+    }
+
+    fun updateRecordIfHigher(value: Int) {
+        val current = getPersonalRecord()
+        if (value > current) {
+            val values = ContentValues().apply { put("record_value", value); put("date_achieved", ZonedDateTime.now().toString()) }
+            writableDatabase.insert("stats", null, values)
         }
     }
 
     fun getPersonalRecord(): Int {
-        val cursor = readableDatabase.rawQuery("SELECT record_value FROM stats WHERE id = 1", null)
-        var res = 0
-        if (cursor.moveToFirst()) res = cursor.getInt(0)
-        cursor.close()
-        return res
+        val cursor = readableDatabase.query("stats", arrayOf("MAX(record_value)"), null, null, null, null, null)
+        var record = 0
+        if (cursor.moveToFirst()) record = cursor.getInt(0)
+        cursor.close(); return record
     }
 
-    fun cacheUserProfile(id: String, username: String, fullName: String, cidadeId: String, isAdmin: Boolean, email: String) {
-        val values = ContentValues().apply {
-            put("id", id)
-            put("username", username)
-            put("full_name", fullName)
-            put("cidade_id", cidadeId)
-            put("is_admin", if (isAdmin) 1 else 0)
-            put("email", email)
-        }
+    fun cacheUserProfile(id: String, user: String, name: String, cidade: String, isAdmin: Boolean, email: String) {
+        val values = ContentValues().apply { put("id", id); put("username", user); put("full_name", name); put("cidade_id", cidade); put("is_admin", if(isAdmin) 1 else 0); put("email", email) }
         writableDatabase.insertWithOnConflict("user_profile_cache", null, values, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
     fun getCachedUserProfile(username: String): UserProfile? {
         val cursor = readableDatabase.query("user_profile_cache", null, "username = ?", arrayOf(username), null, null, null)
-        var profile: UserProfile? = null
         if (cursor.moveToFirst()) {
-            profile = UserProfile(
+            val profile = UserProfile(
                 id = cursor.getString(cursor.getColumnIndexOrThrow("id")),
                 email = cursor.getString(cursor.getColumnIndexOrThrow("email")),
                 fullName = cursor.getString(cursor.getColumnIndexOrThrow("full_name")),
@@ -392,112 +371,40 @@ class LocalDatabase private constructor(context: Context) : SQLiteOpenHelper(con
                 cargo = if (cursor.getInt(cursor.getColumnIndexOrThrow("is_admin")) == 1) "administrador" else "usuário",
                 cidadeId = cursor.getString(cursor.getColumnIndexOrThrow("cidade_id"))
             )
+            cursor.close(); return profile
         }
-        cursor.close()
-        return profile
+        cursor.close(); return null
     }
 
     companion object {
-        @Volatile
-        private var instance: LocalDatabase? = null
+        @Volatile private var instance: LocalDatabase? = null
         fun getInstance(context: Context): LocalDatabase {
-            return instance ?: synchronized(this) {
-                instance ?: LocalDatabase(context.applicationContext).also { instance = it }
-            }
+            return instance ?: synchronized(this) { instance ?: LocalDatabase(context.applicationContext).also { instance = it } }
         }
-
         private const val DATABASE_NAME = "sanitation_final_v6.db"
-        private const val DATABASE_VERSION = 36
-
+        private const val DATABASE_VERSION = 37
         private const val CREATE_TABLE_CUSTOMERS = """
-            CREATE TABLE customers (
-                id TEXT PRIMARY KEY,
-                cidade_id TEXT,
-                leiturista_id TEXT,
-                name TEXT,
-                matricula TEXT,
-                digito_matricula TEXT,
-                email TEXT,
-                celular TEXT,
-                caixa_padrao TEXT,
-                lacres_padronizados TEXT,
-                hd_acessivel TEXT,
-                veranista TEXT,
-                possui_piscina TEXT,
-                possui_caixa_agua TEXT,
-                latitude REAL,
-                longitude REAL,
-                situacao_local TEXT,
-                qtd_economias INTEGER,
-                criado_em TEXT,
-                adicionado_por TEXT,
-                capturado_em TEXT,
-                sincronizado_em TEXT,
-                date TEXT,
-                qualidade TEXT,
-                entrevistado_nome TEXT,
-                entrevistado_cpf TEXT,
-                entrevistado_mae TEXT,
-                entrevistado_nascimento TEXT,
-                entrevistado_sexo TEXT,
-                entrevistado_apresentou_doc TEXT,
-                entrevistado_qual_doc TEXT,
-                logradouro TEXT,
-                numero TEXT,
-                complemento TEXT,
-                bairro TEXT,
-                cidade TEXT,
-                uf TEXT,
-                cep TEXT,
-                pavimento_rua TEXT,
-                pavimento_calcada TEXT,
-                fonte_abastecimento TEXT,
-                existe_rede_agua TEXT,
-                observacao TEXT,
-                beneficiario_social TEXT,
-                usa_agua_vizinho TEXT,
-                possui_hidrometro TEXT,
-                grupo_sugerido TEXT,
-                setor TEXT,
-                quadra TEXT,
-                rota_sugerida TEXT,
-                numero_hidrometro TEXT,
-                isSynced INTEGER DEFAULT 0,
-                sync_attempts INTEGER DEFAULT 0,
-                last_error TEXT
-            )
-        """
-
+            CREATE TABLE IF NOT EXISTS customers (
+                id TEXT PRIMARY KEY, cidade_id TEXT, leiturista_id TEXT, name TEXT, matricula TEXT, digito_matricula TEXT, email TEXT, celular TEXT,
+                caixa_padrao TEXT, lacres_padronizados TEXT, hd_acessivel TEXT, veranista TEXT, possui_piscina TEXT, possui_caixa_agua TEXT,
+                latitude REAL, longitude REAL, situacao_local TEXT, qtd_economias INTEGER, adicionado_por TEXT, capturado_em TEXT, date TEXT,
+                qualidade TEXT, entrevistado_nome TEXT, entrevistado_cpf TEXT, entrevistado_mae TEXT, entrevistado_nascimento TEXT, entrevistado_sexo TEXT,
+                entrevistado_apresentou_doc TEXT, entrevistado_qual_doc TEXT, logradouro TEXT, numero TEXT, complemento TEXT, bairro TEXT, cidade TEXT,
+                uf TEXT, cep TEXT, pavimento_rua TEXT, pavimento_calcada TEXT, fonte_abastecimento TEXT, existe_rede_agua TEXT, observacao TEXT,
+                beneficiario_social TEXT, usa_agua_vizinho TEXT, possui_hidrometro TEXT, grupo_sugerido TEXT, setor TEXT, quadra TEXT,
+                local_instalacao TEXT, acessibilidade TEXT, rota_sugerida TEXT, numero_hidrometro TEXT, isSynced INTEGER DEFAULT 0, sync_attempts INTEGER DEFAULT 0, last_error TEXT
+            )"""
         private const val CREATE_TABLE_STATS = "CREATE TABLE IF NOT EXISTS stats (id INTEGER PRIMARY KEY AUTOINCREMENT, record_value INTEGER, date_achieved TEXT)"
         private const val CREATE_TABLE_HISTORY = "CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT, count INTEGER, date TEXT DEFAULT (date('now')))"
         private const val CREATE_TABLE_USER_CACHE = "CREATE TABLE IF NOT EXISTS user_profile_cache (id TEXT PRIMARY KEY, username TEXT, full_name TEXT, cidade_id TEXT, is_admin INTEGER, email TEXT)"
-
         private const val CREATE_TABLE_ECONOMY_UPDATES = """
-            CREATE TABLE grandes_empreendimentos (
-                id TEXT PRIMARY KEY,
-                leiturista_id TEXT,
-                numero_hd TEXT,
-                nome_edificio TEXT,
-                construtora TEXT,
-                qtd_economias INTEGER,
-                qtd_pavimentos INTEGER,
-                medidor_energia TEXT,
-                latitude REAL,
-                longitude REAL,
-                cidade TEXT,
-                grupo_sugerido TEXT,
-                rota_sugerida TEXT,
-                adicionado_por TEXT,
-                createdAt TEXT,
-                date TEXT,
-                isSynced INTEGER DEFAULT 0,
-                sync_attempts INTEGER DEFAULT 0,
-                last_error TEXT
-            )
-        """
-
+            CREATE TABLE IF NOT EXISTS grandes_empreendimentos (
+                id TEXT PRIMARY KEY, leiturista_id TEXT, numero_hd TEXT, nome_edificio TEXT, construtora TEXT, qtd_economias INTEGER, qtd_pavimentos INTEGER,
+                medidor_energia TEXT, latitude REAL, longitude REAL, cidade TEXT, grupo_sugerido TEXT, rota_sugerida TEXT, adicionado_por TEXT,
+                createdAt TEXT, date TEXT, qualidade TEXT, isSynced INTEGER DEFAULT 0, sync_attempts INTEGER DEFAULT 0, last_error TEXT
+            )"""
         private const val IDX_CUSTOMERS_SYNC = "CREATE INDEX IF NOT EXISTS idx_customers_sync ON customers (isSynced, sync_attempts)"
         private const val IDX_ECONOMY_SYNC = "CREATE INDEX IF NOT EXISTS idx_economy_sync ON grandes_empreendimentos (isSynced, sync_attempts)"
-        private const val IDX_CUSTOMERS_CITY = "CREATE INDEX IF NOT EXISTS idx_customers_city ON customers (cidade_id)"
+        private const val IDX_CUSTOMERS_CITY = "CREATE INDEX IF NOT EXISTS idx_customers_city ON customers (cidade)"
     }
 }

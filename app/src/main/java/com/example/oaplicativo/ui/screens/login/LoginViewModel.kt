@@ -31,9 +31,9 @@ class LoginViewModel(
                     val localDb = LocalDatabase.getInstance(context)
                     localDb.cacheUserProfile(
                         id = profile.id,
-                        username = profile.username ?: "",
-                        fullName = profile.fullName ?: "",
-                        cidadeId = profile.cidadeId ?: "",
+                        user = profile.username ?: "",
+                        name = profile.fullName ?: "",
+                        cidade = profile.cidadeId ?: "",
                         isAdmin = profile.isAdmin,
                         email = profile.email
                     )

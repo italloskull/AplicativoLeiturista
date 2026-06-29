@@ -12,7 +12,6 @@ import com.example.oaplicativo.domain.repository.AuthRepository
 import com.example.oaplicativo.domain.repository.CustomerRepository
 import com.example.oaplicativo.model.Customer
 import com.example.oaplicativo.model.UserProfile
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,13 +33,16 @@ class CustomerListViewModel(
 
     init {
         loadData()
-        startPeriodicRefresh()
     }
 
     fun loadData() {
         viewModelScope.launch {
             updateLocalData()
-            customerRepository.fetchCustomers()
+            val profile = authRepository.currentUserProfile.value
+            customerRepository.fetchCustomers(
+                cidadeId = profile?.cidadeId,
+                isAdmin = profile?.isDeveloper == true
+            )
         }
     }
 
@@ -49,22 +51,19 @@ class CustomerListViewModel(
         customerRepository.updateLocalCustomers(pending)
     }
 
-    private fun startPeriodicRefresh() {
-        viewModelScope.launch {
-            while (true) {
-                delay(30000) // Atualiza a cada 30s se a tela estiver aberta
-                updateLocalData()
-                customerRepository.fetchCustomers()
-            }
-        }
-    }
 
     fun refreshCustomers() {
         viewModelScope.launch {
             _isRefreshing.value = true
             try {
                 updateLocalData()
-                customerRepository.fetchCustomers()
+                val profile = authRepository.currentUserProfile.value
+                // SÊNIOR FIX: Repassa o filtro de cidade para o repositório
+                // DESENVOLVEDOR ignora o filtro (God Mode)
+                customerRepository.fetchCustomers(
+                    cidadeId = profile?.cidadeId,
+                    isAdmin = profile?.isDeveloper == true
+                )
             } catch (e: Exception) {
                 Log.e("CustomerListVM", "Erro ao atualizar: ${e.message}")
             } finally {

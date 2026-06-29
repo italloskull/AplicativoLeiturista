@@ -13,5 +13,6 @@ sealed class Screen(val route: String) {
     }
     object UserRegistration : Screen("user_registration")
     object RecadastroForm : Screen("recadastro_form")
-    object VisitasDashboard : Screen("visitas_dashboard") // NOVA TELA
+    object VisitasDashboard : Screen("visitas_dashboard")
+    object AdminDashboard : Screen("admin_dashboard")
 }

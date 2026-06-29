@@ -87,7 +87,8 @@ fun GlobalActionMenu(
     onToggleTheme: () -> Unit,
     onLogout: () -> Unit,
     onNavigateToUserRegistration: (() -> Unit)? = null,
-    onForceSync: (() -> Unit)? = null, // SÊNIOR FIX: Adicionado botão de sync manual
+    onNavigateToAdminPanel: (() -> Unit)? = null, // SÊNIOR FIX: Adicionado link para o painel BI
+    onForceSync: (() -> Unit)? = null,
     tint: Color = MaterialTheme.colorScheme.onSurface
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -118,11 +119,21 @@ fun GlobalActionMenu(
 
             if (isAdmin && onNavigateToUserRegistration != null) {
                 DropdownMenuItem(
-                    text = { Text("Gerenciar Usuários") },
-                    leadingIcon = { Icon(Icons.Default.GroupAdd, null) },
+                    text = { Text("Novo Usuário") },
+                    leadingIcon = { Icon(Icons.Default.PersonAdd, null) },
                     onClick = {
                         HapticFeedback.tick(context)
-                        onNavigateToUserRegistration?.invoke()
+                        onNavigateToUserRegistration()
+                        showMenu = false
+                    }
+                )
+
+                DropdownMenuItem(
+                    text = { Text("Painel Gestor") },
+                    leadingIcon = { Icon(Icons.Default.Analytics, null) },
+                    onClick = {
+                        HapticFeedback.tick(context)
+                        onNavigateToAdminPanel?.invoke()
                         showMenu = false
                     }
                 )

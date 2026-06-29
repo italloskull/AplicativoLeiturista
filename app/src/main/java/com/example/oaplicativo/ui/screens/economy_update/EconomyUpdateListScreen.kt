@@ -29,6 +29,7 @@ fun EconomyUpdateListScreen(
     onBack: () -> Unit,
     onAddClick: () -> Unit,
     onItemClick: (String) -> Unit,
+    onNavigateToAdminPanel: () -> Unit, // SÊNIOR FIX: Adicionado parâmetro de navegação
     viewModel: EconomyUpdateViewModel = viewModel()
 ) {
     val items by viewModel.items.collectAsState()
@@ -45,7 +46,7 @@ fun EconomyUpdateListScreen(
     LaunchedEffect(lifecycleOwner) {
         val observer = object : androidx.lifecycle.DefaultLifecycleObserver {
             override fun onResume(owner: androidx.lifecycle.LifecycleOwner) {
-                viewModel.fetchEconomyUpdates()
+                viewModel.refreshData()
                 
                 val fineLoc = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION)
                 if (fineLoc == android.content.pm.PackageManager.PERMISSION_GRANTED) {
@@ -80,18 +81,24 @@ fun EconomyUpdateListScreen(
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar") }
                 },
                 actions = {
-                    // SÊNIOR UX: Indicador visual enquanto o robô trabalha
-                    if (state is EconomyUpdateState.Loading) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                    }
-                    
-                    IconButton(onClick = { 
-                        viewModel.forceSyncAll()
-                        // Pequeno Toast para o usuário saber que o robô foi chamado
-                        android.widget.Toast.makeText(context, "Robô de Sincronização acionado! 🤖", android.widget.Toast.LENGTH_SHORT).show()
-                    }) {
-                        Icon(Icons.Default.Sync, contentDescription = "Sincronizar Tudo", tint = MaterialTheme.colorScheme.primary)
-                    }
+                    val profile by com.example.oaplicativo.data.repository.AuthRepositoryImpl.getInstance().currentUserProfile.collectAsState()
+                    val isPowerUser = profile?.cargo?.lowercase()?.let { 
+                        it == "administrador" || it == "desenvolvedor" 
+                    } ?: false
+
+                    com.example.oaplicativo.ui.components.GlobalActionMenu(
+                        isDarkTheme = false, // TODO: Propagar via NavGraph
+                        isAdmin = isPowerUser,
+                        onToggleTheme = { /* TODO */ },
+                        onLogout = { /* TODO */ },
+                        onNavigateToUserRegistration = { /* TODO */ },
+                        onNavigateToAdminPanel = onNavigateToAdminPanel,
+                        onForceSync = {
+                            viewModel.forceSyncAll()
+                            viewModel.refreshData()
+                            android.widget.Toast.makeText(context, "Robô de Sincronização acionado! 🤖", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    )
                 }
             )
         },

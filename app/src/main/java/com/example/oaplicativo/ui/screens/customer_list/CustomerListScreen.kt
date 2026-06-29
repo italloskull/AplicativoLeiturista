@@ -3,6 +3,7 @@ package com.example.oaplicativo.ui.screens.customer_list
 
 import android.app.Application
 import android.location.Location
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -41,7 +42,8 @@ fun CustomerListScreen(
     onCustomerClick: (Customer) -> Unit,
     onLogout: () -> Unit,
     onToggleTheme: () -> Unit,
-    onNavigateToUserRegistration: () -> Unit
+    onNavigateToUserRegistration: () -> Unit,
+    onNavigateToAdminPanel: () -> Unit
 ) {
     val context = LocalContext.current
     
@@ -106,16 +108,23 @@ fun CustomerListScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { viewModel.refreshCustomers() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Atualizar")
-                    }
+                    val isPowerUser = userProfile?.cargo?.lowercase()?.let { 
+                        it == "administrador" || it == "desenvolvedor" 
+                    } ?: false
+
                     GlobalActionMenu(
                         isDarkTheme = isDarkTheme,
-                        isAdmin = userProfile?.cargo == "administrador",
+                        isAdmin = isPowerUser,
                         onToggleTheme = onToggleTheme,
                         onLogout = onLogout,
                         onNavigateToUserRegistration = onNavigateToUserRegistration,
-                        tint = MaterialTheme.colorScheme.onSurface
+                        onNavigateToAdminPanel = onNavigateToAdminPanel,
+                        onForceSync = {
+                            val syncRequest = androidx.work.OneTimeWorkRequestBuilder<com.example.oaplicativo.data.sync.SyncWorker>().build()
+                            androidx.work.WorkManager.getInstance(context).enqueueUniqueWork("force_sync_list", androidx.work.ExistingWorkPolicy.REPLACE, syncRequest)
+                            Toast.makeText(context, "Sincronização iniciada!", Toast.LENGTH_SHORT).show()
+                            viewModel.refreshCustomers()
+                        }
                     )
                 }
             )

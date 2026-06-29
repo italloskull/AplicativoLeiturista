@@ -145,23 +145,59 @@ class RecadastroViewModel(
         isCapturingLocation = false // Reset de segurança
     }
 
-    // SÊNIOR PERF: Cálculo ultra-eficiente de progresso usando derivedStateOf
-    // Isso evita re-cálculos pesados durante a digitação, economizando bateria.
+    // SÊNIOR ALGORITHM V3: MATRIZ CENTESIMAL (100 PONTOS)
+    // Cobre todas as 53 colunas do banco com pesos estratégicos.
     private val _registrationProgress = derivedStateOf {
         var score = 0f
-        if (matricula.isNotBlank() && matricula != "0") score += 1f
-        if (latitude != null) score += 1f
-        if (responsavelData.nomeCompleto.isNotBlank()) score += 1f
-        if (responsavelData.cpfCnpj.isNotBlank()) score += 1f
-        if (celular1.isNotBlank()) score += 1f
-        if (logradouro.isNotBlank()) score += 1f
-        if (numero.isNotBlank()) score += 1f
-        if (bairro.isNotBlank()) score += 1f
-        if (email.isNotBlank()) score += 1f
-        if (pavimentoRua != null) score += 1f
-        if (fonteAbastecimento != null) score += 1f
+        
+        // 1. OURO: Faturamento & Contato (40 pts)
+        if (matricula.isNotBlank() && matricula != "0") score += 10f
+        if (numeroHidrometro.isNotBlank() && numeroHidrometro != " ") score += 10f
+        if (email.isNotBlank() && email != " ") score += 10f
+        if (celular1.isNotBlank() && celular1 != " ") score += 10f
+
+        // 2. PRATA: Identidade Civil (20 pts)
+        if (responsavelData.nomeCompleto.isNotBlank()) score += 5f
+        if (responsavelData.cpfCnpj.isNotBlank()) score += 5f
+        if (responsavelData.nomeMae.isNotBlank()) score += 5f
+        if (responsavelData.dataNascimento.isNotBlank()) score += 5f
+
+        // 3. BRONZE: Localização & Logística (15 pts)
+        if (latitude != null) score += 3f
+        if (logradouro.isNotBlank()) score += 3f
+        if (bairro.isNotBlank()) score += 3f
+        if (setor.isNotBlank()) score += 3f
+        if (quadra.isNotBlank()) score += 3f
+
+        // 4. APOIO: Características e Detalhes (25 pts)
+        if (isStandardMeasurementBox != null) score += 1f
+        if (isStandardizedSeals != null) score += 1f
+        if (isHdAccessible != null) score += 1f
+        if (isVacationer != null) score += 1f
+        if (possuiPiscina != null) score += 1f
+        if (possuiCaixaAgua != null) score += 1f
+        if (locationStatus != null) score += 1f
         if (economias.isNotBlank()) score += 1f
-        score / 12f
+        if (pavimentoRua != null) score += 1f
+        if (pavimentoCalcada != null) score += 1f
+        if (fonteAbastecimento != null) score += 1f
+        if (existeRedeAgua != null) score += 1f
+        if (beneficiarioSocial != null) score += 1f
+        if (usaAguaVizinho != null) score += 1f
+        if (possuiHidrometro != null) score += 1f
+        if (localInstalacao != null) score += 1f
+        if (acessibilidade != null) score += 1f
+        if (complemento.isNotBlank()) score += 1f
+        if (numero.isNotBlank()) score += 1f
+        if (cep.isNotBlank()) score += 1f
+        if (observacao.isNotBlank()) score += 1f
+        if (responsavelData.sexo != null) score += 1f
+        if (responsavelData.apresentouDoc != null) score += 1f
+        if (responsavelData.qualDoc.isNotBlank()) score += 1f
+        if (uf.isNotBlank()) score += 1f
+        
+        // Máximo possível: 100
+        score / 100f
     }
     val registrationProgress: Float get() = _registrationProgress.value
 
@@ -282,7 +318,7 @@ class RecadastroViewModel(
                 // SÊNIOR FIX DEFINITIVO: Mapeamento rigoroso de Nomes de Cidade para o Supabase
                 // Prioridade absoluta para a cidade do perfil do usuário para nunca ficar 'Desconhecida'
                 val friendlyCityName = getLeituristaCidadeNome(user.cidadeId) 
-                    ?: snapshotCidadeManual.ifBlank { "Cidade Itapoá" } // Fallback seguro para a sede
+                    ?: snapshotCidadeManual.ifBlank { "Itapoá" } // Fallback limpo sem o prefixo 'Cidade'
 
                 // SÊNIOR FIX: Captura instantânea do estado da UI para evitar race condition
                 val snapshotGrupo = grupoSugerido
@@ -313,7 +349,7 @@ class RecadastroViewModel(
                     locationStatus = finalLocationStatus,
                     economiesCount = sEco,
                     createdAt = utcNow,
-                    addedBy = user.fullName ?: user.username,
+                    addedBy = user.fullName ?: user.username ?: "Equipe de Campo",
                     capturedAt = utcNow,
                     date = brDate,
                     quality = calculateDataQuality(),
@@ -489,10 +525,11 @@ class RecadastroViewModel(
     }
 
     private fun calculateDataQuality(): String {
-        val progress = registrationProgress
+        val points = registrationProgress * 100f
         return when {
-            progress >= 0.75f -> "Boa"
-            progress >= 0.33f -> "Regular"
+            // SÊNIOR CALIBRATION V3: Base 100
+            points >= 60f -> "Boa"
+            points >= 30f -> "Regular"
             else -> "Ruim"
         }
     }

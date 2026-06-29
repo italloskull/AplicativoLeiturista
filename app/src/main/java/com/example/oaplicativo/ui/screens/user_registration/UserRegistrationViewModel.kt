@@ -30,20 +30,20 @@ class UserRegistrationViewModel(
                 val result = SupabaseClient.client.postgrest["cidades"]
                     .select()
                 
-                Log.d("PROD_DEBUG", "📡 Status: OK | Body: ${result.data}")
+                Log.d("debugs", "📡 [REG] Status: OK | Body: ${result.data}")
 
                 // 2. Tenta a decodificação manual para capturar erro exato de schema
                 val list = try {
                     result.decodeList()
                 } catch (decodeError: Exception) {
-                    Log.e("PROD_DEBUG", "❌ Falha no Mapeamento JSON: ${decodeError.message}")
+                    Log.e("debugs", "❌ [REG] Falha no Mapeamento JSON: ${decodeError.message}")
                     emptyList<Cidade>()
                 }
 
-                Log.d("PROD_DEBUG", "✅ Finalizado: ${list.size} cidades carregadas.")
+                Log.d("debugs", "✅ [REG] Finalizado: ${list.size} cidades carregadas.")
                 _cidades.value = list
             } catch (e: Exception) {
-                Log.e("PROD_DEBUG", "❌ Falha de Rede ou Autenticação: ${e.message}", e)
+                Log.e("debugs", "❌ [REG] Falha de Rede ou Autenticação: ${e.message}", e)
                 _cidades.value = emptyList()
             }
         }

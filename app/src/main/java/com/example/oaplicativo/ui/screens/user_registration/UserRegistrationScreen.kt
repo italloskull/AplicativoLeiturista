@@ -6,13 +6,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import com.example.oaplicativo.data.repository.AuthRepositoryImpl
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.oaplicativo.model.Cidade
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,7 +52,7 @@ fun UserRegistrationScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Novo Leiturista", style = MaterialTheme.typography.titleMedium) },
+                title = { Text("Novo Usuário", style = MaterialTheme.typography.titleMedium) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
@@ -76,10 +80,18 @@ fun UserRegistrationScreen(
                 value = fullName,
                 onValueChange = { fullName = it },
                 label = { Text("Nome Completo") },
+                placeholder = { Text("Ex: João da Silva") },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = registrationState !is RegistrationState.Loading,
                 singleLine = true,
-                shape = MaterialTheme.shapes.medium
+                shape = MaterialTheme.shapes.medium,
+                supportingText = {
+                    Text(
+                        if (fullName.trim().length < 3) "Mínimo 3 caracteres" else "Nome válido ✅",
+                        color = if (fullName.trim().length < 3) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFF10B981)
+                    )
+                },
+                isError = fullName.isNotEmpty() && fullName.trim().length < 3
             )
 
             // --- SELETOR DE CIDADE ---
@@ -97,8 +109,10 @@ fun UserRegistrationScreen(
                     shape = MaterialTheme.shapes.medium,
                     colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
                     supportingText = {
-                        if (cidades.isEmpty()) {
-                            Text("Aguardando carregamento do Supabase...", color = MaterialTheme.colorScheme.primary)
+                        if (selectedCidadeId.isBlank()) {
+                            Text("Campo obrigatório *", color = MaterialTheme.colorScheme.error)
+                        } else {
+                            Text("Cidade selecionada ✅", color = Color(0xFF10B981))
                         }
                     }
                 )
@@ -137,7 +151,14 @@ fun UserRegistrationScreen(
                 modifier = Modifier.fillMaxWidth(),
                 enabled = registrationState !is RegistrationState.Loading,
                 singleLine = true,
-                shape = MaterialTheme.shapes.medium
+                shape = MaterialTheme.shapes.medium,
+                supportingText = {
+                    Text(
+                        if (username.length < 3) "Mínimo 3 caracteres (letras/números)" else "Usuário disponível ✅",
+                        color = if (username.length < 3) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFF10B981)
+                    )
+                },
+                isError = username.isNotEmpty() && username.length < 3
             )
 
             OutlinedTextField(
@@ -148,25 +169,54 @@ fun UserRegistrationScreen(
                 modifier = Modifier.fillMaxWidth(),
                 enabled = registrationState !is RegistrationState.Loading,
                 singleLine = true,
-                shape = MaterialTheme.shapes.medium
+                shape = MaterialTheme.shapes.medium,
+                supportingText = {
+                    Text(
+                        if (password.length < 6) "Mínimo 6 caracteres" else "Senha forte ✅",
+                        color = if (password.length < 6) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFF10B981)
+                    )
+                },
+                isError = password.isNotEmpty() && password.length < 6
             )
 
-            // Nível de permissão
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                )
-            ) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("Nível de Permissão:", style = MaterialTheme.typography.labelMedium)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = cargo == "usuário", onClick = { cargo = "usuário" })
-                        Text("Leiturista")
-                        Spacer(modifier = Modifier.width(20.dp))
-                        RadioButton(selected = cargo == "administrador", onClick = { cargo = "administrador" })
-                        Text("Admin")
+            // Nível de permissão (SÊNIOR FIX: Hierarquia de criação)
+            val userProfileState = AuthRepositoryImpl.getInstance().currentUserProfile.collectAsState()
+            val isDeveloper = userProfileState.value?.cargo?.lowercase() == "desenvolvedor"
+
+            if (isDeveloper) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    )
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("Nível de Permissão:", style = MaterialTheme.typography.labelMedium)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = cargo == "usuário", onClick = { cargo = "usuário" })
+                            Text("Equipe de Campo")
+                            Spacer(modifier = Modifier.width(20.dp))
+                            RadioButton(selected = cargo == "administrador", onClick = { cargo = "administrador" })
+                            Text("Admin")
+                        }
                     }
+                }
+            } else {
+                // Se for administrador comum, força o cargo "usuário" (Equipe de Campo)
+                SideEffect {
+                    if (cargo != "usuário") cargo = "usuário"
+                }
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        "Tipo de Acesso: Equipe de Campo",
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
                 }
             }
 
@@ -188,7 +238,7 @@ fun UserRegistrationScreen(
             Button(
                 onClick = {
                     val cleanUsername = username.lowercase().trim()
-                    val autoEmail = "${cleanUsername}@leiturista.app"
+                    val autoEmail = "${cleanUsername}@equipedecampo.app"
                     // SÊNIOR FIX: Ordem dos parâmetros corrigida para bater com o ViewModel
                     // De: (name, user, email, pass, role, cidadeId)
                     // Para: (name, email, pass, user, role, cidadeId)
