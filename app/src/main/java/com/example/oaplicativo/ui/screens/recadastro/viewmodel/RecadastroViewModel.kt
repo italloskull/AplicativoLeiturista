@@ -218,7 +218,7 @@ class RecadastroViewModel(
         editingCustomerId = customerId
         viewModelScope.launch {
             val customer = customerRepository.getCustomerById(customerId) ?: return@launch
-            isDataCensoredInitial = com.example.oaplicativo.util.privacy.PrivacyUtils.shouldMaskSensitiveData(customer.createdAt)
+            isDataCensoredInitial = com.example.oaplicativo.util.privacy.PrivacyUtils.shouldMaskSensitiveData(customer.capturedAt)
             
             matricula = customer.registrationNumber ?: ""
             registrationDigit = customer.registrationDigit ?: ""
@@ -262,8 +262,38 @@ class RecadastroViewModel(
             responsavelData.nomeMae = customer.entrevistadoMae ?: ""
             responsavelData.dataNascimento = customer.entrevistadoNascimento ?: ""
             responsavelData.sexo = customer.entrevistadoSexo
-            responsavelData.apresentouDoc = customer.entrevistadoApresentouDoc.ifSpaceNull()
+            responsavelData.apresentouDoc = customer.entrevistadoApresentouDoc ?: "Não"
             responsavelData.qualDoc = customer.entrevistadoQualDoc ?: ""
+            
+            // SÊNIOR FIX DEFINITIVO: Restauração de 100% dos campos para garantir substituição perfeita
+            numeroHidrometro = customer.numeroHidrometro ?: ""
+            setor = customer.setor ?: ""
+            quadra = customer.quadra ?: ""
+            logradouro = customer.logradouro ?: ""
+            numero = customer.numero ?: ""
+            complemento = customer.complemento ?: ""
+            bairro = customer.bairro ?: ""
+            cidade = customer.cidade ?: ""
+            uf = customer.uf ?: ""
+            cep = customer.cep ?: ""
+            email = customer.email ?: ""
+            celular1 = customer.celular ?: ""
+            
+            beneficiarioSocial = customer.beneficiarioSocial.ifSpaceNull()
+            usaAguaVizinho = customer.usaAguaVizinho.ifSpaceNull()
+            possuiPiscina = customer.possuiPiscina.ifSpaceNull()
+            isVacationer = customer.isVacationer.ifSpaceNull()
+            locationStatus = customer.locationStatus.ifSpaceNull()
+            pavimentoRua = customer.pavimentoRua.ifSpaceNull()
+            pavimentoCalcada = customer.pavimentoCalcada.ifSpaceNull()
+            isStandardMeasurementBox = customer.isStandardMeasurementBox.ifSpaceNull()
+            isStandardizedSeals = customer.isStandardizedSeals.ifSpaceNull()
+            isHdAccessible = customer.isHdAccessible.ifSpaceNull()
+            possuiHidrometro = customer.possuiHidrometro.ifSpaceNull()
+            localInstalacao = customer.localInstalacao.ifSpaceNull()
+            acessibilidade = customer.acessibilidade.ifSpaceNull()
+            economias = customer.economiesCount?.toString() ?: ""
+            observacao = customer.observacao ?: ""
             
             entrevistadoEhOResponsavel = "Sim"
             entrevistadoNomeApenas = ""
@@ -304,8 +334,9 @@ class RecadastroViewModel(
                 val finalCidadeId = if (user.cidadeId?.length == 36) user.cidadeId else null
                 val finalLeituristaId = if (user.id?.length == 36) user.id else null
                 
-                val utcNow = ZonedDateTime.now(ZoneId.of("UTC")).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-                val brDate = ZonedDateTime.now(ZoneId.of("America/Sao_Paulo")).format(DateTimeFormatter.ofPattern("yyyy/MM/dd"))
+                val brNow = ZonedDateTime.now(java.time.ZoneId.of("America/Sao_Paulo"))
+                val brDate = brNow.format(DateTimeFormatter.ofPattern("yyyy/MM/dd"))
+                val brFullTimestamp = brNow.format(DateTimeFormatter.ofPattern("yyyy/MM/dd_HH:mm:ss"))
 
                 val sNome = responsavelData.nomeCompleto.trim()
                 val sCpf = responsavelData.cpfCnpj.trim()
@@ -348,9 +379,8 @@ class RecadastroViewModel(
                     longitude = snapshotLng,
                     locationStatus = finalLocationStatus,
                     economiesCount = sEco,
-                    createdAt = utcNow,
                     addedBy = user.fullName ?: user.username ?: "Equipe de Campo",
-                    capturedAt = utcNow,
+                    capturedAt = brFullTimestamp,
                     date = brDate,
                     quality = calculateDataQuality(),
                     entrevistadoNome = if (entrevistadoEhOResponsavel == "Sim") sNome else entrevistadoNomeApenas.orSpace(),

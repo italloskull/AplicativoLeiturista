@@ -32,7 +32,6 @@ data class Customer(
     @SerialName("situacao_local") val locationStatus: String? = null,
     @SerialName("qtd_economias") val economiesCount: Int? = null,
     
-    @SerialName("criado_em") val createdAt: String? = null,
     @SerialName("adicionado_por") val addedBy: String? = null,
     @SerialName("capturado_em") val capturedAt: String? = null,
     @SerialName("sincronizado_em") val synchronizedAt: String? = null,

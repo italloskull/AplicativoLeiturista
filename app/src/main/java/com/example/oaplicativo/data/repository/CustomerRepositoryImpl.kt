@@ -91,7 +91,7 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
                             if (!isAdmin && userCityName != null) {
                                 filter { eq("cidade", userCityName) }
                             }
-                            order("criado_em", order = io.github.jan.supabase.postgrest.query.Order.DESCENDING)
+                            order("capturado_em", order = io.github.jan.supabase.postgrest.query.Order.DESCENDING)
                             limit(150)
                         }.decodeList<Customer>()
                 }

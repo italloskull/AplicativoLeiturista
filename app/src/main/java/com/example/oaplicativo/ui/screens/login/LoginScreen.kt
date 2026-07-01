@@ -1,11 +1,13 @@
 package com.example.oaplicativo.ui.screens.login
 
-import android.util.Log
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.core.*
+import androidx.compose.ui.draw.drawBehind
+import android.widget.Toast
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -15,332 +17,394 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.oaplicativo.R
 import com.example.oaplicativo.ui.components.AppButton
 import com.example.oaplicativo.ui.components.AppTextField
-import com.example.oaplicativo.util.SecurityUtils
 import com.example.oaplicativo.data.UpdateManager
 import com.example.oaplicativo.data.AppUpdateInfo
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LoginScreen(
     onLoginSuccess: () -> Unit,
     viewModel: LoginViewModel = viewModel()
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val loginState by viewModel.loginState.collectAsState()
-    
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var passwordVisible by remember { mutableStateOf(false) }
-    var rememberMe by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
+    var identifier by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var rememberMe by remember { mutableStateOf(true) }
+
+    // --- RESTAURAÇÃO DE CREDENCIAIS (SÊNIOR FIX) ---
+    LaunchedEffect(Unit) {
+        val savedUser = com.example.oaplicativo.util.SecurityUtils.getRememberedIdentifier(context)
+        val savedPass = com.example.oaplicativo.util.SecurityUtils.getRememberedPassword(context)
+        val isRememberEnabled = com.example.oaplicativo.util.SecurityUtils.isRememberMeEnabled(context)
+        
+        if (isRememberEnabled && savedUser != null) {
+            identifier = savedUser
+            password = savedPass ?: ""
+            rememberMe = true
+        }
+    }
+
+    // --- LÓGICA DE ATUALIZAÇÃO ---
     var updateInfo by remember { mutableStateOf<AppUpdateInfo?>(null) }
     var isDownloading by remember { mutableStateOf(false) }
     var downloadProgress by remember { mutableStateOf(0f) }
 
-    // SÊNIOR FIX: Carregamento inicial ultra-agressivo
     LaunchedEffect(Unit) {
-        val isEnabled = SecurityUtils.isRememberMeEnabled(context)
-        Log.i("LoginScreen", "🚀 Inicializando App. Lembrar Me: $isEnabled")
-        
-        if (isEnabled) {
-            val savedUser = SecurityUtils.getRememberedIdentifier(context)
-            val savedPass = SecurityUtils.getRememberedPassword(context)
-            
-            if (!savedUser.isNullOrBlank()) email = savedUser
-            if (!savedPass.isNullOrBlank()) password = savedPass
-            rememberMe = true
-        }
-        
-        // VERIFICAÇÃO DE ATUALIZAÇÃO SÊNIOR
         val manager = UpdateManager(context)
-        updateInfo = manager.checkForUpdates()
+        val info = manager.checkForUpdates()
+        if (info != null) {
+            updateInfo = info
+        }
     }
+
+    val appVersion = try {
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName
+    } catch (_: Exception) { "0.0.0" }
 
     LaunchedEffect(loginState) {
         if (loginState is LoginState.Success) {
-            // SÊNIOR UX FIX: Garantimos o salvamento das credenciais ANTES de mudar de tela
-            val identifier = email.lowercase().trim()
-            val pass = password
-            val rem = rememberMe
-            
-            Log.d("LoginSave", "Iniciando persistência: User=$identifier, Remember=$rem")
-            SecurityUtils.saveCredentials(context, identifier, pass, rem)
-
             onLoginSuccess()
         }
     }
 
-    val appVersion = com.example.oaplicativo.BuildConfig.VERSION_NAME
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFFF8FAFC)) 
-    ) {
-        Column(
+    Scaffold { paddingValues ->
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+                .padding(paddingValues)
+                .background(Color.White)
         ) {
-            // --- HEADER ---
-            Spacer(Modifier.height(48.dp))
-            
-            Surface(
-                modifier = Modifier.size(160.dp),
-                color = Color.Transparent
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                androidx.compose.foundation.Image(
-                    painter = androidx.compose.ui.res.painterResource(id = com.example.oaplicativo.R.drawable.app_logo),
-                    contentDescription = "Logo Recadastre.IA",
-                    modifier = Modifier.fillMaxSize()
+                Spacer(Modifier.height(60.dp))
+                
+                Image(
+                    painter = painterResource(id = R.drawable.app_logo),
+                    contentDescription = "Logo",
+                    modifier = Modifier.size(150.dp)
+                )
+
+                Text(
+                    "Recadastre.IA", 
+                    style = MaterialTheme.typography.headlineMedium, 
+                    fontWeight = FontWeight.Black,
+                    color = Color(0xFF1E293B)
+                )
+                Text(
+                    "Gestão de Saneamento", 
+                    style = MaterialTheme.typography.bodyMedium, 
+                    color = Color(0xFF64748B)
+                )
+
+                Spacer(Modifier.height(48.dp))
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                ) {
+                    Column(Modifier.padding(24.dp)) {
+                        AppTextField(
+                            value = identifier,
+                            onValueChange = { identifier = it },
+                            label = "Usuário ou E-mail",
+                            leadingIcon = Icons.Default.Person,
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                keyboardType = KeyboardType.Email,
+                                imeAction = ImeAction.Next
+                            )
+                        )
+
+                        Spacer(Modifier.height(16.dp))
+
+                        AppTextField(
+                            value = password,
+                            onValueChange = { password = it },
+                            label = "Senha de Acesso",
+                            leadingIcon = Icons.Default.Lock,
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                keyboardType = KeyboardType.Password,
+                                imeAction = ImeAction.Done
+                            )
+                        )
+
+                        Spacer(Modifier.height(24.dp))
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Checkbox(checked = rememberMe, onCheckedChange = { rememberMe = it })
+                            Text("Lembrar meu acesso", style = MaterialTheme.typography.bodyMedium)
+                        }
+
+                        Spacer(Modifier.height(24.dp))
+
+                        AppButton(
+                            text = if (loginState is LoginState.Loading) "Entrando..." else "Entrar no Sistema",
+                            isLoading = loginState is LoginState.Loading,
+                            onClick = { 
+                                if (identifier.isNotBlank() && password.isNotBlank()) {
+                                    viewModel.login(context, identifier, password, rememberMe)
+                                } else {
+                                    Toast.makeText(context, "Preencha todos os campos", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        )
+
+                        if (loginState is LoginState.Error) {
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                text = (loginState as LoginState.Error).message,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.align(Alignment.CenterHorizontally),
+                                fontWeight = FontWeight.Black
+                            )
+                        }
+                    }
+                }
+                
+                Spacer(Modifier.weight(1f))
+                Spacer(Modifier.height(24.dp))
+                
+                Text(
+                    text = "Versão $appVersion - Recadastre.IA", 
+                    style = MaterialTheme.typography.labelSmall, 
+                    color = Color.Black, 
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 0.5.sp,
+                    modifier = Modifier
+                        .padding(bottom = 24.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .combinedClickable(
+                            onClick = { },
+                            onLongClick = {
+                                // SÊNIOR UX: Feedback tátil via sistema
+                                val vibrator = context.getSystemService(android.content.Context.VIBRATOR_SERVICE) as android.os.Vibrator
+                                vibrator.vibrate(android.os.VibrationEffect.createOneShot(50, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+                                updateInfo = AppUpdateInfo(
+                                    version_name = "DEMO",
+                                    apk_url = "",
+                                    changelog = "🚀 Teste da nova animação de download.\n📊 Interface fluida e moderna.\n🌊 Efeito balde d'água ativo.",
+                                    fileSize = 1000000
+                                )
+                                scope.launch {
+                                    isDownloading = true
+                                    downloadProgress = 0f
+                                    while(downloadProgress < 1f) {
+                                        kotlinx.coroutines.delay(50)
+                                        downloadProgress += 0.01f
+                                    }
+                                    isDownloading = false
+                                }
+                            }
+                        )
                 )
             }
+        }
+    }
 
-            Spacer(Modifier.height(24.dp))
-            
-            Text(
-                text = "RECADASTRE.IA", 
-                style = MaterialTheme.typography.headlineMedium, 
-                fontWeight = FontWeight.Black, 
-                color = Color.Black, // PRETO PURO
-                letterSpacing = 3.sp
+    // --- RE-DESIGN DE ATUALIZAÇÃO SÊNIOR (UX ELITE) ---
+    if (updateInfo != null) {
+        // SÊNIOR MOTION: Inundação GRADUAL que se expande do balde
+        val floodRadius = remember { Animatable(0f) }
+        
+        LaunchedEffect(downloadProgress) {
+            if (downloadProgress >= 1f) {
+                floodRadius.animateTo(
+                    targetValue = 2000f, // Raio para cobrir a tela toda
+                    animationSpec = tween(2500, easing = LinearOutSlowInEasing)
+                )
+            } else {
+                floodRadius.snapTo(0f)
+            }
+        }
+
+        Dialog(
+            onDismissRequest = { },
+            properties = DialogProperties(
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false,
+                usePlatformDefaultWidth = false
             )
-            
-            Text(
-                text = "Informações Atualizadas", 
-                style = MaterialTheme.typography.bodyMedium, 
-                color = Color.Black, // PRETO PURO
-                fontWeight = FontWeight.Bold
-            )
-
-            Spacer(Modifier.height(48.dp))
-
-            // --- CARD DE ACESSO ---
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.extraLarge,
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.6f))
+                    .drawBehind {
+                        // Desenha a "água escorrendo" que se expande do centro
+                        if (floodRadius.value > 0f) {
+                            drawCircle(
+                                color = Color(0xFF38BDF8),
+                                radius = floodRadius.value,
+                                center = center
+                            )
+                        }
+                    }
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Column(
-                    modifier = Modifier.padding(24.dp),
-                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(32.dp),
+                    colors = CardDefaults.cardColors(containerColor = if (downloadProgress >= 1f) Color.White.copy(alpha = 0.9f) else Color.White),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 24.dp)
                 ) {
-                    Text(
-                        text = "Acesso ao Sistema", 
-                        style = MaterialTheme.typography.titleLarge, 
-                        fontWeight = FontWeight.Black,
-                        color = Color.Black // PRETO PURO
-                    )
-
-                    // INPUT USUÁRIO (Blindagem Absoluta contra Tema do Sistema)
-                    OutlinedTextField(
-                        value = email,
-                        onValueChange = { email = it.lowercase().replace(Regex("[^a-z0-9]"), "") },
-                        label = { Text("Nome de Usuário", color = Color.Black) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        // REGRA DE OURO: Força cor do texto via TextStyle para PRETO PURO
-                        textStyle = LocalTextStyle.current.copy(
-                            color = Color.Black, 
-                            fontWeight = FontWeight.Bold
-                        ),
-                        leadingIcon = { 
-                            Icon(
-                                imageVector = Icons.Default.Person, 
-                                contentDescription = null,
-                                tint = Color.Black
-                            ) 
-                        },
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Text,
-                            imeAction = androidx.compose.ui.text.input.ImeAction.Next
-                        ),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.Black,
-                            unfocusedTextColor = Color.Black,
-                            focusedBorderColor = Color(0xFF0052CC),
-                            unfocusedBorderColor = Color.Black,
-                            focusedLabelColor = Color(0xFF0052CC),
-                            unfocusedLabelColor = Color.Black,
-                            cursorColor = Color.Black
-                        )
-                    )
-
-                    // INPUT SENHA (Preto para visibilidade absoluta)
-                    // INPUT SENHA (Blindagem Absoluta contra Tema do Sistema)
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        label = { Text("Senha de Acesso", color = Color.Black) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        // REGRA DE OURO: Força cor do texto via TextStyle para PRETO PURO
-                        textStyle = LocalTextStyle.current.copy(
-                            color = Color.Black, 
-                            fontWeight = FontWeight.Bold
-                        ),
-                        leadingIcon = { 
-                            Icon(
-                                imageVector = Icons.Default.Lock, 
-                                contentDescription = null,
-                                tint = Color.Black
-                            ) 
-                        },
-                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Password,
-                            imeAction = androidx.compose.ui.text.input.ImeAction.Done
-                        ),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.Black,
-                            unfocusedTextColor = Color.Black,
-                            focusedBorderColor = Color(0xFF0052CC),
-                            unfocusedBorderColor = Color.Black,
-                            focusedLabelColor = Color(0xFF0052CC),
-                            unfocusedLabelColor = Color.Black,
-                            cursorColor = Color.Black
-                        ),
-                        trailingIcon = {
-                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                    Column(
+                        modifier = Modifier.padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        if (downloadProgress < 1f) {
+                            Box(
+                                modifier = Modifier
+                                    .size(80.dp)
+                                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
                                 Icon(
-                                    imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    contentDescription = null,
-                                    tint = Color.Black
+                                    Icons.Default.CloudDownload, 
+                                    contentDescription = null, 
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(40.dp)
+                                )
+                            }
+                        } else {
+                            // Ícone de Sucesso pós-transbordamento
+                            Icon(
+                                Icons.Default.CheckCircle, 
+                                contentDescription = null, 
+                                tint = Color(0xFF10B981),
+                                modifier = Modifier.size(80.dp)
+                            )
+                        }
+                        
+                        Spacer(Modifier.height(24.dp))
+                        
+                        Text(
+                            if (downloadProgress >= 1f) "Pronto para evoluir!" else "O App evoluiu!",
+                            style = MaterialTheme.typography.headlineSmall, 
+                            fontWeight = FontWeight.Black,
+                            color = Color(0xFF1E293B)
+                        )
+                        
+                        Text(
+                            "Versão v${updateInfo!!.version_name}", 
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Spacer(Modifier.height(24.dp))
+
+                        Surface(
+                            color = Color(0xFFF8FAFC),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(Modifier.padding(16.dp)) {
+                                Text(
+                                    "O QUE HÁ DE NOVO:", 
+                                    style = MaterialTheme.typography.labelSmall, 
+                                    fontWeight = FontWeight.Black,
+                                    color = Color(0xFF64748B)
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                
+                                val cleanLog = updateInfo!!.changelog
+                                    .replace(Regex("https?://\\S+"), "")
+                                    .replace("**Full Changelog**:", "")
+                                    .trim()
+                                
+                                Text(
+                                    cleanLog.ifBlank { "Melhorias de performance e estabilidade para a equipe de campo." },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Color(0xFF334155),
+                                    lineHeight = 20.sp
                                 )
                             }
                         }
-                    )
 
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Checkbox(
-                            checked = rememberMe,
-                            onCheckedChange = { rememberMe = it },
-                            colors = CheckboxDefaults.colors(
-                                checkedColor = Color(0xFF0052CC), // Azul Cobalto da marca
-                                uncheckedColor = Color(0xFF94A3B8), // Cinza suave inativo
-                                checkmarkColor = Color.White
-                            )
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            text = "Lembrar meu acesso", 
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Color(0xFF475569), // Cinza azulado elegante
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
+                        Spacer(Modifier.height(32.dp))
 
-                    AppButton(
-                        text = "Entrar no Sistema",
-                        onClick = { 
-                            // SÊNIOR UX FIX: Capturamos o estado do checkbox no exato momento do clique
-                            Log.d("LoginAction", "Clique no botão. RememberMe está: $rememberMe")
-                            // SÊNIOR QA FIX: Limpamos o cache anterior para garantir que o 'v7' seja soberano
-                            SecurityUtils.saveCredentials(context, email, password, rememberMe)
-                            viewModel.login(context, email, password, rememberMe) 
-                        },
-                        isLoading = loginState is LoginState.Loading,
-                        containerColor = Color(0xFF0052CC), // Azul Cobalto da logo
-                        contentColor = Color.White
-                    )
-
-                    if (loginState is LoginState.Error) {
-                        Text(
-                            text = (loginState as LoginState.Error).message,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.align(Alignment.CenterHorizontally),
-                            fontWeight = FontWeight.Black
-                        )
-                    }
-                }
-            }
-            
-            Spacer(Modifier.height(40.dp))
-            
-            Text(
-                text = "Versão $appVersion - Recadastre.IA", 
-                style = MaterialTheme.typography.labelSmall, 
-                color = Color.Black, 
-                fontWeight = FontWeight.Black,
-                letterSpacing = 0.5.sp
-            )
-            Spacer(Modifier.height(24.dp))
-        }
-    }
-    // --- DIÁLOGO DE ATUALIZAÇÃO SÊNIOR ---
-    if (updateInfo != null) {
-        AlertDialog(
-            onDismissRequest = { },
-            title = { Text("Nova Versão Disponível 🚀", fontWeight = FontWeight.Bold) },
-            text = {
-                Column {
-                    Text("Uma nova versão (v${updateInfo!!.version_name}) está disponível.")
-                    if (updateInfo!!.changelog.isNotBlank()) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(updateInfo!!.changelog, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-                    }
-                    if (isDownloading) {
-                        Spacer(Modifier.height(16.dp))
-                        LinearProgressIndicator(
-                            progress = { downloadProgress },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Text(
-                            "Baixando: ${(downloadProgress * 100).toInt()}%",
-                            style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.align(Alignment.End)
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (!isDownloading) {
-                            scope.launch {
-                                isDownloading = true
-                                val manager = UpdateManager(context)
-                                manager.downloadAndInstallApk(updateInfo!!.apk_url) { progress ->
-                                    downloadProgress = progress
+                        if (isDownloading) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                com.example.oaplicativo.ui.animations.WaterBucketLoader(
+                                    progress = downloadProgress,
+                                    modifier = Modifier.size(120.dp, 160.dp)
+                                )
+                                Spacer(Modifier.height(16.dp))
+                                Text(
+                                    "Preenchendo o balde: ${(downloadProgress * 100).toInt()}%",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            isDownloading = true
+                                            val manager = UpdateManager(context)
+                                            manager.downloadAndInstallApk(updateInfo!!.apk_url) { p ->
+                                                downloadProgress = p
+                                            }
+                                            isDownloading = false
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                ) {
+                                    Icon(Icons.Default.RocketLaunch, null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("ATUALIZAR AGORA", fontWeight = FontWeight.Black)
                                 }
-                                isDownloading = false
+
+                                TextButton(
+                                    onClick = { updateInfo = null },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Depois", color = Color(0xFF94A3B8), fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
-                    },
-                    enabled = !isDownloading
-                ) {
-                    Text(if (isDownloading) "Baixando..." else "ATUALIZAR AGORA")
-                }
-            },
-            dismissButton = {
-                if (!isDownloading) {
-                    TextButton(onClick = { updateInfo = null }) {
-                        Text("DEPOIS")
                     }
                 }
             }
-        )
+        }
     }
 }

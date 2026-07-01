@@ -22,7 +22,6 @@ data class EconomyUpdate(
     @SerialName("latitude") val latitude: Double? = null,
     @SerialName("longitude") val longitude: Double? = null,
     @SerialName("adicionado_por") val addedBy: String? = null,
-    @SerialName("criado_em") val createdAt: String? = null,
     @SerialName("data") val date: String? = null,
     
     @SerialName("cidade") val cidade: String? = null,

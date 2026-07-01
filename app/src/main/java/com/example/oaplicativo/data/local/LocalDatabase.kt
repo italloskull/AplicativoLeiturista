@@ -202,7 +202,6 @@ class LocalDatabase(context: Context) :
                 put("grupo_sugerido", item.grupoSugerido)
                 put("rota_sugerida", item.rotaSugerida)
                 put("adicionado_por", item.addedBy)
-                put("createdAt", item.createdAt)
                 put("date", item.date)
                 put("qualidade", "Boa") 
                 put("isSynced", 0)
@@ -243,7 +242,6 @@ class LocalDatabase(context: Context) :
                 grupoSugerido = cursor.getString(cursor.getColumnIndexOrThrow("grupo_sugerido")),
                 rotaSugerida = cursor.getString(cursor.getColumnIndexOrThrow("rota_sugerida")),
                 addedBy = cursor.getString(cursor.getColumnIndexOrThrow("adicionado_por")),
-                createdAt = cursor.getString(cursor.getColumnIndexOrThrow("createdAt")),
                 date = cursor.getString(cursor.getColumnIndexOrThrow("date")),
                 isSynced = false
             )
@@ -330,11 +328,6 @@ class LocalDatabase(context: Context) :
         return Pair(total, pending)
     }
 
-    fun incrementSyncAttempt(tableName: String, id: String, error: String?) {
-        val sql = "UPDATE $tableName SET sync_attempts = sync_attempts + 1, last_error = ? WHERE id = ?"
-        writableDatabase.execSQL(sql, arrayOf(error, id))
-    }
-
     fun resetSyncAttempts() {
         writableDatabase.execSQL("UPDATE customers SET sync_attempts = 0")
         writableDatabase.execSQL("UPDATE grandes_empreendimentos SET sync_attempts = 0")
@@ -382,7 +375,7 @@ class LocalDatabase(context: Context) :
             return instance ?: synchronized(this) { instance ?: LocalDatabase(context.applicationContext).also { instance = it } }
         }
         private const val DATABASE_NAME = "sanitation_final_v6.db"
-        private const val DATABASE_VERSION = 37
+        private const val DATABASE_VERSION = 38
         private const val CREATE_TABLE_CUSTOMERS = """
             CREATE TABLE IF NOT EXISTS customers (
                 id TEXT PRIMARY KEY, cidade_id TEXT, leiturista_id TEXT, name TEXT, matricula TEXT, digito_matricula TEXT, email TEXT, celular TEXT,
@@ -392,7 +385,7 @@ class LocalDatabase(context: Context) :
                 entrevistado_apresentou_doc TEXT, entrevistado_qual_doc TEXT, logradouro TEXT, numero TEXT, complemento TEXT, bairro TEXT, cidade TEXT,
                 uf TEXT, cep TEXT, pavimento_rua TEXT, pavimento_calcada TEXT, fonte_abastecimento TEXT, existe_rede_agua TEXT, observacao TEXT,
                 beneficiario_social TEXT, usa_agua_vizinho TEXT, possui_hidrometro TEXT, grupo_sugerido TEXT, setor TEXT, quadra TEXT,
-                local_instalacao TEXT, acessibilidade TEXT, rota_sugerida TEXT, numero_hidrometro TEXT, isSynced INTEGER DEFAULT 0, sync_attempts INTEGER DEFAULT 0, last_error TEXT
+                local_instalacao TEXT, acessibilidade TEXT, rota_sugerida TEXT, numero_hidrometro TEXT, isSynced INTEGER DEFAULT 0, sync_attempts INTEGER DEFAULT 0, last_error TEXT, sincronizado_em TEXT
             )"""
         private const val CREATE_TABLE_STATS = "CREATE TABLE IF NOT EXISTS stats (id INTEGER PRIMARY KEY AUTOINCREMENT, record_value INTEGER, date_achieved TEXT)"
         private const val CREATE_TABLE_HISTORY = "CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT, count INTEGER, date TEXT DEFAULT (date('now')))"

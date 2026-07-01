@@ -10,6 +10,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.contentLength
@@ -117,79 +118,99 @@ class UpdateManager(private val context: Context) {
 
     suspend fun downloadAndInstallApk(apkUrl: String, onProgress: (Float) -> Unit) {
         withContext(Dispatchers.IO) {
-            try {
-                Log.d("UpdateManager", "Iniciando download do APK: $apkUrl")
-                
-                // Usar externalCacheDir é mais seguro para o Instalador de Pacotes
-                val storageDir = context.externalCacheDir ?: context.cacheDir
-                val file = File(storageDir, "update.apk")
-                if (file.exists()) file.delete()
-                
-                client.prepareGet(apkUrl).execute { response ->
-                    if (response.status.value !in 200..299) {
-                        throw Exception("Erro no servidor: ${response.status}")
-                    }
+            val storageDir = context.externalCacheDir ?: context.cacheDir
+            val file = File(storageDir, "update.apk")
+            
+            var totalBytes = -1L
+            var bytesRead = 0L
+            var attempt = 0
+            val maxAttempts = 8 // SÊNIOR RESILIENCE: Mais tentativas para o campo
+
+            // LOOP DE INSISTÊNCIA (Retries)
+            while (attempt < maxAttempts) {
+                try {
+                    Log.d("debugs", "🚀 [DOWNLOAD] Tentativa ${attempt + 1} de $maxAttempts...")
                     
-                    val totalBytes = response.contentLength() ?: -1L
-                    val channel = response.bodyAsChannel()
-                    var bytesRead = 0L
+                    // Se o arquivo existe e já baixamos algo, tentamos o 'Resume' (se o servidor suportar)
+                    val isResuming = file.exists() && bytesRead > 0
                     
-                    FileOutputStream(file).use { output ->
-                        val buffer = ByteArray(64 * 1024)
-                        while (!channel.isClosedForRead) {
-                            val read = channel.readAvailable(buffer)
-                            if (read == -1) break
-                            if (read > 0) {
-                                output.write(buffer, 0, read)
-                                bytesRead += read
-                                if (totalBytes > 0) {
-                                    val progress = bytesRead.toFloat() / totalBytes.toFloat()
-                                    // Throttle progress updates to avoid excessive recompositions
-                                    if (bytesRead % (1024 * 512) == 0L || bytesRead == totalBytes) {
+                    client.prepareGet(apkUrl) {
+                        if (isResuming) {
+                            header("Range", "bytes=$bytesRead-")
+                        }
+                    }.execute { response ->
+                        if (response.status.value !in 200..299 && response.status.value != 206) {
+                            throw Exception("HTTP Erro: ${response.status}")
+                        }
+
+                        if (totalBytes == -1L) {
+                            totalBytes = (response.contentLength() ?: 0L) + bytesRead
+                        }
+                        
+                        val channel = response.bodyAsChannel()
+                        
+                        // Append mode se estivermos resumindo
+                        FileOutputStream(file, isResuming).use { output ->
+                            val buffer = ByteArray(8 * 1024) // Buffer menor para mais estabilidade
+                            while (!channel.isClosedForRead) {
+                                val read = channel.readAvailable(buffer)
+                                if (read == -1) break
+                                if (read > 0) {
+                                    output.write(buffer, 0, read)
+                                    bytesRead += read
+                                    
+                                    if (totalBytes > 0) {
+                                        val progress = bytesRead.toFloat() / totalBytes.toFloat()
+                                        // Update UI mais frequente em baixa velocidade
                                         withContext(Dispatchers.Main) {
-                                            onProgress(progress)
+                                            onProgress(progress.coerceIn(0f, 0.99f))
                                         }
                                     }
                                 }
                             }
+                            output.flush()
                         }
-                        output.flush()
                     }
-                }
 
-                Log.d("UpdateManager", "Download concluído. Tamanho: ${file.length()} bytes")
-                
-                if (file.length() <= 1024) { // Se for muito pequeno, provavelmente é um erro de HTML/Redirecionamento
-                    throw Exception("Arquivo APK inválido ou muito pequeno.")
+                    // Se chegou aqui sem exceção, o download terminou (ou o canal fechou)
+                    if (bytesRead >= totalBytes && totalBytes > 0) {
+                        Log.d("debugs", "✅ [DOWNLOAD] Sucesso absoluto! ${file.length()} bytes.")
+                        break 
+                    } else {
+                        throw Exception("Download incompleto: $bytesRead de $totalBytes")
+                    }
+
+                } catch (e: Exception) {
+                    attempt++
+                    Log.w("debugs", "⚠️ [DOWNLOAD] Falha na tentativa $attempt: ${e.message}. Reconectando em 2s...")
+                    if (attempt >= maxAttempts) {
+                        Log.e("debugs", "❌ [DOWNLOAD] Limite de tentativas esgotado.")
+                        return@withContext
+                    }
+                    kotlinx.coroutines.delay(2000) // Espera antes de insistir de novo
                 }
-                
+            }
+
+            if (file.exists() && file.length() > 1024) {
                 withContext(Dispatchers.Main) {
                     onProgress(1f)
                     installApk(file)
                 }
-            } catch (e: Exception) {
-                Log.e("UpdateManager", "Erro no download/instalação", e)
             }
         }
     }
 
     private fun installApk(file: File) {
         try {
-            Log.d("UpdateManager", "Iniciando instalação. URI Authority: ${context.packageName}.fileprovider")
-            val uri: Uri = FileProvider.getUriForFile(
-                context, 
-                "${context.packageName}.fileprovider", 
-                file
-            )
-
+            Log.d("debugs", "📦 [INSTALL] Iniciando instalador nativo.")
+            val uri: Uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, "application/vnd.android.package-archive")
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
             }
-            Log.d("UpdateManager", "Disparando Intent de instalação")
             context.startActivity(intent)
         } catch (e: Exception) {
-            Log.e("UpdateManager", "Erro ao disparar intent de instalação", e)
+            Log.e("debugs", "❌ [INSTALL] Erro: ${e.message}")
         }
     }
 }

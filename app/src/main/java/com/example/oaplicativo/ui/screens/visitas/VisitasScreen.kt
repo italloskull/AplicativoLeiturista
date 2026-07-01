@@ -166,7 +166,7 @@ fun VisitasScreen(
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Text("Qualidade das Visitas", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("Impacto no faturamento e auditoria", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Qualidade dos dados de hoje", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(modifier = Modifier.height(20.dp))
                     
                     QualityProgressBar(label = "Qualidade BOA", percentage = stats.percentualBoa, color = Color(0xFF10B981), count = (stats.hojeTotal * stats.percentualBoa).toInt())

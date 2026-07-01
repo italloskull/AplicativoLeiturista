@@ -108,7 +108,41 @@ fun EconomyUpdateScreen(
                 }
             }
 
-            AppCard(title = "Empreendimento", icon = Icons.Default.Business) {
+                // SÊNIOR UX: Barra de Qualidade em Tempo Real para Grandes Empreendimentos
+                val currentGE = com.example.oaplicativo.model.EconomyUpdate(
+                    hdNumber = hdNumber,
+                    buildingName = buildingName,
+                    constructionCompany = constructionCompany,
+                    economiesCount = economiesCount.toIntOrNull(),
+                    floorsCount = floorsCount.toIntOrNull(),
+                    electricityMeterNumber = electricityMeter,
+                    latitude = latitude,
+                    longitude = longitude,
+                    cidade = ""
+                )
+                val qualityLabel = viewModel.calculateEconomyQuality(currentGE)
+                val qualityColor = when(qualityLabel) {
+                    "Boa" -> Color(0xFF10B981)
+                    "Regular" -> Color(0xFFF59E0B)
+                    else -> Color(0xFFEF4444)
+                }
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = qualityColor.copy(alpha = 0.1f)),
+                    shape = MaterialTheme.shapes.medium
+                ) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Verified, null, tint = qualityColor)
+                        Spacer(Modifier.width(12.dp))
+                        Text("Qualidade do Cadastro: ", style = MaterialTheme.typography.labelMedium)
+                        Text(qualityLabel.uppercase(), fontWeight = FontWeight.Black, color = qualityColor)
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                AppCard(title = "Empreendimento", icon = Icons.Default.Business) {
                 AppTextField(
                     value = buildingName, 
                     onValueChange = { buildingName = it }, 

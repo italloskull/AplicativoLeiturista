@@ -94,7 +94,6 @@ class EconomyUpdateViewModel @JvmOverloads constructor(
                 val user = authRepo.currentUserProfile.value
 
                 // Prepara dados de auditoria
-                val utcNow = ZonedDateTime.now(ZoneId.of("UTC")).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
                 val brDate = ZonedDateTime.now(ZoneId.of("America/Sao_Paulo")).format(DateTimeFormatter.ofPattern("yyyy/MM/dd"))
                 
                 // SÊNIOR FIX: ID deve ser UUID para garantir que registros sem HD não colidam no Supabase
@@ -123,7 +122,6 @@ class EconomyUpdateViewModel @JvmOverloads constructor(
                     grupoSugerido = GeoFencingHelper.findSuggestedGroup(friendlyCityName, item.latitude, item.longitude),
                     rotaSugerida = GeoFencingHelper.findSuggestedRoute(friendlyCityName, item.latitude, item.longitude),
                     addedBy = user?.fullName ?: user?.username ?: "Equipe de Campo",
-                    createdAt = utcNow,
                     date = brDate,
                     // No modelo EconomyUpdate, 'qualidade' não é SerialName, mas é salvo no SQLite
                 )
