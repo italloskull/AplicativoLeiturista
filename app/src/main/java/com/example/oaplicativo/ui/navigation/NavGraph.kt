@@ -16,6 +16,7 @@ import com.example.oaplicativo.ui.screens.economy_update.EconomyUpdateScreen
 import com.example.oaplicativo.ui.screens.login.LoginScreen
 import com.example.oaplicativo.ui.screens.menu.MenuScreen
 import com.example.oaplicativo.ui.screens.recadastro.RecadastroFormScreen
+import com.example.oaplicativo.ui.screens.user_management.UserManagementScreen
 import com.example.oaplicativo.ui.screens.user_registration.UserRegistrationScreen
 import com.example.oaplicativo.ui.screens.visitas.VisitasScreen
 import com.example.oaplicativo.util.SecurityUtils
@@ -88,6 +89,9 @@ fun SetupNavGraph(
                 },
                 onNavigateToAdminPanel = {
                     navController.navigate(Screen.AdminDashboard.route)
+                },
+                onNavigateToUserManagement = {
+                    navController.navigate(Screen.UserManagement.route)
                 }
             )
         }
@@ -103,6 +107,9 @@ fun SetupNavGraph(
                 onBack = { navController.popBackStack() },
                 onNavigateToAdminPanel = {
                     navController.navigate(Screen.AdminDashboard.route)
+                },
+                onNavigateToUserManagement = {
+                    navController.navigate(Screen.UserManagement.route)
                 }
             )
         }
@@ -116,6 +123,9 @@ fun SetupNavGraph(
                 },
                 onNavigateToAdminPanel = {
                     navController.navigate(Screen.AdminDashboard.route)
+                },
+                onNavigateToUserManagement = {
+                    navController.navigate(Screen.UserManagement.route)
                 }
             )
         }
@@ -179,6 +189,12 @@ fun SetupNavGraph(
                 onSaveSuccess = {
                     navController.popBackStack()
                 }
+            )
+        }
+
+        composable(route = Screen.UserManagement.route) {
+            UserManagementScreen(
+                onBack = { navController.popBackStack() }
             )
         }
     }

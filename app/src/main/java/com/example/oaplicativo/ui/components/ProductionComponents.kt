@@ -87,7 +87,8 @@ fun GlobalActionMenu(
     onToggleTheme: () -> Unit,
     onLogout: () -> Unit,
     onNavigateToUserRegistration: (() -> Unit)? = null,
-    onNavigateToAdminPanel: (() -> Unit)? = null, // SÊNIOR FIX: Adicionado link para o painel BI
+    onNavigateToAdminPanel: (() -> Unit)? = null,
+    onNavigateToUserManagement: (() -> Unit)? = null, // SÊNIOR FIX: Adicionado suporte à Gestão de Equipe
     onForceSync: (() -> Unit)? = null,
     tint: Color = MaterialTheme.colorScheme.onSurface
 ) {
@@ -134,6 +135,28 @@ fun GlobalActionMenu(
                     onClick = {
                         HapticFeedback.tick(context)
                         onNavigateToAdminPanel?.invoke()
+                        showMenu = false
+                    }
+                )
+            }
+
+            // SÊNIOR GOD MODE: Acesso à Gestão de Equipe (Apenas para Desenvolvedores)
+            val authRepo = remember { com.example.oaplicativo.data.repository.AuthRepositoryImpl.getInstance() }
+            val profile by authRepo.currentUserProfile.collectAsState()
+            val isDev = profile?.cargo?.lowercase() == "desenvolvedor"
+            
+            if (isDev) {
+                DropdownMenuItem(
+                    text = { Text("Gestão de Equipe", color = Color(0xFF6366F1)) },
+                    leadingIcon = { Icon(Icons.Default.AdminPanelSettings, null, tint = Color(0xFF6366F1)) },
+                    onClick = {
+                        android.util.Log.d("debugs", "🖱️ [MENU] Clique em Gestão de Equipe acionado!")
+                        HapticFeedback.tick(context)
+                        if (onNavigateToUserManagement != null) {
+                            onNavigateToUserManagement.invoke()
+                        } else {
+                            android.util.Log.e("debugs", "❌ [MENU] Erro: onNavigateToUserManagement está NULO nesta tela!")
+                        }
                         showMenu = false
                     }
                 )

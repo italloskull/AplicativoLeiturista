@@ -4,17 +4,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AssignmentInd
-import androidx.compose.material.icons.filled.Business
-import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.People
-import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -33,6 +26,9 @@ fun AdminDashboardScreen(
     viewModel: AdminDashboardViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
+    val authorizedCities by viewModel.authorizedCities.collectAsState()
+    val selectedCityFilter by viewModel.selectedCityFilter.collectAsState()
+    var showCityMenu by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.loadDashboardData()
@@ -44,7 +40,50 @@ fun AdminDashboardScreen(
                 title = { 
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("PAINEL GESTOR", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
-                        if (state.cityName.isNotEmpty()) {
+                        
+                        if (authorizedCities.size > 1) {
+                            Box {
+                                TextButton(
+                                    onClick = { showCityMenu = true },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(32.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = selectedCityFilter?.nome?.uppercase() ?: "TODAS AS CIDADES", 
+                                            style = MaterialTheme.typography.labelSmall, 
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Icon(
+                                            Icons.Default.ArrowDropDown, 
+                                            null,
+                                            modifier = Modifier.size(18.dp),
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                                
+                                DropdownMenu(expanded = showCityMenu, onDismissRequest = { showCityMenu = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text("🌎 TODAS AS CIDADES") },
+                                        onClick = {
+                                            viewModel.selectCityFilter(null)
+                                            showCityMenu = false
+                                        }
+                                    )
+                                    authorizedCities.forEach { cidade ->
+                                        DropdownMenuItem(
+                                            text = { Text(cidade.nome.uppercase()) },
+                                            onClick = {
+                                                viewModel.selectCityFilter(cidade)
+                                                showCityMenu = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        } else if (state.cityName.isNotEmpty()) {
                             Text(state.cityName.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                         }
                     }
@@ -53,10 +92,7 @@ fun AdminDashboardScreen(
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
                     }
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
+                }
             )
         }
     ) { paddingValues ->
@@ -77,7 +113,6 @@ fun AdminDashboardScreen(
                 contentPadding = PaddingValues(20.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
-                // --- SELETOR DE PERÍODO (Novo) ---
                 item {
                     PeriodSelector(
                         currentPeriod = state.period,
@@ -85,7 +120,6 @@ fun AdminDashboardScreen(
                     )
                 }
 
-                // --- NÍVEL 1: MACRO (Cockpit) ---
                 item {
                     Text("RESUMO GERAL", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(12.dp))
@@ -107,7 +141,6 @@ fun AdminDashboardScreen(
                     }
                 }
 
-                // --- NÍVEL 2: MIDDLE (Territorial) ---
                 if (state.statsByGroup.isNotEmpty()) {
                     item {
                         Text("DOMÍNIO POR GRUPO", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
@@ -132,7 +165,6 @@ fun AdminDashboardScreen(
                     }
                 }
 
-                // --- NÍVEL 3: MICRO (Performance Individual) ---
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.People, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
@@ -227,7 +259,7 @@ fun GroupProgressBar(group: String, count: Int, total: Int, recCount: Int, geCou
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
             Text("Grupo $group", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
             Column(horizontalAlignment = Alignment.End) {
-                Text("${recCount} Recadastros, ${geCount} Grandes Empreendimentos", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("$recCount Recadastros, $geCount Grandes Empreendimentos", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("Total: $count", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
             }
         }

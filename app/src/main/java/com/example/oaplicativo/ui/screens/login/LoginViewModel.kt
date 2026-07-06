@@ -30,12 +30,12 @@ class LoginViewModel(
                 if (profile != null) {
                     val localDb = LocalDatabase.getInstance(context)
                     localDb.cacheUserProfile(
-                        id = profile.id,
-                        user = profile.username ?: "",
+                        userId = profile.id,
+                        email = profile.email,
                         name = profile.fullName ?: "",
-                        cidade = profile.cidadeId ?: "",
-                        isAdmin = profile.isAdmin,
-                        email = profile.email
+                        user = profile.username ?: "",
+                        isDev = profile.isDeveloper,
+                        cargo = profile.cargo
                     )
                     // GARANTIA: Salvamos as credenciais no cofre criptografado mesmo sem o 'Lembrar'
                     // para permitir o login de emergência se a internet cair logo depois.

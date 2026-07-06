@@ -14,4 +14,5 @@ interface CustomerRepository {
     fun updateLocalCustomers(localCustomers: List<Customer>)
     fun clearCache()
     suspend fun saveCustomerLocallyAndSync(customer: Customer)
+    suspend fun searchCustomersRemote(query: String, cidadeId: String?, isAdmin: Boolean): List<com.example.oaplicativo.model.Customer> // SÊNIOR SEARCH: Busca remota blindada por cidade
 }

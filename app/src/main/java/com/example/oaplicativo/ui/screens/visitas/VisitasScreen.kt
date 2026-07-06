@@ -34,7 +34,8 @@ import com.example.oaplicativo.data.repository.StatsRepositoryImpl
 @Composable
 fun VisitasScreen(
     onBack: () -> Unit,
-    onNavigateToAdminPanel: () -> Unit // SÊNIOR FIX: Adicionado parâmetro de navegação
+    onNavigateToAdminPanel: () -> Unit,
+    onNavigateToUserManagement: () -> Unit
 ) {
     val context = LocalContext.current
     
@@ -87,6 +88,7 @@ fun VisitasScreen(
                         onLogout = { /* TODO */ },
                         onNavigateToUserRegistration = { /* TODO */ },
                         onNavigateToAdminPanel = onNavigateToAdminPanel,
+                        onNavigateToUserManagement = onNavigateToUserManagement,
                         onForceSync = {
                             val syncRequest = androidx.work.OneTimeWorkRequestBuilder<com.example.oaplicativo.data.sync.SyncWorker>().build()
                             androidx.work.WorkManager.getInstance(context).enqueueUniqueWork("force_sync_visitas", androidx.work.ExistingWorkPolicy.REPLACE, syncRequest)

@@ -58,12 +58,32 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
 
     private val authRepo = AuthRepositoryImpl.getInstance()
 
+    private val _authorizedCities = MutableStateFlow<List<com.example.oaplicativo.model.Cidade>>(emptyList())
+    val authorizedCities: StateFlow<List<com.example.oaplicativo.model.Cidade>> = _authorizedCities.asStateFlow()
+
+    private val _selectedCityFilter = MutableStateFlow<com.example.oaplicativo.model.Cidade?>(null)
+    val selectedCityFilter: StateFlow<com.example.oaplicativo.model.Cidade?> = _selectedCityFilter.asStateFlow()
+
     fun setPeriod(period: DashboardPeriod, start: String? = null, end: String? = null) {
         _uiState.value = _uiState.value.copy(period = period, startDate = start, endDate = end)
         loadDashboardData()
     }
 
+    fun selectCityFilter(cidade: com.example.oaplicativo.model.Cidade?) {
+        _selectedCityFilter.value = cidade
+        loadDashboardData()
+    }
+
+    private fun loadAuthorizedCities() {
+        viewModelScope.launch {
+            _authorizedCities.value = authRepo.getUserCities()
+        }
+    }
+
     fun loadDashboardData() {
+        if (_authorizedCities.value.isEmpty()) {
+            loadAuthorizedCities()
+        }
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
             
@@ -73,7 +93,7 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
             val currentState = _uiState.value
 
             try {
-                // SÊNIOR BI FIX: Inteligência Temporal via Coluna 'DATE' (100% Fidedigna)
+                // SÊNIOR BI FIX: Inteligência Temporal via Coluna 'date'/'data' (100% Fidedigna)
                 val brFormatter = DateTimeFormatter.ofPattern("yyyy/MM/dd")
                 val now = ZonedDateTime.now(java.time.ZoneId.of("America/Sao_Paulo"))
                 
@@ -86,21 +106,36 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                 }
                 val filterEndDate = if (currentState.period == DashboardPeriod.CUSTOM) currentState.endDate?.take(10)?.replace("-", "/") else null
 
+                val cityNameFilter = _selectedCityFilter.value?.nome
+                Log.d("debugs", "📊 [BI_QUERY] Filtro Ativado: $filterStartDate até ${filterEndDate ?: "Hoje"} | CidadeFilter: $cityNameFilter")
+
+                // SÊNIOR BI DEBUG: MODO GOD VIEW (Busca ampla para auditoria de sumiço)
+                val allDataTestRec = SupabaseClient.client.postgrest["clientes"].select().decodeList<Customer>()
+                val allDataTestGE = SupabaseClient.client.postgrest["grandes_empreendimentos"].select().decodeList<EconomyUpdate>()
+                Log.d("debugs", "🕵️‍♂️ [GOD_VIEW] Total Físico no Supabase: ${allDataTestRec.size} Rec. e ${allDataTestGE.size} GE.")
+
                 val cityName = getFriendlyCityName(targetCidadeId)
-                Log.d("debugs", "📊 [BI_QUERY] Reativando Filtros: Cidade=$cityName | Periodo=${currentState.period}")
 
                 // 1. Busca Clientes com Normalização de Filtro
                 val remoteCustomers = SupabaseClient.client.postgrest["clientes"]
                     .select {
-                        if (!isDev && cityName != null) filter { eq("cidade", cityName) }
+                        if (cityNameFilter != null) {
+                            filter { eq("cidade", cityNameFilter) }
+                        } else if (!isDev && cityName != null) {
+                            filter { eq("cidade", cityName) }
+                        }
                         if (filterStartDate != null) filter { gte("date", filterStartDate) }
                         if (filterEndDate != null) filter { lte("date", filterEndDate) }
                     }.decodeList<Customer>()
 
-                // 2. Busca GE com Filtro Temporal (SÊNIOR FIX: Usando a coluna 'data' conforme esquema real)
+                // 2. Busca GE com Filtro Temporal
                 val remoteGE = SupabaseClient.client.postgrest["grandes_empreendimentos"]
                     .select {
-                        if (!isDev && cityName != null) filter { eq("cidade", cityName) }
+                        if (cityNameFilter != null) {
+                            filter { eq("cidade", cityNameFilter) }
+                        } else if (!isDev && cityName != null) {
+                            filter { eq("cidade", cityName) }
+                        }
                         if (filterStartDate != null) filter { gte("data", filterStartDate) }
                         if (filterEndDate != null) filter { lte("data", filterEndDate) }
                     }.decodeList<EconomyUpdate>()
@@ -173,7 +208,7 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                     averageQuality = avgQual,
                     statsByGroup = statsByGroup,
                     teamPerformance = teamPerformance,
-                    cityName = cityName ?: "Global"
+                    cityName = cityNameFilter ?: cityName ?: "Global"
                 )
             } catch (e: Exception) {
                 Log.e("debugs", "❌ [BI] Falha ao carregar dashboard: ${e.message}")
@@ -183,13 +218,6 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
     }
 
     private fun getFriendlyCityName(cidadeId: String?): String? {
-        return when (cidadeId) {
-            "c2be642b-2823-41b9-8f54-0b8c84db9a14" -> "Itapoá"
-            "ff9166b8-63b1-4481-a26a-64778181fa08" -> "Guabiruba"
-            "74df760a-0120-42b4-bb4d-03cfd92e79b0" -> "Gaivota"
-            "93fee74f-6cbb-4638-868d-ef5c17b081a4" -> "Gravatal"
-            "9ed90b8c-1b63-44b7-88cd-c2b9b6babcc7" -> "Sombrio"
-            else -> null
-        }
+        return com.example.oaplicativo.util.CityUtils.getFriendlyCityName(cidadeId)
     }
 }

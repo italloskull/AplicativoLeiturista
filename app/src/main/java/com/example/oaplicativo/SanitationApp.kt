@@ -20,6 +20,7 @@ fun SanitationApp() {
     // Isso evita que os repositórios fiquem orfãos se a Activity for recriada.
     LaunchedEffect(Unit) {
         com.example.oaplicativo.data.repository.EconomyRepositoryImpl.getInstance().initialize(context)
+        com.example.oaplicativo.data.repository.CustomerRepositoryImpl.getInstance().initialize(context)
     }
 
     val navController = rememberNavController()

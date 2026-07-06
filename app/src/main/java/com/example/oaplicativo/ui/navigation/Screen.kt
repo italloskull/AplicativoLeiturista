@@ -15,4 +15,5 @@ sealed class Screen(val route: String) {
     object RecadastroForm : Screen("recadastro_form")
     object VisitasDashboard : Screen("visitas_dashboard")
     object AdminDashboard : Screen("admin_dashboard")
+    object UserManagement : Screen("user_management")
 }

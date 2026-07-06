@@ -13,12 +13,15 @@ import com.example.oaplicativo.data.repository.AuthRepositoryImpl
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.oaplicativo.model.Cidade
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun UserRegistrationScreen(
     onRegistrationSuccess: () -> Unit,
@@ -29,18 +32,25 @@ fun UserRegistrationScreen(
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var cargo by remember { mutableStateOf("usuário") }
-    var selectedCidadeId by remember { mutableStateOf("") }
-    var selectedCidadeNome by remember { mutableStateOf("Selecionar cidade...") }
-    var showCidadeMenu by remember { mutableStateOf(false) }
+    
+    // SÊNIOR REATIVITY FIX: Usar Set para garantir que o Compose perceba a mudança de ESTADO do conjunto todo
+    var selectedCidadesSet by remember { mutableStateOf(setOf<String>()) }
+
+    // SÊNIOR CONSISTENCY FIX: Se mudar de Admin para Leiturista, limpa as cidades para evitar multi-seleção indevida
+    LaunchedEffect(cargo) {
+        if (cargo == "usuário" && selectedCidadesSet.size > 1) {
+            selectedCidadesSet = emptySet()
+        }
+    }
 
     val cidades by viewModel.cidades.collectAsState()
     val registrationState by viewModel.registrationState.collectAsState()
 
-    val isFormValid = remember(fullName, username, password, selectedCidadeId) {
+    val isFormValid = remember(fullName, username, password, selectedCidadesSet) {
         fullName.trim().length >= 3 &&
                 username.trim().length >= 3 &&
                 password.length >= 6 &&
-                selectedCidadeId.isNotBlank()
+                selectedCidadesSet.isNotEmpty()
     }
 
     LaunchedEffect(Unit) { viewModel.loadCidades() }
@@ -86,60 +96,15 @@ fun UserRegistrationScreen(
                 singleLine = true,
                 shape = MaterialTheme.shapes.medium,
                 supportingText = {
-                    Text(
-                        if (fullName.trim().length < 3) "Mínimo 3 caracteres" else "Nome válido ✅",
-                        color = if (fullName.trim().length < 3) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFF10B981)
-                    )
-                },
-                isError = fullName.isNotEmpty() && fullName.trim().length < 3
-            )
-
-            // --- SELETOR DE CIDADE ---
-            ExposedDropdownMenuBox(
-                expanded = showCidadeMenu,
-                onExpandedChange = { if (registrationState !is RegistrationState.Loading) showCidadeMenu = !showCidadeMenu }
-            ) {
-                OutlinedTextField(
-                    value = selectedCidadeNome,
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Cidade de Atuação") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showCidadeMenu) },
-                    modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
-                    shape = MaterialTheme.shapes.medium,
-                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-                    supportingText = {
-                        if (selectedCidadeId.isBlank()) {
-                            Text("Campo obrigatório *", color = MaterialTheme.colorScheme.error)
-                        } else {
-                            Text("Cidade selecionada ✅", color = Color(0xFF10B981))
-                        }
-                    }
-                )
-                ExposedDropdownMenu(
-                    expanded = showCidadeMenu,
-                    onDismissRequest = { showCidadeMenu = false },
-                    modifier = Modifier.background(MaterialTheme.colorScheme.surface)
-                ) {
-                    if (cidades.isEmpty()) {
-                        DropdownMenuItem(
-                            text = { Text("Nenhuma cidade disponível", color = MaterialTheme.colorScheme.error) },
-                            onClick = { showCidadeMenu = false }
+                    val isOk = fullName.trim().length >= 3
+                    if (fullName.isNotEmpty()) {
+                        Text(
+                            if (isOk) "✅ Nome válido" else "❌ Mínimo 3 caracteres",
+                            color = if (isOk) Color(0xFF10B981) else MaterialTheme.colorScheme.error
                         )
-                    } else {
-                        cidades.forEach { cidade ->
-                            DropdownMenuItem(
-                                text = { Text(cidade.nome) },
-                                onClick = {
-                                    selectedCidadeId = cidade.id
-                                    selectedCidadeNome = cidade.nome
-                                    showCidadeMenu = false
-                                }
-                            )
-                        }
                     }
                 }
-            }
+            )
 
             OutlinedTextField(
                 value = username,
@@ -153,12 +118,14 @@ fun UserRegistrationScreen(
                 singleLine = true,
                 shape = MaterialTheme.shapes.medium,
                 supportingText = {
-                    Text(
-                        if (username.length < 3) "Mínimo 3 caracteres (letras/números)" else "Usuário disponível ✅",
-                        color = if (username.length < 3) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFF10B981)
-                    )
-                },
-                isError = username.isNotEmpty() && username.length < 3
+                    val isOk = username.trim().length >= 3
+                    if (username.isNotEmpty()) {
+                        Text(
+                            if (isOk) "✅ Usuário disponível" else "❌ Mínimo 3 caracteres (letras/números)",
+                            color = if (isOk) Color(0xFF10B981) else MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
             )
 
             OutlinedTextField(
@@ -171,15 +138,17 @@ fun UserRegistrationScreen(
                 singleLine = true,
                 shape = MaterialTheme.shapes.medium,
                 supportingText = {
-                    Text(
-                        if (password.length < 6) "Mínimo 6 caracteres" else "Senha forte ✅",
-                        color = if (password.length < 6) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFF10B981)
-                    )
-                },
-                isError = password.isNotEmpty() && password.length < 6
+                    val isOk = password.length >= 6
+                    if (password.isNotEmpty()) {
+                        Text(
+                            if (isOk) "✅ Senha forte" else "❌ Mínimo 6 caracteres",
+                            color = if (isOk) Color(0xFF10B981) else MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
             )
 
-            // Nível de permissão (SÊNIOR FIX: Hierarquia de criação)
+            // Nível de permissão
             val userProfileState = AuthRepositoryImpl.getInstance().currentUserProfile.collectAsState()
             val isDeveloper = userProfileState.value?.cargo?.lowercase() == "desenvolvedor"
 
@@ -202,21 +171,78 @@ fun UserRegistrationScreen(
                     }
                 }
             } else {
-                // Se for administrador comum, força o cargo "usuário" (Equipe de Campo)
-                SideEffect {
-                    if (cargo != "usuário") cargo = "usuário"
-                }
-                Surface(
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
-                    shape = MaterialTheme.shapes.medium,
+                SideEffect { if (cargo != "usuário") cargo = "usuário" }
+            }
+
+            // --- SÊNIOR UX: SELEÇÃO DE CIDADES VIA CHECKBOX ---
+            Text(
+                "Cidades Autorizadas",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                fontWeight = FontWeight.Bold
+            )
+            
+            if (selectedCidadesSet.isEmpty()) {
+                Text(
+                    "❌ Selecione pelo menos uma cidade",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        "Tipo de Acesso: Equipe de Campo",
-                        modifier = Modifier.padding(16.dp),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
+                )
+            } else {
+                Text(
+                    "✅ ${selectedCidadesSet.size} cidade(s) selecionada(s)",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF10B981),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+            ) {
+                Column(Modifier.padding(8.dp)) {
+                    if (cidades.isEmpty()) {
+                        Text("Carregando cidades...", modifier = Modifier.padding(16.dp))
+                    }
+                    cidades.forEach { cidade ->
+                        val isSelected = selectedCidadesSet.contains(cidade.id)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .combinedClickable(
+                                    onClick = {
+                                        val newSet = selectedCidadesSet.toMutableSet()
+                                        if (isSelected) {
+                                            newSet.remove(cidade.id)
+                                        } else {
+                                            if (cargo == "usuário") newSet.clear()
+                                            newSet.add(cidade.id)
+                                        }
+                                        selectedCidadesSet = newSet
+                                    }
+                                )
+                                .padding(horizontal = 12.dp, vertical = 4.dp)
+                        ) {
+                            Checkbox(
+                                checked = isSelected,
+                                onCheckedChange = {
+                                    val newSet = selectedCidadesSet.toMutableSet()
+                                    if (it) {
+                                        if (cargo == "usuário") newSet.clear()
+                                        newSet.add(cidade.id)
+                                    } else {
+                                        newSet.remove(cidade.id)
+                                    }
+                                    selectedCidadesSet = newSet
+                                }
+                            )
+                            Text(cidade.nome, style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
                 }
             }
 
@@ -229,8 +255,9 @@ fun UserRegistrationScreen(
                     Text(
                         text = (registrationState as RegistrationState.Error).message,
                         color = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.padding(12.dp),
-                        style = MaterialTheme.typography.labelSmall
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }
@@ -239,16 +266,13 @@ fun UserRegistrationScreen(
                 onClick = {
                     val cleanUsername = username.lowercase().trim()
                     val autoEmail = "${cleanUsername}@equipedecampo.app"
-                    // SÊNIOR FIX: Ordem dos parâmetros corrigida para bater com o ViewModel
-                    // De: (name, user, email, pass, role, cidadeId)
-                    // Para: (name, email, pass, user, role, cidadeId)
                     viewModel.register(
                         name = fullName.trim(),
                         email = autoEmail,
                         pass = password,
                         user = cleanUsername,
                         role = cargo,
-                        cidadeId = selectedCidadeId
+                        cidades = selectedCidadesSet.toList()
                     )
                 },
                 modifier = Modifier.fillMaxWidth().height(56.dp),

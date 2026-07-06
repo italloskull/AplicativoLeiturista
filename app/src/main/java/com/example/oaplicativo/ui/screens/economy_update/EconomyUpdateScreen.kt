@@ -93,6 +93,24 @@ fun EconomyUpdateScreen(
                 .fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // SÊNIOR UX FIX: Seletor só aparece para Admins com múltiplas cidades
+            val authorizedCities by viewModel.authorizedCities.collectAsState()
+            val userProfileState = com.example.oaplicativo.data.repository.AuthRepositoryImpl.getInstance().currentUserProfile.collectAsState()
+            val isPowerUser = userProfileState.value?.cargo?.lowercase()?.let { it == "administrador" || it == "desenvolvedor" } ?: false
+            
+            if (isPowerUser && authorizedCities.size > 1) {
+                AppCard(title = "Cidade do Registro", icon = Icons.Default.LocationCity) {
+                    com.example.oaplicativo.ui.components.SpinnerOption(
+                        label = "Selecione o Município",
+                        options = authorizedCities,
+                        selectedOption = viewModel.selectedCidadeForRegistry,
+                        onOptionSelected = { viewModel.selectedCidadeForRegistry = it },
+                        labelProvider = { it.nome.uppercase() }
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+
             if (state is EconomyUpdateState.Error) {
                 Surface(
                     color = MaterialTheme.colorScheme.errorContainer,

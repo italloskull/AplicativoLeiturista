@@ -1,3 +1,4 @@
+@file:Suppress("SpellCheckingInspection")
 package com.example.oaplicativo.ui.screens.recadastro
 
 import android.Manifest
@@ -6,12 +7,9 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -21,7 +19,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -29,20 +26,17 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.oaplicativo.ui.components.*
+import com.example.oaplicativo.presentation.components.CensoredDataField
+import com.example.oaplicativo.ui.screens.recadastro.viewmodel.RecadastroViewModel
+import com.example.oaplicativo.util.CepVisualTransformation
 import com.example.oaplicativo.util.CpfCnpjVisualTransformation
 import com.example.oaplicativo.util.DateVisualTransformation
 import com.example.oaplicativo.util.PhoneVisualTransformation
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.oaplicativo.ui.components.*
-import com.example.oaplicativo.ui.screens.recadastro.viewmodel.RecadastroViewModel
-import com.example.oaplicativo.util.*
 import com.example.oaplicativo.util.privacy.PrivacyUtils
-import com.example.oaplicativo.presentation.components.CensoredDataField
 import kotlinx.coroutines.launch
 
-/**
- * 🚀 TELA NOVO RECADASTRO - TEMA DINÂMICO MATERIAL 3
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecadastroFormScreen(
@@ -50,102 +44,57 @@ fun RecadastroFormScreen(
     isDarkTheme: Boolean,
     onToggleTheme: () -> Unit,
     onLogout: () -> Unit,
-    onBack: () -> Unit,
     onSaveSuccess: () -> Unit,
+    onBack: () -> Unit,
     viewModel: RecadastroViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val locationHelper = remember { LocationHelper(context) }
-
-    LaunchedEffect(customerId) {
-        if (customerId != null) {
-            viewModel.loadCustomerForEdit(customerId)
-        } else {
-            viewModel.resetForm() // SÊNIOR FIX: Garante formulário limpo ao criar novo
-        }
-    }
-
+    val locationHelper = remember { com.example.oaplicativo.util.LocationHelper(context) }
     val userProfile by viewModel.currentUserProfile.collectAsState()
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        if (permissions.values.any { it }) {
+        if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
             scope.launch {
+                viewModel.isCapturingLocation = true
                 val loc = locationHelper.getCurrentLocation()
-                viewModel.latitude = loc?.latitude
-                viewModel.longitude = loc?.longitude
-                if (loc != null) viewModel.fetchAddressFromLocation(loc.latitude, loc.longitude)
+                if (loc != null) {
+                    viewModel.latitude = loc.latitude
+                    viewModel.longitude = loc.longitude
+                    viewModel.fetchAddressFromLocation(loc.latitude, loc.longitude)
+                }
+                viewModel.isCapturingLocation = false
             }
         }
     }
 
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            Column(modifier = Modifier.background(MaterialTheme.colorScheme.primary)) {
-                CenterAlignedTopAppBar(
-                    title = { 
-                        Text(
-                            text = if (customerId == null) "NOVO RECADASTRO" else "EDITAR REGISTRO", 
-                            style = MaterialTheme.typography.titleMedium, 
-                            fontWeight = FontWeight.Black,
-                            color = MaterialTheme.colorScheme.onPrimary
-                        ) 
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar", tint = MaterialTheme.colorScheme.onPrimary)
-                        }
-                    },
-                    actions = {
-                        GlobalActionMenu(
-                            isDarkTheme = isDarkTheme,
-                            isAdmin = userProfile?.isAdmin ?: false,
-                            onToggleTheme = onToggleTheme,
-                            onLogout = onLogout,
-                            onNavigateToUserRegistration = { /* TODO: Navegação se necessário */ },
-                            tint = MaterialTheme.colorScheme.onPrimary
-                        )
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
-                )
-                
-                val progress by animateFloatAsState(
-                    targetValue = viewModel.registrationProgress,
-                    animationSpec = tween(600),
-                    label = "Quality"
-                )
-                
-                val progressColor = if (progress >= 0.75f) Color(0xFF10B981) else MaterialTheme.colorScheme.onPrimary
+    LaunchedEffect(Unit) {
+        viewModel.loadCustomerForEdit(customerId)
+    }
 
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(4.dp)
-                        .padding(horizontal = 24.dp)
-                        .clip(CircleShape),
-                    color = progressColor,
-                    trackColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.3f)
-                )
-                
-                Text(
-                    text = if (progress >= 0.75f) "CADASTRO DE ALTA QUALIDADE ✨" else "COMPLETE OS CAMPOS PARA SUBIR A QUALIDADE",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.padding(start = 24.dp, top = 6.dp, bottom = 12.dp)
-                )
-            }
+    Scaffold(
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { Text(if (customerId == null) "NOVO RECADASTRO" else "EDITAR RECADASTRO", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
+                    }
+                },
+                actions = {
+                    GlobalActionMenu(
+                        isDarkTheme = isDarkTheme,
+                        isAdmin = userProfile?.isAdmin ?: false,
+                        onToggleTheme = onToggleTheme,
+                        onLogout = onLogout
+                    )
+                }
+            )
         },
         bottomBar = {
             Surface(
-                tonalElevation = 8.dp, 
                 shadowElevation = 8.dp,
                 color = MaterialTheme.colorScheme.surface,
                 modifier = Modifier.navigationBarsPadding() 
@@ -157,19 +106,16 @@ fun RecadastroFormScreen(
                         isLoading = viewModel.isCapturingGpsOnSave,
                         onClick = {
                             scope.launch {
-                                // Se as coordenadas estão nulas, tentamos capturar no "vôo"
                                 if (viewModel.latitude == null || viewModel.longitude == null) {
                                     viewModel.isCapturingGpsOnSave = true
                                     val fineLoc = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
                                     if (fineLoc == PackageManager.PERMISSION_GRANTED) {
-                                        // Tentativa rápida de captura (locationHelper deve ter um timeout interno)
                                         val loc = locationHelper.getCurrentLocation()
                                         if (loc != null) {
                                             viewModel.latitude = loc.latitude
                                             viewModel.longitude = loc.longitude
                                         }
                                     } else {
-                                        // Se não tem permissão, pedimos apenas uma vez
                                         locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
                                         viewModel.isCapturingGpsOnSave = false
                                         return@launch
@@ -177,7 +123,6 @@ fun RecadastroFormScreen(
                                     viewModel.isCapturingGpsOnSave = false
                                 }
                                 
-                                // SALVA DE QUALQUER JEITO: Com ou sem GPS obtido na tentativa acima
                                 viewModel.saveRecadastro(
                                     onSuccess = onSaveSuccess,
                                     onError = { msg -> Toast.makeText(context, msg, Toast.LENGTH_LONG).show() }
@@ -197,8 +142,33 @@ fun RecadastroFormScreen(
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             item {
+                val authorizedCities by viewModel.authorizedCities.collectAsState()
+                val isPowerUser = userProfile?.cargo?.lowercase()?.let { it == "administrador" || it == "desenvolvedor" } ?: false
+                
+                if (isPowerUser && authorizedCities.size > 1) {
+                    AppCard(title = "Cidade do Registro", icon = Icons.Default.LocationCity) {
+                        SpinnerOption(
+                            label = "Selecione o Município",
+                            options = authorizedCities,
+                            selectedOption = viewModel.selectedCidadeForRegistry,
+                            onOptionSelected = { viewModel.selectedCidadeForRegistry = it },
+                            labelProvider = { it.nome.uppercase() }
+                        )
+                        
+                        if (viewModel.selectedCidadeForRegistry == null) {
+                            Text(
+                                "❌ Seleção obrigatória para faturamento", 
+                                style = MaterialTheme.typography.labelSmall, 
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
                 AppCard(title = "Localização e Hidrometria", icon = Icons.Default.Map) {
-                    // SÊNIOR UX: A primeira e mais importante pergunta (Faturamento First)
                     BooleanOption(label = "Medição via Hidrômetro?", selectedOption = viewModel.possuiHidrometro) { viewModel.possuiHidrometro = it }
                     if (viewModel.possuiHidrometro == "Sim") {
                         Spacer(Modifier.height(12.dp))
@@ -247,9 +217,10 @@ fun RecadastroFormScreen(
                         }
                     }
 
-                    // SÊNIOR UX: PAINEL DE INTELIGÊNCIA GEOGRÁFICA (ALTA VISIBILIDADE)
-                    // Reposicionado para baixo de Setor e Quadra conforme solicitado
-                    if (viewModel.grupoSugerido != null || viewModel.rotaSugerida != null) {
+                    val sugGrupo = viewModel.grupoSugerido
+                    val sugRota = viewModel.rotaSugerida
+
+                    if (sugGrupo != null || sugRota != null) {
                         Spacer(Modifier.height(20.dp))
                         HorizontalDivider(thickness = 0.5.dp, color = Color(0xFF10B981).copy(alpha = 0.3f))
                         Spacer(Modifier.height(20.dp))
@@ -262,7 +233,7 @@ fun RecadastroFormScreen(
                         )
                         Spacer(Modifier.height(12.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            viewModel.grupoSugerido?.let { g ->
+                            sugGrupo?.let { g ->
                                 Surface(
                                     color = Color(0xFFECFDF5),
                                     shape = MaterialTheme.shapes.medium,
@@ -275,7 +246,7 @@ fun RecadastroFormScreen(
                                     }
                                 }
                             }
-                            viewModel.rotaSugerida?.let { r ->
+                            sugRota?.let { r ->
                                 Surface(
                                     color = Color(0xFFECFDF5),
                                     shape = MaterialTheme.shapes.medium,

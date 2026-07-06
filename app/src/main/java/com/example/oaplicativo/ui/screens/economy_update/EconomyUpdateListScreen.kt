@@ -1,3 +1,4 @@
+@file:Suppress("SpellCheckingInspection")
 package com.example.oaplicativo.ui.screens.economy_update
 
 import androidx.compose.foundation.clickable
@@ -10,18 +11,22 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.oaplicativo.model.EconomyUpdate
 import com.example.oaplicativo.presentation.components.SyncIndicator
 import com.example.oaplicativo.ui.components.AsyncDataContainer
+import com.example.oaplicativo.ui.components.GlobalActionMenu
 import com.example.oaplicativo.util.LocationHelper
 import com.example.oaplicativo.util.navigation.NavigationUtils
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -29,74 +34,112 @@ fun EconomyUpdateListScreen(
     onBack: () -> Unit,
     onAddClick: () -> Unit,
     onItemClick: (String) -> Unit,
-    onNavigateToAdminPanel: () -> Unit, // SÊNIOR FIX: Adicionado parâmetro de navegação
+    onNavigateToAdminPanel: () -> Unit,
+    onNavigateToUserManagement: () -> Unit,
     viewModel: EconomyUpdateViewModel = viewModel()
 ) {
+    val scope = rememberCoroutineScope()
     val items by viewModel.items.collectAsState()
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val locationHelper = remember { LocationHelper(context) }
-    
-    var searchQuery by remember { mutableStateOf("") }
     var userLocation by remember { mutableStateOf<android.location.Location?>(null) }
+    var searchQuery by remember { mutableStateOf("") }
 
-    // SÊNIOR FIX: Monitoramento do Ciclo de Vida para atualização instantânea ao voltar do formulário
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    LaunchedEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner) {
         val observer = object : androidx.lifecycle.DefaultLifecycleObserver {
-            override fun onResume(owner: androidx.lifecycle.LifecycleOwner) {
+            override fun onResume(owner: LifecycleOwner) {
                 viewModel.refreshData()
-                
-                val fineLoc = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION)
-                if (fineLoc == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                    scope.launch { userLocation = locationHelper.getCurrentLocation() }
+                scope.launch {
+                    try {
+                        userLocation = locationHelper.getCurrentLocation()
+                    } catch (_: Exception) { }
                 }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val filteredItems by remember(items, searchQuery, userLocation) {
-        derivedStateOf {
-            val base = if (searchQuery.isBlank()) items 
-                      else items.filter { (it.buildingName?.contains(searchQuery, true) == true) || (it.hdNumber?.contains(searchQuery, true) == true) }
-            
-            val currentLoc = userLocation
-            if (currentLoc != null) {
-                base.sortedBy { item ->
-                    if (item.latitude != null && item.longitude != null) {
-                        locationHelper.calculateDistance(currentLoc.latitude, currentLoc.longitude, item.latitude, item.longitude)
-                    } else Float.MAX_VALUE
-                }.take(10)
-            } else base
-        }
+    val filteredItems = items.filter {
+        it.buildingName?.contains(searchQuery, ignoreCase = true) == true ||
+        it.hdNumber?.contains(searchQuery, ignoreCase = true) == true
     }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("GRANDES EMPREENDIMENTOS", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black) },
+            CenterAlignedTopAppBar(
+                title = { 
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(0.9f) // SÊNIOR FIX: Limita a largura para não bater no menu de 3 pontos
+                    ) {
+                        Text(
+                            text = "G. EMPREENDIMENTOS", // SÊNIOR UX: Nome abreviado para ganhar espaço horizontal
+                            style = MaterialTheme.typography.titleMedium, 
+                            fontWeight = FontWeight.Black,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1
+                        )
+                        
+                        val profile by com.example.oaplicativo.data.repository.AuthRepositoryImpl.getInstance().currentUserProfile.collectAsState()
+                        val isPowerUser = profile?.cargo?.lowercase()?.let { it == "administrador" || it == "desenvolvedor" } ?: false
+                        val authorizedCities by viewModel.authorizedCities.collectAsState()
+                        val selectedCityFilter by viewModel.selectedCityFilter.collectAsState()
+                        var showCityMenu by remember { mutableStateOf(false) }
+
+                        if (isPowerUser && authorizedCities.size > 1) {
+                            Box(modifier = Modifier.padding(start = 4.dp)) {
+                                TextButton(
+                                    onClick = { showCityMenu = true },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(30.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = selectedCityFilter?.nome?.uppercase() ?: "TODAS", 
+                                            style = MaterialTheme.typography.labelSmall, 
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            maxLines = 1
+                                        )
+                                        Icon(Icons.Default.ArrowDropDown, null, modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                                DropdownMenu(expanded = showCityMenu, onDismissRequest = { showCityMenu = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text("🌎 TODAS AS CIDADES") },
+                                        onClick = { viewModel.selectCityFilter(null); showCityMenu = false }
+                                    )
+                                    authorizedCities.forEach { cidade ->
+                                        DropdownMenuItem(
+                                            text = { Text(cidade.nome.uppercase()) },
+                                            onClick = { viewModel.selectCityFilter(cidade); showCityMenu = false }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar") }
                 },
                 actions = {
                     val profile by com.example.oaplicativo.data.repository.AuthRepositoryImpl.getInstance().currentUserProfile.collectAsState()
-                    val isPowerUser = profile?.cargo?.lowercase()?.let { 
-                        it == "administrador" || it == "desenvolvedor" 
-                    } ?: false
+                    val isPowerUser = profile?.cargo?.lowercase()?.let { it == "administrador" || it == "desenvolvedor" } ?: false
 
-                    com.example.oaplicativo.ui.components.GlobalActionMenu(
-                        isDarkTheme = false, // TODO: Propagar via NavGraph
+                    GlobalActionMenu(
+                        isDarkTheme = false,
                         isAdmin = isPowerUser,
-                        onToggleTheme = { /* TODO */ },
-                        onLogout = { /* TODO */ },
-                        onNavigateToUserRegistration = { /* TODO */ },
+                        onToggleTheme = { },
+                        onLogout = { },
                         onNavigateToAdminPanel = onNavigateToAdminPanel,
+                        onNavigateToUserManagement = onNavigateToUserManagement,
                         onForceSync = {
                             viewModel.forceSyncAll()
-                            viewModel.refreshData()
-                            android.widget.Toast.makeText(context, "Robô de Sincronização acionado! 🤖", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, "Sincronização iniciada!", android.widget.Toast.LENGTH_SHORT).show()
                         }
                     )
                 }
@@ -119,7 +162,10 @@ fun EconomyUpdateListScreen(
             )
 
             AsyncDataContainer(
-                items = filteredItems,
+                items = filteredItems.filter { item ->
+                    val selectedCityFilter = viewModel.selectedCityFilter.collectAsState().value
+                    selectedCityFilter == null || item.cidade == selectedCityFilter.nome
+                },
                 isLoading = state is EconomyUpdateState.Loading && items.isEmpty(),
                 onRetry = { viewModel.fetchEconomyUpdates() },
                 error = if (state is EconomyUpdateState.Error) (state as EconomyUpdateState.Error).message else null

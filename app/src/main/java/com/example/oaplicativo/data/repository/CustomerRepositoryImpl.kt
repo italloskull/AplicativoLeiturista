@@ -30,18 +30,22 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
     private val _customers = MutableStateFlow<List<Customer>>(emptyList())
     override val customers: StateFlow<List<Customer>> = _customers.asStateFlow()
     
+    private var applicationContext: android.content.Context? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val refreshMutex = Mutex()
 
     private var remoteCustomers: List<Customer> = emptyList()
     private var localPendingCustomers: List<Customer> = emptyList()
-    
     private var realtimeChannel: RealtimeChannel? = null
 
-    init {
-        scope.launch {
-            fetchCustomers()
+    fun initialize(context: android.content.Context) {
+        if (applicationContext == null) {
+            applicationContext = context.applicationContext
+            scope.launch { fetchCustomers() }
         }
+    }
+
+    init {
         setupRealtime()
     }
 
@@ -53,19 +57,13 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
                     client.realtime.connect()
                     val myChannel = client.realtime.channel("public_clientes")
                     realtimeChannel = myChannel
-                    
-                    myChannel.postgresChangeFlow<PostgresAction>(schema = "public") {
-                        table = "clientes"
-                    }.collect {
+                    myChannel.postgresChangeFlow<PostgresAction>(schema = "public") { table = "clientes" }.collect {
                         delay(800)
                         fetchCustomers()
                     }
-                    
                     myChannel.subscribe()
                     break
-                } catch (e: Exception) {
-                    delay(10000)
-                }
+                } catch (_: Exception) { delay(10000) }
             }
         }
     }
@@ -73,47 +71,44 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
     override suspend fun fetchCustomers(cidadeId: String?, isAdmin: Boolean) {
         refreshMutex.withLock {
             try {
-                val userCityName = when(cidadeId) {
-                    "c2be642b-2823-41b9-8f54-0b8c84db9a14" -> "Itapoá"
-                    "ff9166b8-63b1-4481-a26a-64778181fa08" -> "Guabiruba"
-                    "74df760a-0120-42b4-bb4d-03cfd92e79b0" -> "Gaivota"
-                    "93fee74f-6cbb-4638-868d-ef5c17b081a4" -> "Gravatal"
-                    "9ed90b8c-1b63-44b7-88cd-c2b9b6babcc7" -> "Sombrio"
-                    else -> null
-                }
-
+                val userCityName = com.example.oaplicativo.util.CityUtils.getFriendlyCityName(cidadeId)
                 Log.d("debugs", "🔍 [RECADASTRO] Iniciando busca... Cidade: $userCityName | GodMode: $isAdmin")
                 
                 val list = withContext(Dispatchers.IO) {
-                    client.postgrest["clientes"]
-                        .select {
-                            // SÊNIOR FIX: Injeção de Filtro Territorial via Nome Legível
-                            if (!isAdmin && userCityName != null) {
-                                filter { eq("cidade", userCityName) }
-                            }
-                            order("capturado_em", order = io.github.jan.supabase.postgrest.query.Order.DESCENDING)
-                            limit(150)
-                        }.decodeList<Customer>()
+                    val authRepo = AuthRepositoryImpl.getInstance()
+                    val authorizedCities = authRepo.getUserCities()
+                    val cityNames = authorizedCities.map { it.nome }
+                    
+                    Log.d("debugs", "🎯 [QUERY] Cidades autorizadas no chaveiro: $cityNames")
+
+                    client.postgrest["clientes"].select {
+                        // SÊNIOR BI FIX: Busca registros de TODAS as cidades autorizadas
+                        if (!isAdmin && cityNames.isNotEmpty()) {
+                            filter { or { cityNames.forEach { eq("cidade", it) } } }
+                        } else if (isAdmin) {
+                            Log.d("debugs", "👑 [GOD_VIEW] Desenvolvedor ignorando filtros.")
+                        }
+                        order("capturado_em", order = io.github.jan.supabase.postgrest.query.Order.DESCENDING)
+                        limit(500)
+                    }.decodeList<Customer>()
                 }
                 
-                Log.d("debugs", "✅ [RECADASTRO] Recebidos ${list.size} itens da nuvem.")
+                Log.d("debugs", "✅ [RECADASTRO] Sucesso! ${list.size} registros baixados.")
                 
-                // SÊNIOR DEBUG: Se a lista veio vazia, avisa no log para checarmos o RLS ou o ID
-                if (list.isEmpty()) {
-                    Log.w("debugs", "⚠️ [RECADASTRO] Supabase retornou ZERO. Verifique se os registros no banco possuem o cidade_id: $cidadeId")
+                if (list.isNotEmpty()) {
+                    list.take(15).forEach { 
+                        Log.d("debugs", "   - Audit: ${it.name} | Cidade no Banco: '${it.cidade}' | ID: ${it.cidadeId}") 
+                    }
+                }
+                
+                if (list.isNotEmpty()) {
+                    list.take(3).forEach { Log.d("debugs", "   - Registro Cloud: ${it.name} | Cidade: ${it.cidade} | Matrícula: ${it.registrationNumber}") }
                 }
 
                 remoteCustomers = list
                 combineAndEmit()
             } catch (e: Exception) {
-                val msg = e.message ?: ""
-                val shortError = when {
-                    msg.contains("Unable to resolve host") -> "Sem Internet (DNS)"
-                    msg.contains("timeout") -> "Tempo Esgotado"
-                    msg.contains("401") || msg.contains("403") -> "Acesso Negado"
-                    else -> "Falha de Conexão"
-                }
-                Log.e("debugs", "❌ [RECADASTRO] Falha: $shortError | Detalhe: ${e.message}")
+                Log.e("debugs", "❌ [RECADASTRO] Falha: ${e.message}")
             }
         }
     }
@@ -134,28 +129,14 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
     private fun combineAndEmit() {
         scope.launch(Dispatchers.Default) {
             refreshMutex.withLock {
-                val profile = AuthRepositoryImpl.getInstance().currentUserProfile.value
-                val isDev = profile?.cargo?.lowercase() == "desenvolvedor"
-                val userCidadeId = profile?.cidadeId
-                val userCityName = when(userCidadeId) {
-                    "c2be642b-2823-41b9-8f54-0b8c84db9a14" -> "Itapoá"
-                    "ff9166b8-63b1-4481-a26a-64778181fa08" -> "Guabiruba"
-                    "74df760a-0120-42b4-bb4d-03cfd92e79b0" -> "Gaivota"
-                    "93fee74f-6cbb-4638-868d-ef5c17b081a4" -> "Gravatal"
-                    "9ed90b8c-1b63-44b7-88cd-c2b9b6babcc7" -> "Sombrio"
-                    else -> null
-                }
-
-                // SÊNIOR FIX: Blindagem Territorial Absoluta via Nome Legível
-                // Remove qualquer dado que não pertença à cidade do usuário logado antes de mostrar na tela
+                // SÊNIOR FIX: Removemos o filtro de visibilidade rigoroso aqui.
+                // O filtro regional agora é feito na UI pelo seletor, permitindo que o 
+                // Admin veja registros de qualquer cidade autorizada sem que eles sumam da lista.
                 val combined = (localPendingCustomers + remoteCustomers)
-                    .filter { item ->
-                        isDev || userCityName == null || item.cidade == userCityName
-                    }
                     .distinctBy { it.id ?: UUID.randomUUID().toString() }
                 
                 _customers.value = combined
-                Log.d("debugs", "📊 [RECADASTRO] Lista combinada emitida: ${combined.size} clientes únicos.")
+                Log.d("debugs", "📊 [RECADASTRO] Lista emitida com ${combined.size} itens globais.")
             }
         }
     }
@@ -168,13 +149,8 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
         if (customers.isEmpty()) return
         withContext(Dispatchers.IO) {
             try {
-                // SÊNIOR PERF: Envio em Lote (Batch Insert) para economizar rádio e bateria
                 Log.d("SyncDebug", "🚀 Enviando lote de ${customers.size} registros.")
-                
-                client.postgrest["clientes"].upsert(customers) {
-                    onConflict = "id"
-                }
-                
+                client.postgrest["clientes"].upsert(customers)
                 Log.d("SyncDebug", "✅ SUCESSO: Lote sincronizado.")
                 fetchCustomers()
             } catch (e: Exception) {
@@ -197,18 +173,54 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
 
     override suspend fun deleteCustomer(id: String) {
         withContext(Dispatchers.IO) {
-            client.postgrest["clientes"].delete {
-                filter { eq("id", id) }
-            }
+            client.postgrest["clientes"].delete { filter { eq("id", id) } }
             fetchCustomers()
         }
     }
 
-    override suspend fun saveCustomerLocallyAndSync(customer: Customer) { }
+    override suspend fun searchCustomersRemote(query: String, cidadeId: String?, isAdmin: Boolean): List<Customer> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val userCityName = com.example.oaplicativo.util.CityUtils.getFriendlyCityName(cidadeId)
+                client.postgrest["clientes"].select {
+                    if (!isAdmin && userCityName != null) filter { eq("cidade", userCityName) }
+                    filter { or { ilike("name", "%$query%"); eq("matricula", query) } }
+                    limit(50)
+                }.decodeList<Customer>()
+            } catch (e: Exception) {
+                Log.e("debugs", "❌ [SEARCH_REMOTE] Falha: ${e.message}")
+                emptyList()
+            }
+        }
+    }
+
+    override suspend fun saveCustomerLocallyAndSync(customer: Customer) {
+        withContext(Dispatchers.IO) {
+            try {
+                val ctx = applicationContext ?: return@withContext
+                val db = com.example.oaplicativo.data.local.LocalDatabase.getInstance(ctx)
+                db.saveCustomerOffline(customer)
+                val pending = db.getPendingCustomers().map { it.second }
+                updateLocalCustomers(pending)
+                
+                val syncRequest = androidx.work.OneTimeWorkRequestBuilder<com.example.oaplicativo.data.sync.SyncWorker>()
+                    .setConstraints(androidx.work.Constraints.Builder().setRequiredNetworkType(androidx.work.NetworkType.CONNECTED).build())
+                    .build()
+                
+                androidx.work.WorkManager.getInstance(ctx).enqueueUniqueWork(
+                    "sync_now_${System.currentTimeMillis()}",
+                    androidx.work.ExistingWorkPolicy.REPLACE,
+                    syncRequest
+                )
+                Log.d("debugs", "🚀 [REPO] Sincronismo imediato acionado para: ${customer.name}")
+            } catch (e: Exception) {
+                Log.e("debugs", "❌ [REPO] Falha ao iniciar ciclo: ${e.message}")
+            }
+        }
+    }
 
     companion object {
-        @Volatile
-        private var instance: CustomerRepositoryImpl? = null
+        @Volatile private var instance: CustomerRepositoryImpl? = null
         fun getInstance(): CustomerRepositoryImpl {
             return instance ?: synchronized(this) {
                 instance ?: CustomerRepositoryImpl().also { instance = it }

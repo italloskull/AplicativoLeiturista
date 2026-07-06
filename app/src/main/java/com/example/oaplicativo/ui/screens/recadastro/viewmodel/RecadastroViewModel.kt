@@ -1,32 +1,32 @@
-@file:Suppress("SpellCheckingInspection")
 package com.example.oaplicativo.ui.screens.recadastro.viewmodel
 
 import android.app.Application
-import android.location.Address
 import android.location.Geocoder
 import android.util.Log
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
-import androidx.work.*
 import com.example.oaplicativo.data.local.LocalDatabase
 import com.example.oaplicativo.data.repository.AuthRepositoryImpl
 import com.example.oaplicativo.data.repository.CustomerRepositoryImpl
-import com.example.oaplicativo.data.repository.StatsRepositoryImpl
-import com.example.oaplicativo.data.sync.SyncWorker
 import com.example.oaplicativo.domain.repository.CustomerRepository
 import com.example.oaplicativo.model.Customer
-import com.example.oaplicativo.util.*
+import com.example.oaplicativo.model.UserProfile
+import com.example.oaplicativo.model.Cidade
+import com.example.oaplicativo.util.ifSpaceNull
+import com.example.oaplicativo.util.orSpace
+import com.example.oaplicativo.util.DateVisualTransformation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.*
@@ -42,54 +42,41 @@ class RoleData {
 }
 
 class RecadastroViewModel(
-    application: Application,
-    private val savedStateHandle: SavedStateHandle
+    application: Application
 ) : AndroidViewModel(application) {
+    
     private val authRepository = AuthRepositoryImpl.getInstance()
     private val customerRepository: CustomerRepository = CustomerRepositoryImpl.getInstance()
-    private val localDb = LocalDatabase.getInstance(application)
     private val geocoder = Geocoder(application, Locale.getDefault())
-    
-    var isDataCensoredInitial by mutableStateOf(false)
-    val currentUserProfile = authRepository.currentUserProfile
-    
-    private var editingCustomerId: String?
-        get() = savedStateHandle["editing_id"]
-        set(value) { savedStateHandle["editing_id"] = value }
 
-    // --- ESTADO DO IMÓVEL ---
+    var isDataCensoredInitial by mutableStateOf(false)
+    val currentUserProfile: StateFlow<UserProfile?> = authRepository.currentUserProfile
+
+    var editingCustomerId: String? = null
+        private set
+
     var matricula by mutableStateOf("")
     var registrationDigit by mutableStateOf("")
     var setor by mutableStateOf("")
     var quadra by mutableStateOf("")
     var latitude by mutableStateOf<Double?>(null)
     var longitude by mutableStateOf<Double?>(null)
+    
+    val grupoSugerido: String?
+        get() = com.example.oaplicativo.util.GeoFencingHelper.findSuggestedGroup(selectedCidadeForRegistry?.nome, latitude, longitude)
+    
+    val rotaSugerida: String?
+        get() = com.example.oaplicativo.util.GeoFencingHelper.findSuggestedRoute(selectedCidadeForRegistry?.nome, latitude, longitude)
+
     var isCapturingLocation by mutableStateOf(false)
 
-    // SÊNIOR PERF: Reatividade em tempo real para sugestões geográficas
-    // BUG FIX: Adicionado LOG e fallback de cidade para garantir que a detecção ocorra
-    val grupoSugerido by derivedStateOf {
-        val finalCidade = cidade.ifBlank { getLeituristaCidadeNome(currentUserProfile.value?.cidadeId) ?: "" }
-        val result = GeoFencingHelper.findSuggestedGroup(finalCidade, latitude, longitude)
-        Log.d("GeoDebug", "🔎 Tentando detectar GRUPO para cidade: $finalCidade | Lat: $latitude | Resultado: $result")
-        result
-    }
-    val rotaSugerida by derivedStateOf {
-        val finalCidade = cidade.ifBlank { getLeituristaCidadeNome(currentUserProfile.value?.cidadeId) ?: "" }
-        val result = GeoFencingHelper.findSuggestedRoute(finalCidade, latitude, longitude)
-        Log.d("GeoDebug", "🔎 Tentando detectar ROTA para cidade: $finalCidade | Lat: $latitude | Resultado: $result")
-        result
-    }
-
-    // --- ESTADO DO RESPONSÁVEL ---
-    var responsavelTipo by mutableStateOf("Proprietário") 
+    var responsavelTipo by mutableStateOf("Proprietário")
     var entrevistadoEhOResponsavel by mutableStateOf("Sim")
-    var responsavelData = RoleData()
+    val responsavelData = RoleData()
     var entrevistadoNomeApenas by mutableStateOf("")
     var entrevistadoEmailApenas by mutableStateOf("")
     var entrevistadoCelularApenas by mutableStateOf("")
 
-    // --- ESTADO DE CONTATO E ENDEREÇO ---
     var email by mutableStateOf("")
     var telefone by mutableStateOf("")
     var celular1 by mutableStateOf("")
@@ -99,9 +86,9 @@ class RecadastroViewModel(
     var bairro by mutableStateOf("")
     var cidade by mutableStateOf("")
     var uf by mutableStateOf("")
+    var cel by mutableStateOf("")
     var cep by mutableStateOf("")
 
-    // --- ESTADO DE CARACTERÍSTICAS ---
     var pavimentoRua by mutableStateOf<String?>(null)
     var pavimentoCalcada by mutableStateOf<String?>(null)
     var fonteAbastecimento by mutableStateOf<String?>(null)
@@ -118,100 +105,56 @@ class RecadastroViewModel(
     var locationStatus by mutableStateOf<String?>(null)
     var localInstalacao by mutableStateOf<String?>(null)
     var acessibilidade by mutableStateOf<String?>(null)
-    
+
     var numeroHidrometro by mutableStateOf("")
     var economias by mutableStateOf("")
     var observacao by mutableStateOf("")
 
     var isCepLoading by mutableStateOf(false)
     var cepError by mutableStateOf(false)
-    
-    // SÊNIOR FIX: Estado de UI persistente para evitar travamento em rotação/morte de processo
     var isCapturingGpsOnSave by mutableStateOf(false)
 
-    // SÊNIOR FIX: Orquestração de Coroutines para evitar ANR e Memory Leaks
     private var geocodeJob: Job? = null
     private var cepJob: Job? = null
-    private var lastResolvedLat = 0.0
-    private var lastResolvedLng = 0.0
 
-    /**
-     * SÊNIOR PROTOCOL: Garante que o estado de captura nunca fique travado.
-     */
-    override fun onCleared() {
-        super.onCleared()
-        geocodeJob?.cancel()
-        cepJob?.cancel()
-        isCapturingLocation = false // Reset de segurança
+    private val _authorizedCities = MutableStateFlow<List<Cidade>>(emptyList())
+    val authorizedCities: StateFlow<List<Cidade>> = _authorizedCities.asStateFlow()
+    var selectedCidadeForRegistry by mutableStateOf<Cidade?>(null)
+
+    init {
+        loadAuthorizedCities()
     }
 
-    // SÊNIOR ALGORITHM V3: MATRIZ CENTESIMAL (100 PONTOS)
-    // Cobre todas as 53 colunas do banco com pesos estratégicos.
+    private fun loadAuthorizedCities() {
+        viewModelScope.launch {
+            val cities = authRepository.getUserCities()
+            _authorizedCities.value = cities
+            if (cities.size == 1) {
+                selectedCidadeForRegistry = cities.first()
+            }
+        }
+    }
+
     private val _registrationProgress = derivedStateOf {
         var score = 0f
-        
-        // 1. OURO: Faturamento & Contato (40 pts)
-        if (matricula.isNotBlank() && matricula != "0") score += 10f
+        if (matricula.isNotBlank()) score += 10f
+        if (latitude != null && longitude != null) score += 15f
+        if (logradouro.isNotBlank() && numero.isNotBlank()) score += 10f
+        if (beneficiarioSocial != null) score += 5f
+        if (usaAguaVizinho != null) score += 5f
+        if (possuiPiscina != null) score += 5f
+        if (isVacationer != null) score += 5f
+        if (locationStatus != null) score += 5f
+        if (possuiHidrometro != null) score += 5f
         if (numeroHidrometro.isNotBlank() && numeroHidrometro != " ") score += 10f
-        if (email.isNotBlank() && email != " ") score += 10f
-        if (celular1.isNotBlank() && celular1 != " ") score += 10f
-
-        // 2. PRATA: Identidade Civil (20 pts)
+        if (isStandardMeasurementBox != null) score += 5f
+        if (isStandardizedSeals != null) score += 5f
+        if (isHdAccessible != null) score += 5f
+        if (economias.isNotBlank()) score += 5f
         if (responsavelData.nomeCompleto.isNotBlank()) score += 5f
-        if (responsavelData.cpfCnpj.isNotBlank()) score += 5f
-        if (responsavelData.nomeMae.isNotBlank()) score += 5f
-        if (responsavelData.dataNascimento.isNotBlank()) score += 5f
-
-        // 3. BRONZE: Localização & Logística (15 pts)
-        if (latitude != null) score += 3f
-        if (logradouro.isNotBlank()) score += 3f
-        if (bairro.isNotBlank()) score += 3f
-        if (setor.isNotBlank()) score += 3f
-        if (quadra.isNotBlank()) score += 3f
-
-        // 4. APOIO: Características e Detalhes (25 pts)
-        if (isStandardMeasurementBox != null) score += 1f
-        if (isStandardizedSeals != null) score += 1f
-        if (isHdAccessible != null) score += 1f
-        if (isVacationer != null) score += 1f
-        if (possuiPiscina != null) score += 1f
-        if (possuiCaixaAgua != null) score += 1f
-        if (locationStatus != null) score += 1f
-        if (economias.isNotBlank()) score += 1f
-        if (pavimentoRua != null) score += 1f
-        if (pavimentoCalcada != null) score += 1f
-        if (fonteAbastecimento != null) score += 1f
-        if (existeRedeAgua != null) score += 1f
-        if (beneficiarioSocial != null) score += 1f
-        if (usaAguaVizinho != null) score += 1f
-        if (possuiHidrometro != null) score += 1f
-        if (localInstalacao != null) score += 1f
-        if (acessibilidade != null) score += 1f
-        if (complemento.isNotBlank()) score += 1f
-        if (numero.isNotBlank()) score += 1f
-        if (cep.isNotBlank()) score += 1f
-        if (observacao.isNotBlank()) score += 1f
-        if (responsavelData.sexo != null) score += 1f
-        if (responsavelData.apresentouDoc != null) score += 1f
-        if (responsavelData.qualDoc.isNotBlank()) score += 1f
-        if (uf.isNotBlank()) score += 1f
-        
-        // Máximo possível: 100
         score / 100f
     }
     val registrationProgress: Float get() = _registrationProgress.value
-
-    private fun getLeituristaCidadeNome(cidadeId: String?): String? {
-        return when (cidadeId?.lowercase()) {
-            "c2be642b-2823-41b9-8f54-0b8c84db9a14" -> "Itapoá"
-            "ff9166b8-63b1-4481-a26a-64778181fa08" -> "Guabiruba"
-            "74df760a-0120-42b4-bb4d-03cfd92e79b0" -> "Gaivota"
-            "93fee74f-6cbb-4638-868d-ef5c17b081a4" -> "Gravatal"
-            "9ed90b8c-1b63-44b7-88cd-c2b9b6babcc7" -> "Sombrio"
-            "c5643444-2396-4f4d-8724-4f014798c897" -> "Araquari" // Backup Legado
-            else -> null
-        }
-    }
 
     fun loadCustomerForEdit(customerId: String?) {
         if (customerId == null) return
@@ -255,6 +198,7 @@ class RecadastroViewModel(
             acessibilidade = customer.acessibilidade.ifSpaceNull()
             observacao = customer.observacao ?: ""
             economias = customer.economiesCount?.toString() ?: ""
+            cidade = customer.cidade ?: ""
 
             responsavelTipo = "Proprietário" 
             responsavelData.nomeCompleto = customer.entrevistadoNome ?: ""
@@ -265,75 +209,42 @@ class RecadastroViewModel(
             responsavelData.apresentouDoc = customer.entrevistadoApresentouDoc ?: "Não"
             responsavelData.qualDoc = customer.entrevistadoQualDoc ?: ""
             
-            // SÊNIOR FIX DEFINITIVO: Restauração de 100% dos campos para garantir substituição perfeita
             numeroHidrometro = customer.numeroHidrometro ?: ""
-            setor = customer.setor ?: ""
-            quadra = customer.quadra ?: ""
-            logradouro = customer.logradouro ?: ""
-            numero = customer.numero ?: ""
-            complemento = customer.complemento ?: ""
-            bairro = customer.bairro ?: ""
-            cidade = customer.cidade ?: ""
-            uf = customer.uf ?: ""
-            cep = customer.cep ?: ""
-            email = customer.email ?: ""
-            celular1 = customer.celular ?: ""
-            
-            beneficiarioSocial = customer.beneficiarioSocial.ifSpaceNull()
-            usaAguaVizinho = customer.usaAguaVizinho.ifSpaceNull()
-            possuiPiscina = customer.possuiPiscina.ifSpaceNull()
-            isVacationer = customer.isVacationer.ifSpaceNull()
-            locationStatus = customer.locationStatus.ifSpaceNull()
-            pavimentoRua = customer.pavimentoRua.ifSpaceNull()
-            pavimentoCalcada = customer.pavimentoCalcada.ifSpaceNull()
-            isStandardMeasurementBox = customer.isStandardMeasurementBox.ifSpaceNull()
-            isStandardizedSeals = customer.isStandardizedSeals.ifSpaceNull()
-            isHdAccessible = customer.isHdAccessible.ifSpaceNull()
-            possuiHidrometro = customer.possuiHidrometro.ifSpaceNull()
-            localInstalacao = customer.localInstalacao.ifSpaceNull()
-            acessibilidade = customer.acessibilidade.ifSpaceNull()
-            economias = customer.economiesCount?.toString() ?: ""
-            observacao = customer.observacao ?: ""
             
             entrevistadoEhOResponsavel = "Sim"
             entrevistadoNomeApenas = ""
+            
+            _authorizedCities.value.find { it.nome == customer.cidade }?.let {
+                selectedCidadeForRegistry = it
+            }
         }
     }
 
     fun saveRecadastro(onSuccess: () -> Unit, onError: (String) -> Unit) {
-        val snapshotLat = latitude
-        val snapshotLng = longitude
-        val snapshotMatricula = matricula.trim()
-        val snapshotDigit = registrationDigit.trim()
-        val snapshotEmail = email.trim().lowercase()
-        val snapshotCelular = celular1.trim()
-        val snapshotLogradouro = logradouro.trim()
-        val snapshotNumero = numero.trim()
-        val snapshotComplemento = complemento.trim()
-        val snapshotBairro = bairro.trim()
-        val snapshotCep = cep.trim()
-        val snapshotUf = uf.trim()
-        val snapshotCidadeManual = cidade.trim()
-        val snapshotObs = observacao.trim()
-        
-        val sEco = economias.toIntOrNull()
-
-        if (isCapturingLocation) return 
-        
         viewModelScope.launch {
             try {
-                isCapturingLocation = true
-                
-                val user = authRepository.currentUserProfile.value ?: run {
-                    onError("Sessão inválida. Faça login novamente.")
-                    isCapturingLocation = false
+                val user = currentUserProfile.value ?: return@launch
+                val snapshotMatricula = matricula
+                val snapshotDigit = registrationDigit
+                val snapshotLat = latitude
+                val snapshotLng = longitude
+                val snapshotLogradouro = logradouro
+                val snapshotNumero = numero
+                val snapshotComplemento = complemento
+                val snapshotBairro = bairro
+                val snapshotCep = cep
+                val snapshotUf = uf
+                val snapshotEmail = email
+                val snapshotCelular = celular1
+                val snapshotObs = observacao
+                val sEco = economias.toIntOrNull()
+
+                val selectedCity = selectedCidadeForRegistry
+                if (selectedCity == null) {
+                    onError("Por favor, selecione a cidade do registro no topo da tela.")
                     return@launch
                 }
 
-                val finalCidade = snapshotCidadeManual.ifBlank { getLeituristaCidadeNome(user.cidadeId) ?: "" }
-                val finalCidadeId = if (user.cidadeId?.length == 36) user.cidadeId else null
-                val finalLeituristaId = if (user.id?.length == 36) user.id else null
-                
                 val brNow = ZonedDateTime.now(java.time.ZoneId.of("America/Sao_Paulo"))
                 val brDate = brNow.format(DateTimeFormatter.ofPattern("yyyy/MM/dd"))
                 val brFullTimestamp = brNow.format(DateTimeFormatter.ofPattern("yyyy/MM/dd_HH:mm:ss"))
@@ -341,29 +252,20 @@ class RecadastroViewModel(
                 val sNome = responsavelData.nomeCompleto.trim()
                 val sCpf = responsavelData.cpfCnpj.trim()
                 val sMae = responsavelData.nomeMae.trim()
-                val sNasc = responsavelData.dataNascimento.trim()
+                val rawNasc = responsavelData.dataNascimento.trim()
+                // SÊNIOR DATA FIX: Formata a data bruta (21062001) para o padrão banco (21/06/2001)
+                val sNasc = if (rawNasc.length == 8) {
+                    "${rawNasc.substring(0, 2)}/${rawNasc.substring(2, 4)}/${rawNasc.substring(4)}"
+                } else rawNasc
+
                 val sSexo = responsavelData.sexo
                 val sDoc = responsavelData.apresentouDoc
                 val sQual = responsavelData.qualDoc.trim()
 
-                // SÊNIOR FIX DEFINITIVO: Mapeamento rigoroso de Nomes de Cidade para o Supabase
-                // Prioridade absoluta para a cidade do perfil do usuário para nunca ficar 'Desconhecida'
-                val friendlyCityName = getLeituristaCidadeNome(user.cidadeId) 
-                    ?: snapshotCidadeManual.ifBlank { "Itapoá" } // Fallback limpo sem o prefixo 'Cidade'
-
-                // SÊNIOR FIX: Captura instantânea do estado da UI para evitar race condition
-                val snapshotGrupo = grupoSugerido
-                val snapshotRota = rotaSugerida
-
-                val baseStatus = locationStatus.orSpace()
-                val finalLocationStatus = if (snapshotLat == null) {
-                    if (baseStatus == " ") "Sem Sinal" else "$baseStatus (Sem Sinal)"
-                } else baseStatus
-
                 val customer = Customer(
                     id = editingCustomerId ?: UUID.randomUUID().toString(),
-                    cidadeId = finalCidadeId,
-                    leituristaId = finalLeituristaId,
+                    cidadeId = selectedCity.id,
+                    leituristaId = user.id,
                     name = sNome.orSpace(),
                     registrationNumber = snapshotMatricula.orSpace(),
                     registrationDigit = snapshotDigit.orSpace(),
@@ -377,7 +279,7 @@ class RecadastroViewModel(
                     possuiCaixaAgua = possuiCaixaAgua.orSpace(),
                     latitude = snapshotLat,
                     longitude = snapshotLng,
-                    locationStatus = finalLocationStatus,
+                    locationStatus = locationStatus.orSpace(),
                     economiesCount = sEco,
                     addedBy = user.fullName ?: user.username ?: "Equipe de Campo",
                     capturedAt = brFullTimestamp,
@@ -394,7 +296,7 @@ class RecadastroViewModel(
                     numero = snapshotNumero,
                     complemento = snapshotComplemento,
                     bairro = snapshotBairro,
-                    cidade = friendlyCityName,
+                    cidade = selectedCity.nome,
                     uf = snapshotUf,
                     cep = snapshotCep,
                     pavimentoRua = pavimentoRua.orSpace(),
@@ -407,203 +309,109 @@ class RecadastroViewModel(
                     beneficiarioSocial = beneficiarioSocial.orSpace(),
                     usaAguaVizinho = usaAguaVizinho.orSpace(),
                     possuiHidrometro = possuiHidrometro.orSpace(),
-                    
-                    // SÊNIOR FIX: Decomposição rigorosa baseada no padrão "Grupo X Rota Y"
-                    // Garantimos que estamos salvando os valores que o leiturista viu na tela
-                    grupoSugerido = snapshotGrupo,
-                    rotaSugerida = snapshotRota,
-                    
-                    setor = setor.trim().orSpace(),
-                    quadra = quadra.trim().orSpace(),
+                    grupoSugerido = com.example.oaplicativo.util.GeoFencingHelper.findSuggestedGroup(selectedCity.nome, snapshotLat, snapshotLng) ?: "S/G",
+                    setor = setor,
+                    quadra = quadra,
+                    rotaSugerida = com.example.oaplicativo.util.GeoFencingHelper.findSuggestedRoute(selectedCity.nome, snapshotLat, snapshotLng) ?: "S/R",
                     numeroHidrometro = numeroHidrometro.trim().orSpace(),
                     isSynced = false
                 )
 
-                localDb.saveCustomerOffline(customer)
-                StatsRepositoryImpl.getInstance(getApplication()).refreshStats()
-
-                val pending = localDb.getPendingCustomers().map { it.second }
-                customerRepository.updateLocalCustomers(pending)
-
-                val syncRequest = OneTimeWorkRequestBuilder<SyncWorker>()
-                    .setConstraints(Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
-                        .build())
-                    .setBackoffCriteria(BackoffPolicy.LINEAR, 30, java.util.concurrent.TimeUnit.SECONDS)
-                    .build()
-                
-                WorkManager.getInstance(getApplication()).enqueueUniqueWork(
-                    "immediate_sync", 
-                    ExistingWorkPolicy.APPEND_OR_REPLACE,
-                    syncRequest
-                )
+                Log.d("debugs", "💾 [SQLITE] Gravando Recadastro: ${customer.name} | Cidade: ${customer.cidade}")
+                customerRepository.saveCustomerLocallyAndSync(customer)
                 onSuccess()
             } catch (e: Exception) {
-                Log.e("RecadastroVM", "ERRO AO SALVAR", e)
-                onError("Erro técnico: ${e.message ?: "Falha no SQLite"}")
-            } finally {
-                isCapturingLocation = false
+                Log.e("debugs", "❌ [SQLITE] Falha ao salvar: ${e.message}")
+                onError(e.message ?: "Erro ao salvar")
             }
         }
     }
 
     fun onCepChange(newCep: String) {
-        val cleanCep = newCep.replace(Regex("[^0-9]"), "")
-        cep = cleanCep
-        if (cleanCep.length == 8) {
-            fetchAddress(cleanCep)
+        if (newCep.length <= 8) {
+            cep = newCep
+            if (newCep.length == 8) fetchAddress(newCep)
         }
     }
 
-    fun fetchAddress(cepCode: String) {
-        if (isGenericCep(cepCode)) return
-        
+    private fun fetchAddress(cepCode: String) {
         cepJob?.cancel()
         cepJob = viewModelScope.launch(Dispatchers.IO) {
-            isCepLoading = true
-            cepError = false
+            isCepLoading = true; cepError = false
             try {
-                delay(500)
-                if (!isActive) return@launch
-                
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                    geocoder.getFromLocationName("CEP $cepCode, Brasil", 1, object : Geocoder.GeocodeListener {
-                        override fun onGeocode(addresses: List<Address>) {
-                            if (!isActive) return
-                            if (addresses.isNotEmpty()) {
-                                handleGoogleAddress(addresses[0])
-                            }
+                if (android.os.Build.VERSION.SDK_INT >= 33) {
+                    geocoder.getFromLocationName(cepCode, 1, object : Geocoder.GeocodeListener {
+                        override fun onGeocode(addresses: MutableList<android.location.Address>) {
+                            addresses.firstOrNull()?.let { handleGoogleAddress(it) }
                             isCepLoading = false
                         }
                         override fun onError(errorMessage: String?) {
-                            cepError = true
-                            isCepLoading = false
+                            isCepLoading = false; cepError = true
                         }
                     })
                 } else {
                     @Suppress("DEPRECATION")
-                    val addresses = geocoder.getFromLocationName("CEP $cepCode, Brasil", 1)
-                    if (!addresses.isNullOrEmpty()) {
-                        handleGoogleAddress(addresses[0])
-                    }
+                    val addresses = geocoder.getFromLocationName(cepCode, 1)
+                    addresses?.firstOrNull()?.let { handleGoogleAddress(it) }
                     isCepLoading = false
                 }
-            } catch (e: Exception) {
-                cepError = true
-                isCepLoading = false
-            }
+            } catch (_: Exception) { isCepLoading = false; cepError = true }
         }
     }
 
     fun fetchAddressFromLocation(lat: Double, lng: Double) {
-        if (Math.abs(lastResolvedLat - lat) < 0.0001 && Math.abs(lastResolvedLng - lng) < 0.0001) return
-        
-        lastResolvedLat = lat
-        lastResolvedLng = lng
-        
         geocodeJob?.cancel()
         geocodeJob = viewModelScope.launch(Dispatchers.IO) {
             try {
-                if (!isActive) return@launch
-
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                if (android.os.Build.VERSION.SDK_INT >= 33) {
                     geocoder.getFromLocation(lat, lng, 1, object : Geocoder.GeocodeListener {
-                        override fun onGeocode(addresses: List<Address>) {
-                            if (addresses.isNotEmpty()) handleGoogleAddress(addresses[0])
+                        override fun onGeocode(addresses: MutableList<android.location.Address>) {
+                            addresses.firstOrNull()?.let { handleGoogleAddress(it) }
                         }
                         override fun onError(errorMessage: String?) {
-                            Log.e("GeoCoder", "Erro assíncrono: $errorMessage")
+                            Log.e("GeoDebug", "Erro Geocoder: $errorMessage")
                         }
                     })
                 } else {
                     @Suppress("DEPRECATION")
                     val addresses = geocoder.getFromLocation(lat, lng, 1)
-                    if (!addresses.isNullOrEmpty()) {
-                        handleGoogleAddress(addresses[0])
-                    }
+                    addresses?.firstOrNull()?.let { handleGoogleAddress(it) }
                 }
-            } catch (e: Exception) {
-                Log.e("RecadastroVM", "Erro Geocoder", e)
-            }
+            } catch (e: Exception) { Log.e("GeoDebug", "Falha Geocode: ${e.message}") }
         }
     }
 
-    private fun handleGoogleAddress(address: Address) {
-        updateAddressFields(
-            street = address.thoroughfare,
-            district = address.subLocality ?: address.subAdminArea,
-            city = address.locality,
-            state = address.adminArea,
-            zip = address.postalCode?.replace("-", "")
-        )
-    }
-
-    private fun updateAddressFields(street: String?, district: String?, city: String?, state: String?, zip: String?) {
-        if (!street.isNullOrBlank()) logradouro = street
-        if (!district.isNullOrBlank()) bairro = district
-        if (!city.isNullOrBlank()) cidade = city
-        if (!state.isNullOrBlank()) uf = state
-        
-        if (!zip.isNullOrBlank() && !zip.endsWith("000")) {
-            cep = zip
-        }
-    }
-
-    private fun isGenericCep(cepCode: String?): Boolean {
-        val genericCeps = listOf("89249000", "89248000")
-        return genericCeps.contains(cepCode)
+    private fun handleGoogleAddress(address: android.location.Address) {
+        logradouro = address.thoroughfare ?: logradouro
+        bairro = address.subLocality ?: bairro
+        cidade = address.locality ?: cidade
+        uf = address.adminArea ?: uf
+        if (cep.isBlank()) cep = address.postalCode?.replace("-", "") ?: ""
     }
 
     private fun calculateDataQuality(): String {
-        val points = registrationProgress * 100f
+        val progress = registrationProgress
         return when {
-            // SÊNIOR CALIBRATION V3: Base 100
-            points >= 60f -> "Boa"
-            points >= 30f -> "Regular"
+            progress >= 0.85f -> "Boa"
+            progress >= 0.50f -> "Regular"
             else -> "Ruim"
         }
     }
 
     fun resetForm() {
         editingCustomerId = null
-        matricula = ""
-        registrationDigit = ""
-        setor = ""
-        quadra = ""
-        latitude = null
-        longitude = null
-        responsavelTipo = "Proprietário"
-        entrevistadoEhOResponsavel = "Sim"
-        responsavelData = RoleData()
-        entrevistadoNomeApenas = ""
-        email = ""
-        telefone = ""
-        celular1 = ""
-        logradouro = ""
-        numero = ""
-        complemento = ""
-        bairro = ""
-        cidade = ""
-        uf = ""
-        cep = ""
-        pavimentoRua = null
-        pavimentoCalcada = null
-        fonteAbastecimento = null
-        existeRedeAgua = null
-        possuiPiscina = null
-        possuiCaixaAgua = null
-        beneficiarioSocial = null
-        usaAguaVizinho = null
-        possuiHidrometro = null
-        isStandardMeasurementBox = null
-        isStandardizedSeals = null
-        isHdAccessible = null
-        isVacationer = null
-        locationStatus = null
-        localInstalacao = null
-        acessibilidade = null
-        numeroHidrometro = ""
-        economias = ""
-        observacao = ""
+        matricula = ""; registrationDigit = ""; setor = ""; quadra = ""
+        latitude = null; longitude = null; isCapturingLocation = false
+        responsavelTipo = "Proprietário"; entrevistadoEhOResponsavel = "Sim"
+        responsavelData.nomeCompleto = ""; responsavelData.cpfCnpj = ""; responsavelData.nomeMae = ""
+        responsavelData.dataNascimento = ""; responsavelData.sexo = null; responsavelData.apresentouDoc = null
+        responsavelData.qualDoc = ""; entrevistadoNomeApenas = ""; entrevistadoEmailApenas = ""; entrevistadoCelularApenas = ""
+        email = ""; telefone = ""; celular1 = ""; logradouro = ""; numero = ""; complemento = ""
+        bairro = ""; cidade = ""; uf = ""; cep = ""
+        pavimentoRua = null; pavimentoCalcada = null; fonteAbastecimento = null; existeRedeAgua = null
+        possuiPiscina = null; possuiCaixaAgua = null; beneficiarioSocial = null; usaAguaVizinho = null
+        possuiHidrometro = null; isStandardMeasurementBox = null; isStandardizedSeals = null
+        isHdAccessible = null; isVacationer = null; locationStatus = null; localInstalacao = null
+        acessibilidade = null; numeroHidrometro = ""; economias = ""; observacao = ""
     }
 }

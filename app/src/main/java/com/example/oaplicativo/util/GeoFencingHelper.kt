@@ -109,6 +109,7 @@ object GeoFencingHelper {
     /**
      * SÊNIOR LOGIC: Extrai a parte do GRUPO do identificador da rota.
      * Ex: "18.7" -> "18"
+     * SÊNIOR FIX: Só processa se a cidade selecionada for ITAPOÁ
      */
     fun findSuggestedGroup(cidadeNome: String?, lat: Double?, lng: Double?): String? {
         if (lat == null || lng == null) return null
@@ -116,8 +117,8 @@ object GeoFencingHelper {
         val normalizedCity = (cidadeNome ?: "").uppercase(java.util.Locale.ROOT)
             .replace("Á", "A").replace("Ã", "A").replace("Õ", "O").trim()
             
-        // Se a cidade estiver vazia ou for ITAPOA, permitimos a detecção
-        if (normalizedCity.isNotBlank() && !normalizedCity.contains(TARGET_CITY_RAW)) return null
+        // SÊNIOR REGIONAL LOCK: Se a cidade não for ITAPOA, não aplicamos as regras de GeoFencing de Itapoá
+        if (!normalizedCity.contains(TARGET_CITY_RAW)) return null
 
         val fullRoute = findSuggestedRouteId(lat, lng) ?: return null
         return fullRoute.split(".").firstOrNull()
@@ -126,6 +127,7 @@ object GeoFencingHelper {
     /**
      * SÊNIOR LOGIC: Extrai a parte da ROTA do identificador da rota.
      * Ex: "18.7" -> "7"
+     * SÊNIOR FIX: Só processa se a cidade selecionada for ITAPOÁ
      */
     fun findSuggestedRoute(cidadeNome: String?, lat: Double?, lng: Double?): String? {
         if (lat == null || lng == null) return null
@@ -133,7 +135,7 @@ object GeoFencingHelper {
         val normalizedCity = (cidadeNome ?: "").uppercase(java.util.Locale.ROOT)
             .replace("Á", "A").replace("Ã", "A").replace("Õ", "O").trim()
             
-        if (normalizedCity.isNotBlank() && !normalizedCity.contains(TARGET_CITY_RAW)) return null
+        if (!normalizedCity.contains(TARGET_CITY_RAW)) return null
 
         val fullRoute = findSuggestedRouteId(lat, lng) ?: return null
         return fullRoute.split(".").getOrNull(1)

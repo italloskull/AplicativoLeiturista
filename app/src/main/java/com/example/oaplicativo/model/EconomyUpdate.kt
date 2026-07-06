@@ -25,6 +25,7 @@ data class EconomyUpdate(
     @SerialName("data") val date: String? = null,
     
     @SerialName("cidade") val cidade: String? = null,
+    @SerialName("cidade_id") val cidadeId: String? = null,
     @SerialName("grupo_sugerido") val grupoSugerido: String? = null,
     @SerialName("rota_sugerida") val rotaSugerida: String? = null,
     
