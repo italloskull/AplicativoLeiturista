@@ -119,7 +119,7 @@ fun LoginScreen(
                     color = Color(0xFF1E293B)
                 )
                 Text(
-                    "Gestão de Saneamento", 
+                    "Informações Atualizadas",
                     style = MaterialTheme.typography.bodyMedium, 
                     color = Color(0xFF64748B)
                 )

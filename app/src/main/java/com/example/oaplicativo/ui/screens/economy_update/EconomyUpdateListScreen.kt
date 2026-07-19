@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Comment
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -41,6 +42,9 @@ fun EconomyUpdateListScreen(
     val scope = rememberCoroutineScope()
     val items by viewModel.items.collectAsState()
     val state by viewModel.state.collectAsState()
+    val authorizedCities by viewModel.authorizedCities.collectAsState()
+    val selectedCityFilter by viewModel.selectedCityFilter.collectAsState()
+    
     val context = LocalContext.current
     val locationHelper = remember { LocationHelper(context) }
     var userLocation by remember { mutableStateOf<android.location.Location?>(null) }
@@ -62,9 +66,25 @@ fun EconomyUpdateListScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val filteredItems = items.filter {
-        it.buildingName?.contains(searchQuery, ignoreCase = true) == true ||
-        it.hdNumber?.contains(searchQuery, ignoreCase = true) == true
+    // SÊNIOR PERF: Filtro inteligente via Sequence para Grandes Empreendimentos
+    val filteredItems by remember(items, searchQuery, selectedCityFilter) {
+        derivedStateOf {
+            val query = searchQuery.trim().lowercase()
+            val selectedCityName = selectedCityFilter?.nome?.lowercase()?.trim()
+
+            items.asSequence().filter { item ->
+                val matchesSearch = if (query.isBlank()) true 
+                                   else (item.buildingName?.lowercase()?.contains(query) == true || 
+                                         item.hdNumber?.contains(query) == true)
+                
+                val customerCity = item.cidade?.lowercase()?.trim()
+                val matchesCity = if (selectedCityName == null) true
+                                 else (customerCity == selectedCityName || 
+                                       customerCity?.replace("á", "a") == selectedCityName.replace("á", "a"))
+                
+                matchesSearch && matchesCity
+            }.take(100).toList()
+        }
     }
 
     Scaffold(
@@ -73,21 +93,19 @@ fun EconomyUpdateListScreen(
                 title = { 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth(0.9f) // SÊNIOR FIX: Limita a largura para não bater no menu de 3 pontos
+                        modifier = Modifier.fillMaxWidth(0.9f)
                     ) {
                         Text(
-                            text = "G. EMPREENDIMENTOS", // SÊNIOR UX: Nome abreviado para ganhar espaço horizontal
+                            text = "G. EMPREENDIMENTOS", 
                             style = MaterialTheme.typography.titleMedium, 
                             fontWeight = FontWeight.Black,
                             modifier = Modifier.weight(1f),
                             maxLines = 1
                         )
                         
+                        var showCityMenu by remember { mutableStateOf(false) }
                         val profile by com.example.oaplicativo.data.repository.AuthRepositoryImpl.getInstance().currentUserProfile.collectAsState()
                         val isPowerUser = profile?.cargo?.lowercase()?.let { it == "administrador" || it == "desenvolvedor" } ?: false
-                        val authorizedCities by viewModel.authorizedCities.collectAsState()
-                        val selectedCityFilter by viewModel.selectedCityFilter.collectAsState()
-                        var showCityMenu by remember { mutableStateOf(false) }
 
                         if (isPowerUser && authorizedCities.size > 1) {
                             Box(modifier = Modifier.padding(start = 4.dp)) {
@@ -162,10 +180,7 @@ fun EconomyUpdateListScreen(
             )
 
             AsyncDataContainer(
-                items = filteredItems.filter { item ->
-                    val selectedCityFilter = viewModel.selectedCityFilter.collectAsState().value
-                    selectedCityFilter == null || item.cidade == selectedCityFilter.nome
-                },
+                items = filteredItems,
                 isLoading = state is EconomyUpdateState.Loading && items.isEmpty(),
                 onRetry = { viewModel.fetchEconomyUpdates() },
                 error = if (state is EconomyUpdateState.Error) (state as EconomyUpdateState.Error).message else null
@@ -215,7 +230,9 @@ fun EconomyItemRow(
                 Text("HD: ${item.hdNumber ?: "Vazio"} • ${item.economiesCount ?: 0} Econ.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 
                 if (item.latitude != null && item.longitude != null && userLocation != null) {
-                    val dist = locationHelper.calculateDistance(userLocation.latitude, userLocation.longitude, item.latitude, item.longitude)
+                    val dist = remember(item.latitude, item.longitude, userLocation) {
+                        locationHelper.calculateDistance(userLocation.latitude, userLocation.longitude, item.latitude, item.longitude)
+                    }
                     Surface(
                         color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f),
                         shape = MaterialTheme.shapes.small,

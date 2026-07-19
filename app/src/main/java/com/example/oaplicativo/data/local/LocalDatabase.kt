@@ -7,6 +7,7 @@ import android.database.sqlite.SQLiteOpenHelper
 import com.example.oaplicativo.model.Customer
 import com.example.oaplicativo.model.EconomyUpdate
 import com.example.oaplicativo.model.UserProfile
+import com.example.oaplicativo.model.Cidade
 import org.json.JSONObject
 
 class LocalDatabase(context: Context) :
@@ -18,12 +19,19 @@ class LocalDatabase(context: Context) :
         db.execSQL(CREATE_TABLE_STATS)
         db.execSQL(CREATE_TABLE_HISTORY)
         db.execSQL(CREATE_TABLE_USER_CACHE)
+        db.execSQL(CREATE_TABLE_CITIES_CACHE)
+
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_customers_sync ON customers (isSynced)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_customers_city ON customers (cidade)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_ge_sync ON grandes_empreendimentos (isSynced)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        if (oldVersion < 40) {
+        if (oldVersion < 41) {
             db.execSQL("DROP TABLE IF EXISTS customers")
             db.execSQL("DROP TABLE IF EXISTS grandes_empreendimentos")
+            db.execSQL("DROP TABLE IF EXISTS user_cache")
+            db.execSQL("DROP TABLE IF EXISTS cities_cache")
             onCreate(db)
         }
     }
@@ -96,7 +104,6 @@ class LocalDatabase(context: Context) :
         db.query("customers", null, selection, args, null, null, "capturado_em DESC").use { cursor ->
             while (cursor.moveToNext()) {
                 val currentId = cursor.getString(cursor.getColumnIndexOrThrow("id"))
-                // SÊNIOR FIX: Reconstrução COMPLETA do objeto para não perder metadados vitais (Grupo, Rota, etc)
                 val customer = Customer(
                     id = currentId,
                     cidadeId = cursor.getString(cursor.getColumnIndexOrThrow("cidade_id")),
@@ -106,49 +113,12 @@ class LocalDatabase(context: Context) :
                     registrationDigit = cursor.getString(cursor.getColumnIndexOrThrow("digito_matricula")),
                     email = cursor.getString(cursor.getColumnIndexOrThrow("email")),
                     celular = cursor.getString(cursor.getColumnIndexOrThrow("celular")),
-                    isStandardMeasurementBox = cursor.getString(cursor.getColumnIndexOrThrow("caixa_padrao")),
-                    isStandardizedSeals = cursor.getString(cursor.getColumnIndexOrThrow("lacres_padronizados")),
-                    isHdAccessible = cursor.getString(cursor.getColumnIndexOrThrow("hd_acessivel")),
-                    isVacationer = cursor.getString(cursor.getColumnIndexOrThrow("veranista")),
-                    possuiPiscina = cursor.getString(cursor.getColumnIndexOrThrow("possui_piscina")),
-                    possuiCaixaAgua = cursor.getString(cursor.getColumnIndexOrThrow("possui_caixa_agua")),
                     latitude = if (cursor.isNull(cursor.getColumnIndexOrThrow("latitude"))) null else cursor.getDouble(cursor.getColumnIndexOrThrow("latitude")),
                     longitude = if (cursor.isNull(cursor.getColumnIndexOrThrow("longitude"))) null else cursor.getDouble(cursor.getColumnIndexOrThrow("longitude")),
-                    locationStatus = cursor.getString(cursor.getColumnIndexOrThrow("situacao_local")),
-                    economiesCount = if (cursor.isNull(cursor.getColumnIndexOrThrow("qtd_economias"))) null else cursor.getInt(cursor.getColumnIndexOrThrow("qtd_economias")),
-                    addedBy = cursor.getString(cursor.getColumnIndexOrThrow("adicionado_por")),
                     capturedAt = cursor.getString(cursor.getColumnIndexOrThrow("capturado_em")),
                     date = cursor.getString(cursor.getColumnIndexOrThrow("date")),
                     quality = cursor.getString(cursor.getColumnIndexOrThrow("qualidade")),
-                    entrevistadoNome = cursor.getString(cursor.getColumnIndexOrThrow("entrevistado_nome")),
-                    entrevistadoCpf = cursor.getString(cursor.getColumnIndexOrThrow("entrevistado_cpf")),
-                    entrevistadoMae = cursor.getString(cursor.getColumnIndexOrThrow("entrevistado_mae")),
-                    entrevistadoNascimento = cursor.getString(cursor.getColumnIndexOrThrow("entrevistado_nascimento")),
-                    entrevistadoSexo = cursor.getString(cursor.getColumnIndexOrThrow("entrevistado_sexo")),
-                    entrevistadoApresentouDoc = cursor.getString(cursor.getColumnIndexOrThrow("entrevistado_apresentou_doc")),
-                    entrevistadoQualDoc = cursor.getString(cursor.getColumnIndexOrThrow("entrevistado_qual_doc")),
-                    logradouro = cursor.getString(cursor.getColumnIndexOrThrow("logradouro")),
-                    numero = cursor.getString(cursor.getColumnIndexOrThrow("numero")),
-                    complemento = cursor.getString(cursor.getColumnIndexOrThrow("complemento")),
-                    bairro = cursor.getString(cursor.getColumnIndexOrThrow("bairro")),
                     cidade = cursor.getString(cursor.getColumnIndexOrThrow("cidade")),
-                    uf = cursor.getString(cursor.getColumnIndexOrThrow("uf")),
-                    cep = cursor.getString(cursor.getColumnIndexOrThrow("cep")),
-                    pavimentoRua = cursor.getString(cursor.getColumnIndexOrThrow("pavimento_rua")),
-                    pavimentoCalcada = cursor.getString(cursor.getColumnIndexOrThrow("pavimento_calcada")),
-                    fonteAbastecimento = cursor.getString(cursor.getColumnIndexOrThrow("fonte_abastecimento")),
-                    existeRedeAgua = cursor.getString(cursor.getColumnIndexOrThrow("existe_rede_agua")),
-                    observacao = cursor.getString(cursor.getColumnIndexOrThrow("observacao")),
-                    beneficiarioSocial = cursor.getString(cursor.getColumnIndexOrThrow("beneficiario_social")),
-                    usaAguaVizinho = cursor.getString(cursor.getColumnIndexOrThrow("usa_agua_vizinho")),
-                    possuiHidrometro = cursor.getString(cursor.getColumnIndexOrThrow("possui_hidrometro")),
-                    grupoSugerido = cursor.getString(cursor.getColumnIndexOrThrow("grupo_sugerido")),
-                    setor = cursor.getString(cursor.getColumnIndexOrThrow("setor")),
-                    quadra = cursor.getString(cursor.getColumnIndexOrThrow("quadra")),
-                    localInstalacao = cursor.getString(cursor.getColumnIndexOrThrow("local_instalacao")),
-                    acessibilidade = cursor.getString(cursor.getColumnIndexOrThrow("acessibilidade")),
-                    rotaSugerida = cursor.getString(cursor.getColumnIndexOrThrow("rota_sugerida")),
-                    numeroHidrometro = cursor.getString(cursor.getColumnIndexOrThrow("numero_hidrometro")),
                     isSynced = false
                 )
                 list.add(currentId to customer)
@@ -194,24 +164,11 @@ class LocalDatabase(context: Context) :
         db.query("grandes_empreendimentos", null, selection, args, null, null, "data DESC").use { cursor ->
             while (cursor.moveToNext()) {
                 val currentId = cursor.getString(cursor.getColumnIndexOrThrow("id"))
-                // SÊNIOR FIX: Reconstrução COMPLETA para Grandes Empreendimentos
                 val ge = EconomyUpdate(
                     id = currentId,
-                    leituristaId = cursor.getString(cursor.getColumnIndexOrThrow("leiturista_id")),
-                    hdNumber = cursor.getString(cursor.getColumnIndexOrThrow("numero_hd")),
                     buildingName = cursor.getString(cursor.getColumnIndexOrThrow("nome_edificio")),
-                    constructionCompany = cursor.getString(cursor.getColumnIndexOrThrow("construtora")),
-                    economiesCount = if (cursor.isNull(cursor.getColumnIndexOrThrow("qtd_economias"))) null else cursor.getInt(cursor.getColumnIndexOrThrow("qtd_economias")),
-                    floorsCount = if (cursor.isNull(cursor.getColumnIndexOrThrow("qtd_pavimentos"))) null else cursor.getInt(cursor.getColumnIndexOrThrow("qtd_pavimentos")),
-                    electricityMeterNumber = cursor.getString(cursor.getColumnIndexOrThrow("medidor_energia")),
-                    latitude = if (cursor.isNull(cursor.getColumnIndexOrThrow("latitude"))) null else cursor.getDouble(cursor.getColumnIndexOrThrow("latitude")),
-                    longitude = if (cursor.isNull(cursor.getColumnIndexOrThrow("longitude"))) null else cursor.getDouble(cursor.getColumnIndexOrThrow("longitude")),
-                    addedBy = cursor.getString(cursor.getColumnIndexOrThrow("adicionado_por")),
-                    date = cursor.getString(cursor.getColumnIndexOrThrow("data")),
                     cidade = cursor.getString(cursor.getColumnIndexOrThrow("cidade")),
                     cidadeId = cursor.getString(cursor.getColumnIndexOrThrow("cidade_id")),
-                    grupoSugerido = cursor.getString(cursor.getColumnIndexOrThrow("grupo_sugerido")),
-                    rotaSugerida = cursor.getString(cursor.getColumnIndexOrThrow("rota_sugerida")),
                     isSynced = false
                 )
                 list.add(currentId to ge)
@@ -281,15 +238,16 @@ class LocalDatabase(context: Context) :
             put("username", user); put("cargo", cargo)
         }
         val values = ContentValues().apply {
-            put("id", userId)
+            put("id", user.lowercase().trim()) // SÊNIOR FIX: Indexamos pelo USERNAME para busca offline rápida
             put("data", obj.toString())
         }
         db.insertWithOnConflict("user_cache", null, values, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
-    fun getCachedUserProfile(userId: String): UserProfile? {
+    fun getCachedUserProfile(identifier: String): UserProfile? {
         val db = readableDatabase
-        db.query("user_cache", arrayOf("data"), "id = ?", arrayOf(userId), null, null, null).use { cursor ->
+        // SÊNIOR FIX: Busca por ID (username) para garantir paridade com o input do login
+        db.query("user_cache", arrayOf("data"), "id = ?", arrayOf(identifier.lowercase().trim()), null, null, null).use { cursor ->
             if (cursor.moveToFirst()) {
                 val data = cursor.getString(0)
                 val obj = JSONObject(data)
@@ -306,6 +264,38 @@ class LocalDatabase(context: Context) :
         return null
     }
 
+    fun cacheUserCities(cities: List<Cidade>) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            db.delete("cities_cache", null, null) 
+            cities.forEach { city ->
+                val values = ContentValues().apply {
+                    put("id", city.id)
+                    put("nome", city.nome)
+                }
+                db.insert("cities_cache", null, values)
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun getCachedCities(): List<Cidade> {
+        val list = mutableListOf<Cidade>()
+        val db = readableDatabase
+        db.query("cities_cache", null, null, null, null, null, "nome ASC").use { cursor ->
+            while (cursor.moveToNext()) {
+                list.add(Cidade(
+                    id = cursor.getString(cursor.getColumnIndexOrThrow("id")),
+                    nome = cursor.getString(cursor.getColumnIndexOrThrow("nome"))
+                ))
+            }
+        }
+        return list
+    }
+
     companion object {
         @Volatile private var instance: LocalDatabase? = null
         fun getInstance(context: Context): LocalDatabase {
@@ -314,8 +304,8 @@ class LocalDatabase(context: Context) :
             }
         }
 
-        private const val DATABASE_NAME = "sanitation_final_v8.db"
-        private const val DATABASE_VERSION = 40
+        private const val DATABASE_NAME = "sanitation_final_v11.db"
+        private const val DATABASE_VERSION = 41
         
         private const val CREATE_TABLE_CUSTOMERS = """
             CREATE TABLE IF NOT EXISTS customers (
@@ -339,5 +329,6 @@ class LocalDatabase(context: Context) :
         private const val CREATE_TABLE_STATS = "CREATE TABLE IF NOT EXISTS stats (id TEXT PRIMARY KEY, value INTEGER)"
         private const val CREATE_TABLE_HISTORY = "CREATE TABLE IF NOT EXISTS history (id TEXT PRIMARY KEY, date TEXT, count INTEGER)"
         private const val CREATE_TABLE_USER_CACHE = "CREATE TABLE IF NOT EXISTS user_cache (id TEXT PRIMARY KEY, data TEXT)"
+        private const val CREATE_TABLE_CITIES_CACHE = "CREATE TABLE IF NOT EXISTS cities_cache (id TEXT PRIMARY KEY, nome TEXT)"
     }
 }

@@ -7,7 +7,6 @@ import com.example.oaplicativo.data.SupabaseClient
 import com.example.oaplicativo.domain.repository.CustomerRepository
 import com.example.oaplicativo.model.Customer
 import io.github.jan.supabase.postgrest.postgrest
-import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.realtime.PostgresAction
 import io.github.jan.supabase.realtime.RealtimeChannel
 import io.github.jan.supabase.realtime.channel
@@ -51,6 +50,7 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
 
     private fun setupRealtime() {
         scope.launch {
+            var retryDelay = 5000L
             while (true) {
                 try {
                     realtimeChannel?.unsubscribe()
@@ -62,8 +62,13 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
                         fetchCustomers()
                     }
                     myChannel.subscribe()
+                    retryDelay = 5000L
                     break
-                } catch (_: Exception) { delay(10000) }
+                } catch (e: Exception) {
+                    Log.w("debugs", "🛰️ [REALTIME] Falha na conexão. Re-tentando em ${retryDelay/1000}s...")
+                    delay(retryDelay)
+                    retryDelay = (retryDelay * 2).coerceAtMost(60000L)
+                }
             }
         }
     }
@@ -72,39 +77,21 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
         refreshMutex.withLock {
             try {
                 val userCityName = com.example.oaplicativo.util.CityUtils.getFriendlyCityName(cidadeId)
-                Log.d("debugs", "🔍 [RECADASTRO] Iniciando busca... Cidade: $userCityName | GodMode: $isAdmin")
                 
                 val list = withContext(Dispatchers.IO) {
                     val authRepo = AuthRepositoryImpl.getInstance()
                     val authorizedCities = authRepo.getUserCities()
                     val cityNames = authorizedCities.map { it.nome }
-                    
-                    Log.d("debugs", "🎯 [QUERY] Cidades autorizadas no chaveiro: $cityNames")
 
                     client.postgrest["clientes"].select {
-                        // SÊNIOR BI FIX: Busca registros de TODAS as cidades autorizadas
                         if (!isAdmin && cityNames.isNotEmpty()) {
                             filter { or { cityNames.forEach { eq("cidade", it) } } }
-                        } else if (isAdmin) {
-                            Log.d("debugs", "👑 [GOD_VIEW] Desenvolvedor ignorando filtros.")
                         }
                         order("capturado_em", order = io.github.jan.supabase.postgrest.query.Order.DESCENDING)
                         limit(500)
                     }.decodeList<Customer>()
                 }
                 
-                Log.d("debugs", "✅ [RECADASTRO] Sucesso! ${list.size} registros baixados.")
-                
-                if (list.isNotEmpty()) {
-                    list.take(15).forEach { 
-                        Log.d("debugs", "   - Audit: ${it.name} | Cidade no Banco: '${it.cidade}' | ID: ${it.cidadeId}") 
-                    }
-                }
-                
-                if (list.isNotEmpty()) {
-                    list.take(3).forEach { Log.d("debugs", "   - Registro Cloud: ${it.name} | Cidade: ${it.cidade} | Matrícula: ${it.registrationNumber}") }
-                }
-
                 remoteCustomers = list
                 combineAndEmit()
             } catch (e: Exception) {
@@ -115,7 +102,6 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
 
     override fun updateLocalCustomers(localCustomers: List<Customer>) {
         localPendingCustomers = localCustomers.map { it.copy(isSynced = false) }
-        Log.d("debugs", "🏠 [RECADASTRO] Cache local atualizado: ${localPendingCustomers.size} pendentes.")
         combineAndEmit()
     }
 
@@ -123,20 +109,22 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
         remoteCustomers = emptyList()
         localPendingCustomers = emptyList()
         _customers.value = emptyList()
-        Log.d("debugs", "🧹 [RECADASTRO] Cache de memória limpo.")
     }
 
     private fun combineAndEmit() {
         scope.launch(Dispatchers.Default) {
             refreshMutex.withLock {
-                // SÊNIOR FIX: Removemos o filtro de visibilidade rigoroso aqui.
-                // O filtro regional agora é feito na UI pelo seletor, permitindo que o 
-                // Admin veja registros de qualquer cidade autorizada sem que eles sumam da lista.
-                val combined = (localPendingCustomers + remoteCustomers)
-                    .distinctBy { it.id ?: UUID.randomUUID().toString() }
+                // SÊNIOR SMART MERGE: Identificamos quais IDs já estão no servidor
+                val remoteIds = remoteCustomers.mapNotNull { it.id }.toSet()
+
+                val combined = (localPendingCustomers.asSequence().map { 
+                    // Se o item local já foi detectado no servidor, mudamos o status visual IMEDIATAMENTE
+                    if (remoteIds.contains(it.id)) it.copy(isSynced = true) else it
+                } + remoteCustomers.asSequence())
+                .distinctBy { it.id ?: "TEMP_${System.nanoTime()}" }
+                .toList()
                 
                 _customers.value = combined
-                Log.d("debugs", "📊 [RECADASTRO] Lista emitida com ${combined.size} itens globais.")
             }
         }
     }
@@ -149,10 +137,14 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
         if (customers.isEmpty()) return
         withContext(Dispatchers.IO) {
             try {
-                Log.d("SyncDebug", "🚀 Enviando lote de ${customers.size} registros.")
                 client.postgrest["clientes"].upsert(customers)
-                Log.d("SyncDebug", "✅ SUCESSO: Lote sincronizado.")
-                fetchCustomers()
+                
+                // SÊNIOR FIX: Recuperamos o perfil atual para garantir que o fetch ocorra com os filtros certos
+                val profile = AuthRepositoryImpl.getInstance().currentUserProfile.value
+                fetchCustomers(
+                    cidadeId = profile?.cidadeId,
+                    isAdmin = profile?.cargo?.lowercase() == "desenvolvedor"
+                )
             } catch (e: Exception) {
                 Log.e("SyncDebug", "❌ ERRO NO LOTE: ${e.message}")
                 throw e
@@ -212,7 +204,6 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
                     androidx.work.ExistingWorkPolicy.REPLACE,
                     syncRequest
                 )
-                Log.d("debugs", "🚀 [REPO] Sincronismo imediato acionado para: ${customer.name}")
             } catch (e: Exception) {
                 Log.e("debugs", "❌ [REPO] Falha ao iniciar ciclo: ${e.message}")
             }

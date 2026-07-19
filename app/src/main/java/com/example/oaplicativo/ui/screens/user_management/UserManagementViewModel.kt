@@ -14,6 +14,7 @@ import com.example.oaplicativo.model.Cidade
 import com.example.oaplicativo.model.UserProfile
 import com.example.oaplicativo.model.UserCityRelation
 import io.github.jan.supabase.postgrest.postgrest
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -46,19 +47,23 @@ class UserManagementViewModel(application: Application) : AndroidViewModel(appli
         viewModelScope.launch {
             _state.value = UserManagementState.Loading
             try {
-                // 1. Carrega todos os usuários (Ordem Alfabética)
-                val userList = client.postgrest["perfis_usuario"]
-                    .select() {
-                        order("full_name", io.github.jan.supabase.postgrest.query.Order.ASCENDING)
-                    }.decodeList<UserProfile>()
-                _users.value = userList
+                // SÊNIOR PERF: Carregamento paralelo de usuários e cidades
+                val usersDef = async {
+                    client.postgrest["perfis_usuario"]
+                        .select() {
+                            order("full_name", io.github.jan.supabase.postgrest.query.Order.ASCENDING)
+                        }.decodeList<UserProfile>()
+                }
+                
+                val citiesDef = async {
+                    client.postgrest["cidades"]
+                        .select() {
+                            order("nome", io.github.jan.supabase.postgrest.query.Order.ASCENDING)
+                        }.decodeList<Cidade>()
+                }
 
-                // 2. Carrega todas as cidades disponíveis
-                val cityList = client.postgrest["cidades"]
-                    .select() {
-                        order("nome", io.github.jan.supabase.postgrest.query.Order.ASCENDING)
-                    }.decodeList<Cidade>()
-                _cidades.value = cityList
+                _users.value = usersDef.await()
+                _cidades.value = citiesDef.await()
                 
                 _state.value = UserManagementState.Idle
             } catch (e: Exception) {

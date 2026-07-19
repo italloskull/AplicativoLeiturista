@@ -7,6 +7,7 @@ import com.example.oaplicativo.data.SupabaseClient
 import com.example.oaplicativo.data.local.LocalDatabase
 import com.example.oaplicativo.domain.repository.AuthRepository
 import com.example.oaplicativo.model.UserProfile
+import com.example.oaplicativo.model.Cidade
 import com.example.oaplicativo.util.SecurityUtils
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.Email
@@ -22,13 +23,22 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class AuthRepositoryImpl private constructor() : AuthRepository {
     private val client = SupabaseClient.client
     private val _currentUserProfile = MutableStateFlow<UserProfile?>(null)
     override val currentUserProfile: StateFlow<UserProfile?> = _currentUserProfile.asStateFlow()
+    
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var applicationContext: Context? = null
+
+    fun initialize(context: Context) {
+        applicationContext = context.applicationContext
+    }
 
     override suspend fun loadProfileFromCache(context: Context) {
         val identifier = SecurityUtils.getRememberedIdentifier(context)
@@ -41,13 +51,11 @@ class AuthRepositoryImpl private constructor() : AuthRepository {
         }
     }
 
-    override suspend fun login(identifier: String, password: String) {
+    override suspend fun login(identifier: String, pass: String) {
         val trimmedIdentifier = identifier.trim().lowercase()
-        
         Log.d("debugs", "🔐 [AUTH] Iniciando descoberta de e-mail para: $trimmedIdentifier")
 
         val email = if (trimmedIdentifier.contains("@")) {
-            Log.d("debugs", "🎯 [AUTH] Entrada detectada como e-mail direto.")
             trimmedIdentifier
         } else {
             try {
@@ -56,21 +64,13 @@ class AuthRepositoryImpl private constructor() : AuthRepository {
                     buildJsonObject { put("username_param", trimmedIdentifier) }
                 )
                 val raw = result.data.trim().removeSurrounding("\"")
-                Log.d("debugs", "🎯 [AUTH] RPC retornou e-mail: $raw")
-                
                 if (raw.isBlank() || raw == "null") throw Exception("Usuário não encontrado")
                 raw
             } catch (e: Exception) {
                 val message = e.message ?: ""
-                Log.e("debugs", "❌ [AUTH] Erro na RPC get_email_by_username: $message")
-                
-                if (message.contains("Network", ignoreCase = true) || 
-                    message.contains("timeout", ignoreCase = true) ||
-                    message.contains("Unable to resolve host", ignoreCase = true) ||
-                    message.contains("Failed to connect", ignoreCase = true)) {
+                if (message.contains("Network") || message.contains("timeout") || message.contains("resolve host")) {
                     throw Exception("OFFLINE_ERROR")
                 } else {
-                    // SÊNIOR FALLBACK: Se o username for matheus, tenta o domínio oficial
                     if (trimmedIdentifier == "matheus") "matheus@equipedecampo.app"
                     else throw Exception("Usuário não encontrado")
                 }
@@ -80,7 +80,7 @@ class AuthRepositoryImpl private constructor() : AuthRepository {
         try {
             client.auth.signInWith(Email) {
                 this.email = email
-                this.password = password
+                this.password = pass
             }
             fetchProfile()
         } catch (e: Exception) {
@@ -94,10 +94,8 @@ class AuthRepositoryImpl private constructor() : AuthRepository {
         if (user != null) {
             try {
                 val profile = client.postgrest["perfis_usuario"]
-                    .select {
-                        filter { eq("id", user.id) }
-                    }.decodeSingleOrNull<UserProfile>()
-                
+                    .select { filter { eq("id", user.id) } }
+                    .decodeSingleOrNull<UserProfile>()
                 _currentUserProfile.value = profile
             } catch (e: Exception) {
                 Log.e("AuthRepo", "Erro ao carregar perfil: ${e.message}")
@@ -109,36 +107,23 @@ class AuthRepositoryImpl private constructor() : AuthRepository {
         _currentUserProfile.value = profile
     }
 
-    override suspend fun registerUser(
-        name: String,
-        email: String,
-        password: String,
-        username: String,
-        role: String,
-        cidades: List<String>
-    ) {
+    override suspend fun registerUser(name: String, email: String, password: String, username: String, role: String, cidades: List<String>) {
         val payload = buildJsonObject {
             put("email", email.trim().lowercase())
             put("password", password.trim())
             put("full_name", name.trim())
             put("username", username.trim())
             put("cargo", role.trim())
-            val primaryCity = cidades.firstOrNull() ?: ""
-            put("cidade_id", primaryCity)
-            put("cidades", buildJsonArray {
-                cidades.forEach { add(it) }
-            })
+            put("cidade_id", cidades.firstOrNull() ?: "")
+            put("cidades", buildJsonArray { cidades.forEach { add(it) } })
         }
-
         try {
             client.functions.invoke("create-user") {
                 contentType(ContentType.Application.Json)
                 setBody(payload)
             }
         } catch (e: Exception) {
-            val msg = e.message ?: "Erro desconhecido"
-            Log.e("AuthRepo", "Erro ao criar usuário: $msg")
-            throw Exception(msg)
+            throw Exception(e.message ?: "Erro ao criar usuário")
         }
     }
 
@@ -147,42 +132,60 @@ class AuthRepositoryImpl private constructor() : AuthRepository {
             CustomerRepositoryImpl.getInstance().clearCache()
             EconomyRepositoryImpl.getInstance().clearCache()
             client.auth.signOut()
-            Log.d("debugs", "🔒 [AUTH] Logout realizado e memória global limpa.")
         } catch (_: Exception) {}
         _currentUserProfile.value = null
     }
 
-    override suspend fun getUserCities(): List<com.example.oaplicativo.model.Cidade> {
-        val userId = client.auth.currentUserOrNull()?.id ?: return emptyList()
+    override suspend fun getUserCities(): List<Cidade> {
+        // SÊNIOR BUG FIX: No modo offline, o 'client.auth.currentUser' é nulo.
+        // Devemos usar o ID do perfil que carregamos no cache local durante o login offline.
+        val userId = _currentUserProfile.value?.id
+        val ctx = applicationContext ?: return emptyList()
+        val localDb = LocalDatabase.getInstance(ctx)
+
+        // SÊNIOR OFFLINE-FIRST: Tenta carregar do cache SQLite IMEDIATAMENTE
+        val cached = localDb.getCachedCities()
+        if (cached.isNotEmpty()) {
+            Log.d("debugs", "💾 [AUTH] Usando cache local de cidades.")
+            // Se houver userId (está online), atualiza em background para a próxima vez
+            if (userId != null) {
+                scope.launch { updateCitiesCache(userId) }
+            }
+            return cached
+        }
+
+        // Caso inicial ou vácuo de cache: Busca na nuvem se houver userId
+        return if (userId != null) updateCitiesCache(userId) else emptyList()
+    }
+
+    private suspend fun updateCitiesCache(userId: String): List<Cidade> {
         return try {
+            val ctx = applicationContext ?: return emptyList()
+            val localDb = LocalDatabase.getInstance(ctx)
+            
             val relations = client.postgrest["usuario_cidades"]
-                .select {
-                    filter { eq("usuario_id", userId) }
-                }.decodeList<com.example.oaplicativo.model.UserCityRelation>()
+                .select { filter { eq("usuario_id", userId) } }
+                .decodeList<com.example.oaplicativo.model.UserCityRelation>()
             
             val cityIds = relations.map { it.cidadeId }
-            
-            if (cityIds.isEmpty()) {
-                Log.w("debugs", "⚠️ [AUTH] Usuário sem vínculos na tabela nova.")
-                return emptyList()
-            }
+            if (cityIds.isEmpty()) return emptyList()
 
             val cities = client.postgrest["cidades"]
-                .select {
-                    filter { or { cityIds.forEach { eq("id", it) } } }
-                }.decodeList<com.example.oaplicativo.model.Cidade>()
+                .select { filter { or { cityIds.forEach { eq("id", it) } } } }
+                .decodeList<Cidade>()
             
-            Log.d("debugs", "✅ [AUTH] Cidades autorizadas carregadas: ${cities.map { it.nome }}")
+            // SÊNIOR PERSISTENCE: Grava no SQLite v41
+            localDb.cacheUserCities(cities)
+            Log.d("debugs", "✅ [AUTH] Cache regional sincronizado via nuvem.")
             cities
         } catch (e: Exception) {
-            Log.e("debugs", "❌ [AUTH] Erro ao buscar cidades autorizadas: ${e.message}")
+            Log.e("debugs", "❌ [AUTH] Falha ao atualizar cache regional: ${e.message}")
             emptyList()
         }
     }
 
     companion object {
-        @Volatile
-        private var instance: AuthRepositoryImpl? = null
+        @Volatile private var instance: AuthRepositoryImpl? = null
         fun getInstance(): AuthRepositoryImpl {
             return instance ?: synchronized(this) {
                 instance ?: AuthRepositoryImpl().also { instance = it }

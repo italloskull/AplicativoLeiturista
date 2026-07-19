@@ -9,6 +9,7 @@ import com.example.oaplicativo.data.repository.AuthRepositoryImpl
 import com.example.oaplicativo.model.Customer
 import com.example.oaplicativo.model.EconomyUpdate
 import io.github.jan.supabase.postgrest.postgrest
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,7 +30,7 @@ data class TeamMemberStats(
     val name: String,
     val totalRecadastro: Int,
     val totalGE: Int,
-    val averageQuality: Float // 0.0 to 1.0
+    val averageQuality: Float 
 )
 
 data class GroupStats(
@@ -57,7 +58,6 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
     val uiState: StateFlow<AdminDashboardState> = _uiState.asStateFlow()
 
     private val authRepo = AuthRepositoryImpl.getInstance()
-
     private val _authorizedCities = MutableStateFlow<List<com.example.oaplicativo.model.Cidade>>(emptyList())
     val authorizedCities: StateFlow<List<com.example.oaplicativo.model.Cidade>> = _authorizedCities.asStateFlow()
 
@@ -93,7 +93,6 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
             val currentState = _uiState.value
 
             try {
-                // SÊNIOR BI FIX: Inteligência Temporal via Coluna 'date'/'data' (100% Fidedigna)
                 val brFormatter = DateTimeFormatter.ofPattern("yyyy/MM/dd")
                 val now = ZonedDateTime.now(java.time.ZoneId.of("America/Sao_Paulo"))
                 
@@ -107,99 +106,86 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                 val filterEndDate = if (currentState.period == DashboardPeriod.CUSTOM) currentState.endDate?.take(10)?.replace("-", "/") else null
 
                 val cityNameFilter = _selectedCityFilter.value?.nome
-                Log.d("debugs", "📊 [BI_QUERY] Filtro Ativado: $filterStartDate até ${filterEndDate ?: "Hoje"} | CidadeFilter: $cityNameFilter")
+                val cityName = com.example.oaplicativo.util.CityUtils.getFriendlyCityName(targetCidadeId)
 
-                // SÊNIOR BI DEBUG: MODO GOD VIEW (Busca ampla para auditoria de sumiço)
-                val allDataTestRec = SupabaseClient.client.postgrest["clientes"].select().decodeList<Customer>()
-                val allDataTestGE = SupabaseClient.client.postgrest["grandes_empreendimentos"].select().decodeList<EconomyUpdate>()
-                Log.d("debugs", "🕵️‍♂️ [GOD_VIEW] Total Físico no Supabase: ${allDataTestRec.size} Rec. e ${allDataTestGE.size} GE.")
-
-                val cityName = getFriendlyCityName(targetCidadeId)
-
-                // 1. Busca Clientes com Normalização de Filtro
-                val remoteCustomers = SupabaseClient.client.postgrest["clientes"]
-                    .select {
-                        if (cityNameFilter != null) {
-                            filter { eq("cidade", cityNameFilter) }
-                        } else if (!isDev && cityName != null) {
-                            filter { eq("cidade", cityName) }
-                        }
+                // SÊNIOR PERF: Consultas paralelas via async para carregamento instantâneo do cockpit
+                val customersDef = async {
+                    SupabaseClient.client.postgrest["clientes"].select {
+                        if (cityNameFilter != null) filter { eq("cidade", cityNameFilter) }
+                        else if (!isDev && cityName != null) filter { eq("cidade", cityName) }
                         if (filterStartDate != null) filter { gte("date", filterStartDate) }
                         if (filterEndDate != null) filter { lte("date", filterEndDate) }
                     }.decodeList<Customer>()
+                }
 
-                // 2. Busca GE com Filtro Temporal
-                val remoteGE = SupabaseClient.client.postgrest["grandes_empreendimentos"]
-                    .select {
-                        if (cityNameFilter != null) {
-                            filter { eq("cidade", cityNameFilter) }
-                        } else if (!isDev && cityName != null) {
-                            filter { eq("cidade", cityName) }
-                        }
+                val geDef = async {
+                    SupabaseClient.client.postgrest["grandes_empreendimentos"].select {
+                        if (cityNameFilter != null) filter { eq("cidade", cityNameFilter) }
+                        else if (!isDev && cityName != null) filter { eq("cidade", cityName) }
                         if (filterStartDate != null) filter { gte("data", filterStartDate) }
                         if (filterEndDate != null) filter { lte("data", filterEndDate) }
                     }.decodeList<EconomyUpdate>()
+                }
 
-                Log.d("debugs", "✅ [BI_LIVE] Dados filtrados recebidos: ${remoteCustomers.size} Rec. e ${remoteGE.size} GE.")
+                val remoteCustomers = customersDef.await()
+                val remoteGE = geDef.await()
 
-                // --- PROCESSAMENTO DOS DADOS (Macro para Micro) ---
+                // Processamento pesado via Sequence para economia de RAM
                 val totalRec = remoteCustomers.size
                 val totalGE = remoteGE.size
                 
                 val avgQual = if (remoteCustomers.isNotEmpty()) {
-                    remoteCustomers.sumOf { customer ->
-                        when(customer.quality?.lowercase()) {
-                            "boa" -> 1.0
-                            "regular" -> 0.5
-                            else -> 0.1
+                    remoteCustomers.asSequence().map { c: Customer ->
+                        when(c.quality?.lowercase()) {
+                            "boa" -> 1.0f
+                            "regular" -> 0.5f
+                            else -> 0.1f
                         }
-                    }.toFloat() / remoteCustomers.size
+                    }.average().toFloat()
                 } else 1.0f
 
                 val groupDetails = mutableMapOf<String, Pair<Int, Int>>() 
-                remoteCustomers.forEach { 
-                    val g = it.grupoSugerido ?: "S/G"
+                remoteCustomers.forEach { c ->
+                    val g = c.grupoSugerido ?: "S/G"
                     val current = groupDetails[g] ?: Pair(0, 0)
                     groupDetails[g] = current.copy(first = current.first + 1)
                 }
-                remoteGE.forEach { 
-                    val g = it.grupoSugerido ?: "S/G"
+                remoteGE.forEach { gE ->
+                    val g = gE.grupoSugerido ?: "S/G"
                     val current = groupDetails[g] ?: Pair(0, 0)
                     groupDetails[g] = current.copy(second = current.second + 1)
                 }
                 
-                val statsByGroup = groupDetails.map { (group, counts) ->
+                val statsByGroup = groupDetails.asSequence().map { (group, counts) ->
                     GroupStats(group, counts.first + counts.second, counts.first, counts.second)
-                }.sortedByDescending { it.total }
+                }.sortedByDescending { it.total }.take(20).toList()
 
                 val teamMap = mutableMapOf<String, Triple<String, Int, Int>>() 
-                remoteCustomers.forEach {
-                    val id = it.leituristaId ?: "unknown"
-                    val name = it.addedBy ?: "Equipe"
+                remoteCustomers.forEach { c ->
+                    val id = c.leituristaId ?: "unknown"
+                    val name = c.addedBy ?: "Equipe"
                     val current = teamMap[id] ?: Triple(name, 0, 0)
                     teamMap[id] = current.copy(second = current.second + 1)
                 }
-                remoteGE.forEach {
-                    val id = it.leituristaId ?: "unknown"
-                    val name = it.addedBy ?: "Equipe"
+                remoteGE.forEach { gE ->
+                    val id = gE.leituristaId ?: "unknown"
+                    val name = gE.addedBy ?: "Equipe"
                     val current = teamMap[id] ?: Triple(name, 0, 0)
                     teamMap[id] = current.copy(third = current.third + 1)
                 }
 
-                val teamPerformance = teamMap.map { (id, data) ->
-                    val memberCustomers = remoteCustomers.filter { it.leituristaId == id || it.addedBy == data.first }
-                    val memberQual = if (memberCustomers.isNotEmpty()) {
-                        memberCustomers.sumOf { customer ->
-                            when (customer.quality?.lowercase()) {
-                                "boa" -> 100.0
-                                "regular" -> 50.0
-                                else -> 20.0
-                            }
-                        }.toFloat() / memberCustomers.size
-                    } else 100f
+                val teamPerformance = teamMap.asSequence().map { (id, data) ->
+                    val memberRecadastros = remoteCustomers.filter { it.leituristaId == id || it.addedBy == data.first }
+                    
+                    // SÊNIOR BI FIX: Proteção contra divisão por zero e NaN para novos colaboradores
+                    val memberQual = if (memberRecadastros.isNotEmpty()) {
+                        memberRecadastros.asSequence()
+                            .map { when (it.quality?.lowercase()) { "boa" -> 1.0f; "regular" -> 0.5f; else -> 0.2f } }
+                            .average().toFloat()
+                    } else 1.0f
 
-                    TeamMemberStats(id, data.first, data.second, data.third, memberQual / 100f)
-                }.sortedByDescending { it.totalRecadastro + it.totalGE }
+                    TeamMemberStats(id, data.first, data.second, data.third, if (memberQual.isNaN()) 1.0f else memberQual)
+                }.sortedByDescending { it.totalRecadastro + it.totalGE }.toList()
 
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
@@ -215,9 +201,5 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                 _uiState.value = _uiState.value.copy(isLoading = false)
             }
         }
-    }
-
-    private fun getFriendlyCityName(cidadeId: String?): String? {
-        return com.example.oaplicativo.util.CityUtils.getFriendlyCityName(cidadeId)
     }
 }

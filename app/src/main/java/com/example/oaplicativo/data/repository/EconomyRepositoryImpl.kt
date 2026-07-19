@@ -116,11 +116,21 @@ class EconomyRepositoryImpl private constructor() : EconomyRepository {
     }
 
     private fun combineAndEmit() {
-        val combined = (localPendingItems + remoteItems)
-            .distinctBy { it.id }
-            .sortedByDescending { it.date }
-        _items.value = combined
-        Log.d("debugs", "📊 [GE] Lista atualizada: ${combined.size} itens (Pendentes: ${localPendingItems.size})")
+        scope.launch(Dispatchers.Default) {
+            mutex.withLock {
+                val remoteIds = remoteItems.mapNotNull { it.id }.toSet()
+                
+                val combined = (localPendingItems.asSequence().map { 
+                    if (remoteIds.contains(it.id)) it.copy(isSynced = true) else it
+                } + remoteItems.asSequence())
+                .distinctBy { it.id }
+                .sortedByDescending { it.date }
+                .toList()
+                
+                _items.value = combined
+                Log.d("debugs", "📊 [GE] Lista reativa emitida: ${combined.size} itens globais.")
+            }
+        }
     }
 
     override suspend fun getItemById(id: String): EconomyUpdate? {

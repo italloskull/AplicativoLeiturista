@@ -61,7 +61,7 @@ class LoginViewModel(
                         
                         if (cachedProfile != null) {
                             Log.d("LoginOffline", "SUCESSO: Perfil de '$inputUser' recuperado do SQLite.")
-                            (authRepository as AuthRepositoryImpl).setLocalProfile(cachedProfile)
+                            authRepository.setLocalProfile(cachedProfile)
                             _loginState.value = LoginState.Success
                         } else {
                             Log.e("LoginOffline", "FALHA: Credenciais batem, mas perfil de '$inputUser' não está no SQLite.")

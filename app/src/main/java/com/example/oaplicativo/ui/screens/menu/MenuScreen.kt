@@ -19,11 +19,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.oaplicativo.data.local.LocalDatabase
 import com.example.oaplicativo.data.repository.AuthRepositoryImpl
 import com.example.oaplicativo.ui.components.GlobalActionMenu
+import com.example.oaplicativo.util.NetworkUtils
 import kotlinx.coroutines.delay
 
 @Composable
@@ -49,10 +51,10 @@ fun MenuScreen(
         }
 
         while (true) {
-            val recStats = localDb.getRecadastroStats()
-            val econStats = localDb.getEconomyStats()
-            recadastroPending = recStats.second
-            economiasPending = econStats.second
+            val pendingRec = localDb.getPendingCustomers().size
+            val pendingEcon = localDb.getPendingEconomyUpdates().size
+            recadastroPending = pendingRec
+            economiasPending = pendingEcon
             
             val waitTime = if (recadastroPending + economiasPending > 0) 3000L else 10000L
             delay(waitTime)
@@ -87,7 +89,7 @@ fun MenuScreen(
                         letterSpacing = 1.sp
                     )
                     Text(
-                        text = "Gestão de Saneamento",
+                        text = "Informações Atualizadas",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                     )
@@ -187,8 +189,65 @@ fun MenuScreen(
                 }
             }
             
-            Spacer(Modifier.height(60.dp))
-            Text("Recadastre.IA • v0.9.2.7.0", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+            Spacer(Modifier.height(32.dp))
+
+            // SÊNIOR BI UI: ZONA DE STATUS DE SINCRONISMO (REPOSICIONADA)
+            if (recadastroPending + economiasPending > 0) {
+                val isOnline = NetworkUtils.isInternetAvailable(context)
+                
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.large,
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isOnline) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) 
+                                        else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                if (isOnline) Icons.Default.CloudUpload else Icons.Default.CloudOff, 
+                                null, 
+                                tint = if (isOnline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                text = if (isOnline) "Pendências prontas para envio" else "Sem conexão com a internet",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isOnline) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
+                        
+                        Spacer(Modifier.height(12.dp))
+                        
+                        
+                        Spacer(Modifier.height(12.dp))
+                        
+                        Button(
+                            onClick = {
+                                val syncRequest = androidx.work.OneTimeWorkRequestBuilder<com.example.oaplicativo.data.sync.SyncWorker>().build()
+                                androidx.work.WorkManager.getInstance(context).enqueueUniqueWork("force_sync_footer", androidx.work.ExistingWorkPolicy.REPLACE, syncRequest)
+                                Toast.makeText(context, "Sincronizando com o banco de dados... 🚀", Toast.LENGTH_LONG).show()
+                            },
+                            enabled = isOnline,
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            shape = MaterialTheme.shapes.medium,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isOnline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                            )
+                        ) {
+                            Text(if (isOnline) "SINCRONIZAR COM O BANCO" else "AGUARDANDO INTERNET...", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(24.dp))
+            }
+
+            Text("Recadastre.IA • v0.9.2.7.1", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
             Spacer(Modifier.height(24.dp))
         }
     }
