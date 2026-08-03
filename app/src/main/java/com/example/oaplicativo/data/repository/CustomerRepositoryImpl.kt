@@ -154,8 +154,18 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
 
     override suspend fun updateCustomer(customer: Customer) {
         withContext(Dispatchers.IO) {
-            client.postgrest["clientes"].insert(customer)
-            fetchCustomers()
+            try {
+                // SÊNIOR FIX: Usamos upsert para garantir que o registro seja atualizado sem duplicar
+                client.postgrest["clientes"].upsert(customer)
+                
+                val profile = AuthRepositoryImpl.getInstance().currentUserProfile.value
+                fetchCustomers(
+                    cidadeId = profile?.cidadeId,
+                    isAdmin = profile?.cargo?.lowercase() == "desenvolvedor"
+                )
+            } catch (e: Exception) {
+                Log.e("debugs", "❌ [REPO] Falha ao atualizar cliente: ${e.message}")
+            }
         }
     }
 

@@ -34,7 +34,6 @@ class LoginViewModel(
                         email = profile.email,
                         name = profile.fullName ?: "",
                         user = profile.username ?: "",
-                        isDev = profile.isDeveloper,
                         cargo = profile.cargo
                     )
                     // GARANTIA: Salvamos as credenciais no cofre criptografado mesmo sem o 'Lembrar'

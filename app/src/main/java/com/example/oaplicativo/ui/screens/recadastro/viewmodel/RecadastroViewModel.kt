@@ -107,6 +107,7 @@ class RecadastroViewModel(
     var acessibilidade by mutableStateOf<String?>(null)
 
     var numeroHidrometro by mutableStateOf("")
+    var electricityMeter by mutableStateOf("")
     var economias by mutableStateOf("")
     var observacao by mutableStateOf("")
 
@@ -210,6 +211,7 @@ class RecadastroViewModel(
             responsavelData.qualDoc = customer.entrevistadoQualDoc ?: ""
             
             numeroHidrometro = customer.numeroHidrometro ?: ""
+            electricityMeter = customer.electricityMeter ?: ""
             
             entrevistadoEhOResponsavel = "Sim"
             entrevistadoNomeApenas = ""
@@ -309,6 +311,7 @@ class RecadastroViewModel(
                     beneficiarioSocial = beneficiarioSocial.orSpace(),
                     usaAguaVizinho = usaAguaVizinho.orSpace(),
                     possuiHidrometro = possuiHidrometro.orSpace(),
+                    electricityMeter = electricityMeter.orSpace(),
                     grupoSugerido = com.example.oaplicativo.util.GeoFencingHelper.findSuggestedGroup(selectedCity.nome, snapshotLat, snapshotLng) ?: "S/G",
                     setor = setor,
                     quadra = quadra,

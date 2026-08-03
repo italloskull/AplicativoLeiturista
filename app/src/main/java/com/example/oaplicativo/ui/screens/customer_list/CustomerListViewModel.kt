@@ -73,15 +73,22 @@ class CustomerListViewModel(
         viewModelScope.launch {
             _isRefreshing.value = true
             try {
+                // SÊNIOR FIX: Sincronismo forçado de dados regionais ao atualizar
                 updateLocalData()
                 val profile = authRepository.currentUserProfile.value
+                
+                // SÊNIOR BI AUDIT: Forçamos a recarga total baseada no perfil mais recente
                 customerRepository.fetchCustomers(
                     cidadeId = profile?.cidadeId,
                     isAdmin = profile?.isDeveloper == true
                 )
+                
+                // Recarrega permissões caso tenham mudado na Gestão de Equipe
                 loadAuthorizedCities()
+                
+                Log.d("debugs", "🔄 [UI] Lista de clientes atualizada manualmente pelo usuário.")
             } catch (e: Exception) {
-                Log.e("CustomerListVM", "Erro ao atualizar: ${e.message}")
+                Log.e("debugs", "❌ [UI] Falha ao atualizar lista: ${e.message}")
             } finally {
                 _isRefreshing.value = false
             }

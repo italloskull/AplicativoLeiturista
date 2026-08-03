@@ -66,6 +66,7 @@ data class Customer(
     @SerialName("beneficiario_social") val beneficiarioSocial: String? = null,
     @SerialName("usa_agua_vizinho") val usaAguaVizinho: String? = null,
     @SerialName("possui_hidrometro") val possuiHidrometro: String? = null,
+    @SerialName("medidor_energia") val electricityMeter: String? = null,
     @SerialName("grupo_sugerido") val grupoSugerido: String? = null,
     val setor: String? = null,
     val quadra: String? = null,

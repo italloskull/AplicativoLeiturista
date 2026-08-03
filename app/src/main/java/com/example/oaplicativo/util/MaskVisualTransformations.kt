@@ -42,7 +42,8 @@ class DateVisualTransformation : VisualTransformation {
  */
 class CpfCnpjVisualTransformation : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
-        val input = text.text.filter { it.isDigit() }
+        // SÊNIOR FIX: Agora aceita letras e números (CPF Alfanumérico)
+        val input = text.text.filter { it.isLetterOrDigit() }
         val isCnpj = input.length > 11
         val trimmed = if (isCnpj) {
             if (input.length >= 14) input.substring(0, 14) else input

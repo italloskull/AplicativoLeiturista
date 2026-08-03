@@ -88,7 +88,12 @@ class EconomyRepositoryImpl private constructor() : EconomyRepository {
 
     override suspend fun saveEconomyUpdate(item: EconomyUpdate) {
         localDb.saveEconomyUpdateOffline(item)
-        fetchEconomyUpdates(null, true)
+        
+        val profile = AuthRepositoryImpl.getInstance().currentUserProfile.value
+        fetchEconomyUpdates(
+            cidadeId = profile?.cidadeId,
+            isAdmin = profile?.cargo?.lowercase() == "desenvolvedor"
+        )
     }
 
     override suspend fun saveEconomyUpdates(items: List<EconomyUpdate>) {

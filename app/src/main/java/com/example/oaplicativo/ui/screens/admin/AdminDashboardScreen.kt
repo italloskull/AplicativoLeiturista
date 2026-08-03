@@ -65,13 +65,18 @@ fun AdminDashboardScreen(
                                 }
                                 
                                 DropdownMenu(expanded = showCityMenu, onDismissRequest = { showCityMenu = false }) {
+                                    val profile by com.example.oaplicativo.data.repository.AuthRepositoryImpl.getInstance().currentUserProfile.collectAsState()
+                                    val isDev = profile?.cargo?.lowercase() == "desenvolvedor"
+
+                                    // SÊNIOR BI FIX: 'Todas' agora é relativo ao acesso do usuário
                                     DropdownMenuItem(
-                                        text = { Text("🌎 TODAS AS CIDADES") },
+                                        text = { Text(if (isDev) "🌎 VISÃO GLOBAL (ESTADO)" else "🏢 TOTAL DA MINHA EQUIPE") },
                                         onClick = {
                                             viewModel.selectCityFilter(null)
                                             showCityMenu = false
                                         }
                                     )
+
                                     authorizedCities.forEach { cidade ->
                                         DropdownMenuItem(
                                             text = { Text(cidade.nome.uppercase()) },

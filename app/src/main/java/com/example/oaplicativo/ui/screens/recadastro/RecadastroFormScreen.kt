@@ -175,6 +175,15 @@ fun RecadastroFormScreen(
                         AppTextField(value = viewModel.numeroHidrometro, onValueChange = { viewModel.numeroHidrometro = it }, label = "Nº de Série do Hidrômetro", leadingIcon = Icons.Default.Pin)
                     }
 
+                    // SÊNIOR UI INJECTION: Novo campo de Medidor de Energia
+                    Spacer(Modifier.height(12.dp))
+                    AppTextField(
+                        value = viewModel.electricityMeter, 
+                        onValueChange = { viewModel.electricityMeter = it }, 
+                        label = "Nº do Medidor de Energia", 
+                        leadingIcon = Icons.Default.ElectricMeter
+                    )
+
                     Spacer(Modifier.height(24.dp))
                     HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
                     Spacer(Modifier.height(20.dp))
@@ -386,7 +395,7 @@ fun RecadastroFormScreen(
                         censoredValue = PrivacyUtils.maskCpfCnpj(activeData.cpfCnpj),
                         isAdmin = userProfile?.isAdmin ?: false,
                         leadingIcon = Icons.Default.Badge,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text), // SÊNIOR FIX: Teclado de texto para CPF alfanumérico
                         visualTransformation = CpfCnpjVisualTransformation()
                     )
 

@@ -78,13 +78,16 @@ class AuthRepositoryImpl private constructor() : AuthRepository {
         }
 
         try {
+            Log.d("debugs", "🔑 [AUTH] Enviando credenciais para o Supabase Auth...")
             client.auth.signInWith(Email) {
                 this.email = email
                 this.password = pass
             }
+            Log.d("debugs", "✅ [AUTH] Login Supabase Auth: SUCESSO.")
             fetchProfile()
         } catch (e: Exception) {
-            Log.e("AuthRepo", "Login failed: ${e.message}")
+            val authError = e.message ?: ""
+            Log.e("debugs", "❌ [AUTH] Falha na autenticação Supabase: $authError")
             throw Exception("Senha incorreta ou erro de acesso.")
         }
     }

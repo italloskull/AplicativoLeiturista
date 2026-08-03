@@ -89,7 +89,6 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
             
             val user = authRepo.currentUserProfile.value
             val isDev = user?.cargo?.lowercase() == "desenvolvedor"
-            val targetCidadeId = user?.cidadeId
             val currentState = _uiState.value
 
             try {
@@ -106,13 +105,27 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                 val filterEndDate = if (currentState.period == DashboardPeriod.CUSTOM) currentState.endDate?.take(10)?.replace("-", "/") else null
 
                 val cityNameFilter = _selectedCityFilter.value?.nome
-                val cityName = com.example.oaplicativo.util.CityUtils.getFriendlyCityName(targetCidadeId)
+                Log.d("debugs", "📊 [BI_QUERY] Filtro Ativado: $filterStartDate até ${filterEndDate ?: "Hoje"} | CidadeFilter: $cityNameFilter")
 
-                // SÊNIOR PERF: Consultas paralelas via async para carregamento instantâneo do cockpit
+                val authorizedCities = authRepo.getUserCities()
+                val cityNames = authorizedCities.map { it.nome }
+                val currentUid = authRepo.currentUserProfile.value?.id
+                Log.d("debugs", "🆔 [BI_SECURITY] Meu UID Local: $currentUid")
+                Log.d("debugs", "🎯 [BI_QUERY] Chaveiro do Gestor: $cityNames")
+
+                // SÊNIOR PERF: Consultas paralelas reais com FILTRAGEM REGIONAL MANDATÓRIA
                 val customersDef = async {
                     SupabaseClient.client.postgrest["clientes"].select {
-                        if (cityNameFilter != null) filter { eq("cidade", cityNameFilter) }
-                        else if (!isDev && cityName != null) filter { eq("cidade", cityName) }
+                        // SÊNIOR SECURITY FIX: Força a filtragem pelas cidades do chaveiro para evitar vazamento global
+                        if (cityNameFilter != null) {
+                            filter { eq("cidade", cityNameFilter) }
+                        } else if (!isDev && cityNames.isNotEmpty()) {
+                            filter { or { cityNames.forEach { eq("cidade", it) } } }
+                        } else if (!isDev && cityNames.isEmpty()) {
+                            // Se não tem cidade e não é dev, bloqueia tudo
+                            filter { eq("cidade", "BLOCK_ALL_ACCESS") }
+                        }
+
                         if (filterStartDate != null) filter { gte("date", filterStartDate) }
                         if (filterEndDate != null) filter { lte("date", filterEndDate) }
                     }.decodeList<Customer>()
@@ -120,8 +133,14 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
 
                 val geDef = async {
                     SupabaseClient.client.postgrest["grandes_empreendimentos"].select {
-                        if (cityNameFilter != null) filter { eq("cidade", cityNameFilter) }
-                        else if (!isDev && cityName != null) filter { eq("cidade", cityName) }
+                        if (cityNameFilter != null) {
+                            filter { eq("cidade", cityNameFilter) }
+                        } else if (!isDev && cityNames.isNotEmpty()) {
+                            filter { or { cityNames.forEach { eq("cidade", it) } } }
+                        } else if (!isDev && cityNames.isEmpty()) {
+                            filter { eq("cidade", "BLOCK_ALL_ACCESS") }
+                        }
+
                         if (filterStartDate != null) filter { gte("data", filterStartDate) }
                         if (filterEndDate != null) filter { lte("data", filterEndDate) }
                     }.decodeList<EconomyUpdate>()
@@ -129,6 +148,8 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
 
                 val remoteCustomers = customersDef.await()
                 val remoteGE = geDef.await()
+
+                Log.d("debugs", "✅ [BI_LIVE] Filtrados no Celular: ${remoteCustomers.size} Rec. e ${remoteGE.size} GE.")
 
                 // Processamento pesado via Sequence para economia de RAM
                 val totalRec = remoteCustomers.size
@@ -194,8 +215,18 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                     averageQuality = avgQual,
                     statsByGroup = statsByGroup,
                     teamPerformance = teamPerformance,
-                    cityName = cityNameFilter ?: cityName ?: "Global"
+                    cityName = cityNameFilter ?: com.example.oaplicativo.util.CityUtils.getFriendlyCityName(user?.cidadeId) ?: "Global"
                 )
+
+                // SÊNIOR BI AUDIT: Investigação profunda dos registros Sem Grupo (S/G)
+                val sgItems = remoteCustomers.filter { it.grupoSugerido.isNullOrBlank() }
+                if (sgItems.isNotEmpty()) {
+                    Log.d("debugs", "🕵️‍♂️ [SG_AUDIT] Analisando os ${sgItems.size} registros Sem Grupo em Itapoá:")
+                    sgItems.forEach { 
+                        val gpsStatus = if (it.latitude != null) "${it.latitude}, ${it.longitude}" else "SEM GPS"
+                        Log.d("debugs", "   📍 Matrícula: ${it.registrationNumber} | Rua: ${it.logradouro} | GPS: $gpsStatus")
+                    }
+                }
             } catch (e: Exception) {
                 Log.e("debugs", "❌ [BI] Falha ao carregar dashboard: ${e.message}")
                 _uiState.value = _uiState.value.copy(isLoading = false)
