@@ -6,7 +6,7 @@ import kotlinx.serialization.Transient
 
 /**
  * EconomyUpdate: Modelo de Dados Sincronizado com o Supabase (Versão Certificada)
- * SÊNIOR FIX: Campos numéricos marcados como opcionais (Int?) para permitir NULL no banco de dados.
+ * SÊNIOR FIX Campos numéricos marcados como opcionais (Int?) para permitir NULL no banco de dados.
  */
 @Serializable
 data class EconomyUpdate(
