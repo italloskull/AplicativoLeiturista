@@ -121,7 +121,8 @@ class AuthRepositoryImpl private constructor() : AuthRepository {
             put("cidades", buildJsonArray { cidades.forEach { add(it) } })
         }
         try {
-            client.functions.invoke("create-user") {
+            // SÊNIOR FIX: Aponta para o novo endpoint 'create-user-multicidade' (v2.2 Gold)
+            client.functions.invoke("create-user-multicidade") {
                 contentType(ContentType.Application.Json)
                 setBody(payload)
             }
