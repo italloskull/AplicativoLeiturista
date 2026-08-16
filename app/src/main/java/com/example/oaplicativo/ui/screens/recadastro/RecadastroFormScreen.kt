@@ -332,8 +332,16 @@ fun RecadastroFormScreen(
                     BooleanOption(label = "Consome água de vizinho?", selectedOption = viewModel.usaAguaVizinho) { viewModel.usaAguaVizinho = it }
                     BooleanOption(label = "O imóvel possui piscina?", selectedOption = viewModel.possuiPiscina) { viewModel.possuiPiscina = it }
                     BooleanOption(label = "É imóvel de veranista?", selectedOption = viewModel.isVacationer) { viewModel.isVacationer = it }
+                    BooleanOption(label = "Possui conexão de esgoto (Til)?", selectedOption = viewModel.tilEsgoto) { viewModel.tilEsgoto = it }
                     
                     Spacer(Modifier.height(8.dp))
+                    SpinnerOption(
+                        label = "Fonte de Abastecimento", 
+                        options = listOf("Rede Pública", "Poço Artesiano", "Poço Ponteiro", "Vizinho", "Outros"), 
+                        selectedOption = viewModel.fonteAbastecimento, 
+                        onOptionSelected = { viewModel.fonteAbastecimento = it }
+                    )
+
                     SpinnerOption(label = "Situação do Local", options = listOf("Terreno Baldio", "Construção", "Residencial", "Comércio", "Outros"), selectedOption = viewModel.locationStatus, onOptionSelected = { viewModel.locationStatus = it })
                     SpinnerOption(label = "Tipo de Pavimento da Rua", options = listOf("Asfalto", "Paralelepípedo", "Terra", "Outro"), selectedOption = viewModel.pavimentoRua, onOptionSelected = { viewModel.pavimentoRua = it })
                     SpinnerOption(label = "Tipo de Pavimento da Calçada", options = listOf("Asfalto", "Paver", "Concreto", "Terra", "Outro"), selectedOption = viewModel.pavimentoCalcada, onOptionSelected = { viewModel.pavimentoCalcada = it })
@@ -351,7 +359,7 @@ fun RecadastroFormScreen(
                     AppTextField(value = viewModel.economias, onValueChange = { if (it.all { c -> c.isDigit() }) viewModel.economias = it }, label = "Nº de Economias", leadingIcon = Icons.Default.MapsHomeWork, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                     Spacer(Modifier.height(12.dp))
                     SpinnerOption(label = "Local da Instalação", options = listOf("CAIXA PADRÃO", "INTERNO", "CAVALETE EXTERNO"), selectedOption = viewModel.localInstalacao, onOptionSelected = { viewModel.localInstalacao = it })
-                    SpinnerOption(label = "Condição de Acessibilidade", options = listOf("Facil Acesso", "Dificil Acesso"), selectedOption = viewModel.acessibilidade, onOptionSelected = { viewModel.acessibilidade = it })
+                    SpinnerOption(label = "Acessibilidade para leitura mensal", options = listOf("Facil Acesso", "Dificil Acesso"), selectedOption = viewModel.acessibilidade, onOptionSelected = { viewModel.acessibilidade = it })
                 }
             }
 
@@ -373,16 +381,11 @@ fun RecadastroFormScreen(
 
                     val activeData = viewModel.responsavelData
 
-                    val displayName = if (viewModel.isDataCensoredInitial) {
-                        activeData.nomeCompleto.split(" ").firstOrNull() ?: ""
-                    } else activeData.nomeCompleto
-
                     AppTextField(
-                        value = displayName, 
-                        onValueChange = { if (!viewModel.isDataCensoredInitial) activeData.nomeCompleto = it }, 
+                        value = activeData.nomeCompleto, 
+                        onValueChange = { activeData.nomeCompleto = it }, 
                         label = "Nome Completo do Responsável", 
-                        leadingIcon = Icons.Default.Person, 
-                        enabled = !viewModel.isDataCensoredInitial
+                        leadingIcon = Icons.Default.Person
                     )
                     
                     Spacer(Modifier.height(12.dp))
@@ -404,8 +407,7 @@ fun RecadastroFormScreen(
                         value = activeData.nomeMae, 
                         onValueChange = { activeData.nomeMae = it }, 
                         label = "Nome da Mãe", 
-                        leadingIcon = Icons.Default.EscalatorWarning, 
-                        enabled = !viewModel.isDataCensoredInitial
+                        leadingIcon = Icons.Default.EscalatorWarning
                     )
                     Spacer(Modifier.height(12.dp))
                     AppTextField(
@@ -414,8 +416,7 @@ fun RecadastroFormScreen(
                         label = "Data de Nascimento", 
                         leadingIcon = Icons.Default.CalendarToday, 
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), 
-                        visualTransformation = DateVisualTransformation(), 
-                        enabled = !viewModel.isDataCensoredInitial
+                        visualTransformation = DateVisualTransformation()
                     )
                     SpinnerOption(label = "Sexo", options = listOf("Masculino", "Feminino", "Outro"), selectedOption = activeData.sexo, onOptionSelected = { activeData.sexo = it })
                     

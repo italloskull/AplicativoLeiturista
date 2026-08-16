@@ -116,14 +116,12 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                 // SÊNIOR PERF: Consultas paralelas reais com FILTRAGEM REGIONAL MANDATÓRIA
                 val customersDef = async {
                     SupabaseClient.client.postgrest["clientes"].select {
-                        // SÊNIOR SECURITY FIX: Força a filtragem pelas cidades do chaveiro para evitar vazamento global
+                        // SÊNIOR SECURITY FIX: Filtragem linear para eliminar redundância lógica
                         if (cityNameFilter != null) {
                             filter { eq("cidade", cityNameFilter) }
-                        } else if (!isDev && cityNames.isNotEmpty()) {
-                            filter { or { cityNames.forEach { eq("cidade", it) } } }
-                        } else if (!isDev && cityNames.isEmpty()) {
-                            // Se não tem cidade e não é dev, bloqueia tudo
-                            filter { eq("cidade", "BLOCK_ALL_ACCESS") }
+                        } else if (!isDev) {
+                            val targetCities = cityNames.ifEmpty { listOf("BLOCK_ALL_ACCESS") }
+                            filter { or { targetCities.forEach { eq("cidade", it) } } }
                         }
 
                         if (filterStartDate != null) filter { gte("date", filterStartDate) }
@@ -135,10 +133,9 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                     SupabaseClient.client.postgrest["grandes_empreendimentos"].select {
                         if (cityNameFilter != null) {
                             filter { eq("cidade", cityNameFilter) }
-                        } else if (!isDev && cityNames.isNotEmpty()) {
-                            filter { or { cityNames.forEach { eq("cidade", it) } } }
-                        } else if (!isDev && cityNames.isEmpty()) {
-                            filter { eq("cidade", "BLOCK_ALL_ACCESS") }
+                        } else if (!isDev) {
+                            val targetCities = cityNames.ifEmpty { listOf("BLOCK_ALL_ACCESS") }
+                            filter { or { targetCities.forEach { eq("cidade", it) } } }
                         }
 
                         if (filterStartDate != null) filter { gte("data", filterStartDate) }

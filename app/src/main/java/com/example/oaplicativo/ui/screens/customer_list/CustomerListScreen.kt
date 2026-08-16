@@ -103,10 +103,11 @@ fun CustomerListScreen(
             // SÊNIOR PERF: Filtramos a lista apenas uma vez usando lazy evaluation.
             // Para 20k registros, isso economiza centenas de ciclos de CPU por segundo.
             val baseList = customers.asSequence().filter { customer ->
-                // 1. Filtro de Busca (Nome ou Matrícula)
+                // 1. Filtro de Busca (Nome, Matrícula ou Hidrômetro)
                 val matchesSearch = if (query.isBlank()) true 
                                    else (customer.name?.lowercase()?.contains(query) == true || 
-                                         customer.registrationNumber?.contains(query) == true)
+                                         customer.registrationNumber?.contains(query) == true ||
+                                         customer.numeroHidrometro?.lowercase()?.contains(query) == true)
                 
                 // 2. Filtro Regional (UI Select) - SÊNIOR FIX: Normalização para evitar sumiço por acento
                 val customerCity = customer.cidade?.lowercase()?.trim()
@@ -342,6 +343,16 @@ fun CustomerListItem(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                
+                // SÊNIOR UI INJECTION: Exibição do Hidrômetro em MAIÚSCULAS
+                if (!customer.numeroHidrometro.isNullOrBlank()) {
+                    Text(
+                        text = "HIDRÔMETRO: ${customer.numeroHidrometro.uppercase()}",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                    )
+                }
                 
                 Row(
                     modifier = Modifier.padding(top = 8.dp),

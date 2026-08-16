@@ -47,6 +47,8 @@ fun EconomyUpdateScreen(
     var economiesCount by remember(existingItem) { mutableStateOf(existingItem?.economiesCount?.toString() ?: "") }
     var floorsCount by remember(existingItem) { mutableStateOf(existingItem?.floorsCount?.toString() ?: "") }
     var electricityMeter by remember(existingItem) { mutableStateOf(existingItem?.electricityMeterNumber ?: "") }
+    var tilEsgoto by remember(existingItem) { mutableStateOf(existingItem?.tilEsgoto) }
+    var accessibilityReading by remember(existingItem) { mutableStateOf(existingItem?.accessibilityReading) }
     
     var latitude by remember(existingItem) { mutableStateOf(existingItem?.latitude) }
     var longitude by remember(existingItem) { mutableStateOf(existingItem?.longitude) }
@@ -182,7 +184,7 @@ fun EconomyUpdateScreen(
                     onValueChange = { hdNumber = it }, 
                     label = "Nº Hidrômetro (HD)",
                     leadingIcon = Icons.Default.WaterDrop,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text) // SÊNIOR FIX: Aceita Letras e Números
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
                 )
                 Spacer(Modifier.height(12.dp))
                 AppTextField(
@@ -190,6 +192,25 @@ fun EconomyUpdateScreen(
                     onValueChange = { electricityMeter = it }, 
                     label = "Nº Medidor de Energia",
                     leadingIcon = Icons.Default.ElectricBolt
+                )
+                
+                Spacer(Modifier.height(12.dp))
+                
+                // SÊNIOR UI INJECTION: Campo TIL para Prédios
+                com.example.oaplicativo.ui.components.BooleanOption(
+                    label = "Possui conexão de esgoto (Til)?", 
+                    selectedOption = tilEsgoto
+                ) { 
+                    tilEsgoto = it 
+                }
+
+                Spacer(Modifier.height(12.dp))
+                
+                com.example.oaplicativo.ui.components.SpinnerOption(
+                    label = "Acessibilidade para leitura mensal", 
+                    options = listOf("Facil Acesso", "Dificil Acesso"), 
+                    selectedOption = accessibilityReading, 
+                    onOptionSelected = { accessibilityReading = it }
                 )
             }
 
@@ -331,6 +352,8 @@ fun EconomyUpdateScreen(
                             economiesCount = economiesCount.toIntOrNull(),
                             floorsCount = floorsCount.toIntOrNull(),
                             electricityMeterNumber = electricityMeter.trim().ifBlank { null },
+                            tilEsgoto = tilEsgoto,
+                            accessibilityReading = accessibilityReading,
                             latitude = latitude,
                             longitude = longitude
                         )

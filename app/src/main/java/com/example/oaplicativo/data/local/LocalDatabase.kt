@@ -27,12 +27,17 @@ class LocalDatabase(context: Context) :
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        if (oldVersion < 42) {
-            db.execSQL("DROP TABLE IF EXISTS customers")
-            db.execSQL("DROP TABLE IF EXISTS grandes_empreendimentos")
-            db.execSQL("DROP TABLE IF EXISTS user_cache")
-            db.execSQL("DROP TABLE IF EXISTS cities_cache")
-            onCreate(db)
+        if (oldVersion < 45) {
+            // SÊNIOR CLEANUP: Migração concluída. A partir daqui o sistema é puramente acessibilidade_leitura.
+            try {
+                // Tentamos remover a coluna antiga apenas para economizar espaço local caso o Android permita
+                // Como SQLite não suporta DROP COLUMN em versões muito antigas, apenas garantimos que a nova existe
+                db.execSQL("ALTER TABLE customers ADD COLUMN acessibilidade_leitura TEXT")
+            } catch (_: Exception) {}
+            
+            try {
+                db.execSQL("ALTER TABLE grandes_empreendimentos ADD COLUMN acessibilidade_leitura TEXT")
+            } catch (_: Exception) {}
         }
     }
 
@@ -80,11 +85,12 @@ class LocalDatabase(context: Context) :
             put("fonte_abastecimento", customer.fonteAbastecimento)
             put("existe_rede_agua", customer.existeRedeAgua)
             put("local_instalacao", customer.localInstalacao)
-            put("acessibilidade", customer.acessibilidade)
+            put("acessibilidade_leitura", customer.accessibilityReading)
             put("observacao", customer.observacao)
             put("beneficiario_social", customer.beneficiarioSocial)
             put("usa_agua_vizinho", customer.usaAguaVizinho)
             put("possui_hidrometro", customer.possuiHidrometro)
+            put("til_esgoto", customer.tilEsgoto)
             put("medidor_energia", customer.electricityMeter)
             put("grupo_sugerido", customer.grupoSugerido)
             put("setor", customer.setor)
@@ -147,11 +153,12 @@ class LocalDatabase(context: Context) :
                     fonteAbastecimento = cursor.getString(cursor.getColumnIndexOrThrow("fonte_abastecimento")),
                     existeRedeAgua = cursor.getString(cursor.getColumnIndexOrThrow("existe_rede_agua")),
                     localInstalacao = cursor.getString(cursor.getColumnIndexOrThrow("local_instalacao")),
-                    acessibilidade = cursor.getString(cursor.getColumnIndexOrThrow("acessibilidade")),
+                    accessibilityReading = cursor.getString(cursor.getColumnIndexOrThrow("acessibilidade_leitura")),
                     observacao = cursor.getString(cursor.getColumnIndexOrThrow("observacao")),
                     beneficiarioSocial = cursor.getString(cursor.getColumnIndexOrThrow("beneficiario_social")),
                     usaAguaVizinho = cursor.getString(cursor.getColumnIndexOrThrow("usa_agua_vizinho")),
                     possuiHidrometro = cursor.getString(cursor.getColumnIndexOrThrow("possui_hidrometro")),
+                    tilEsgoto = cursor.getString(cursor.getColumnIndexOrThrow("til_esgoto")),
                     electricityMeter = cursor.getString(cursor.getColumnIndexOrThrow("medidor_energia")),
                     grupoSugerido = cursor.getString(cursor.getColumnIndexOrThrow("grupo_sugerido")),
                     setor = cursor.getString(cursor.getColumnIndexOrThrow("setor")),
@@ -181,6 +188,8 @@ class LocalDatabase(context: Context) :
             put("qtd_economias", item.economiesCount)
             put("qtd_pavimentos", item.floorsCount)
             put("medidor_energia", item.electricityMeterNumber)
+            put("til_esgoto", item.tilEsgoto)
+            put("acessibilidade_leitura", item.accessibilityReading)
             put("latitude", item.latitude)
             put("longitude", item.longitude)
             put("cidade", item.cidade)
@@ -214,6 +223,8 @@ class LocalDatabase(context: Context) :
                     economiesCount = if (cursor.isNull(cursor.getColumnIndexOrThrow("qtd_economias"))) null else cursor.getInt(cursor.getColumnIndexOrThrow("qtd_economias")),
                     floorsCount = if (cursor.isNull(cursor.getColumnIndexOrThrow("qtd_pavimentos"))) null else cursor.getInt(cursor.getColumnIndexOrThrow("qtd_pavimentos")),
                     electricityMeterNumber = cursor.getString(cursor.getColumnIndexOrThrow("medidor_energia")),
+                    tilEsgoto = cursor.getString(cursor.getColumnIndexOrThrow("til_esgoto")),
+                    accessibilityReading = cursor.getString(cursor.getColumnIndexOrThrow("acessibilidade_leitura")),
                     latitude = if (cursor.isNull(cursor.getColumnIndexOrThrow("latitude"))) null else cursor.getDouble(cursor.getColumnIndexOrThrow("latitude")),
                     longitude = if (cursor.isNull(cursor.getColumnIndexOrThrow("longitude"))) null else cursor.getDouble(cursor.getColumnIndexOrThrow("longitude")),
                     addedBy = cursor.getString(cursor.getColumnIndexOrThrow("adicionado_por")),
@@ -355,8 +366,8 @@ class LocalDatabase(context: Context) :
             }
         }
 
-        private const val DATABASE_NAME = "sanitation_final_v12.db"
-        private const val DATABASE_VERSION = 42
+        private const val DATABASE_NAME = "sanitation_final_v16.db"
+        private const val DATABASE_VERSION = 45
         
         private const val CREATE_TABLE_CUSTOMERS = """
             CREATE TABLE IF NOT EXISTS customers (
@@ -366,14 +377,14 @@ class LocalDatabase(context: Context) :
                 qualidade TEXT, entrevistado_nome TEXT, entrevistado_cpf TEXT, entrevistado_mae TEXT, entrevistado_nascimento TEXT, entrevistado_sexo TEXT,
                 entrevistado_apresentou_doc TEXT, entrevistado_qual_doc TEXT, logradouro TEXT, numero TEXT, complemento TEXT, bairro TEXT, cidade TEXT,
                 uf TEXT, cep TEXT, pavimento_rua TEXT, pavimento_calcada TEXT, fonte_abastecimento TEXT, existe_rede_agua TEXT, local_instalacao TEXT,
-                acessibilidade TEXT, observacao TEXT, beneficiario_social TEXT, usa_agua_vizinho TEXT, possui_hidrometro TEXT, medidor_energia TEXT,
+                acessibilidade_leitura TEXT, observacao TEXT, beneficiario_social TEXT, usa_agua_vizinho TEXT, possui_hidrometro TEXT, til_esgoto TEXT, medidor_energia TEXT,
                 grupo_sugerido TEXT, setor TEXT, quadra TEXT, rota_sugerida TEXT, numero_hidrometro TEXT, isSynced INTEGER DEFAULT 0, sync_attempts INTEGER DEFAULT 0, last_error TEXT, sincronizado_em TEXT
             )"""
             
         private const val CREATE_TABLE_ECONOMY_UPDATES = """
             CREATE TABLE IF NOT EXISTS grandes_empreendimentos (
                 id TEXT PRIMARY KEY, leiturista_id TEXT, numero_hd TEXT, nome_edificio TEXT, construtora TEXT, qtd_economias INTEGER, qtd_pavimentos INTEGER,
-                medidor_energia TEXT, latitude REAL, longitude REAL, cidade TEXT, cidade_id TEXT, grupo_sugerido TEXT, rota_sugerida TEXT, adicionado_por TEXT,
+                medidor_energia TEXT, til_esgoto TEXT, acessibilidade_leitura TEXT, latitude REAL, longitude REAL, cidade TEXT, cidade_id TEXT, grupo_sugerido TEXT, rota_sugerida TEXT, adicionado_por TEXT,
                 data TEXT, isSynced INTEGER DEFAULT 0, sync_attempts INTEGER DEFAULT 0, last_error TEXT, sincronizado_em TEXT
             )"""
 

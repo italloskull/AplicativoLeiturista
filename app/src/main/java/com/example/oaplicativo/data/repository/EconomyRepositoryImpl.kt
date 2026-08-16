@@ -33,7 +33,6 @@ class EconomyRepositoryImpl private constructor() : EconomyRepository {
     fun initialize(context: Context) {
         if (applicationContext == null) {
             applicationContext = context.applicationContext
-            // Carga inicial rápida
             scope.launch { fetchEconomyUpdates(null, true) }
         }
     }
@@ -44,7 +43,7 @@ class EconomyRepositoryImpl private constructor() : EconomyRepository {
                 val userCityName = getFriendlyCityName(cidadeId)
                 Log.d("debugs", "🔍 [GE] Buscando na nuvem. Cidade: $userCityName | Admin: $isAdmin")
 
-                // 1. Busca local de pendentes (SÊNIOR FIX: Usa o nome da cidade no SQLite)
+                // 1. Busca local de pendentes
                 localPendingItems = try {
                     localDb.getPendingEconomyUpdates(userCityName, isAdmin).map { it.second.copy(isSynced = false) }
                 } catch (e: Exception) {
@@ -54,10 +53,16 @@ class EconomyRepositoryImpl private constructor() : EconomyRepository {
 
                 // 2. Busca do servidor
                 val remoteList = try {
+                    val authRepo = AuthRepositoryImpl.getInstance()
+                    val authorizedCities = authRepo.getUserCities()
+                    val cityNames = authorizedCities.map { it.nome }
+
                     client.postgrest["grandes_empreendimentos"]
                         .select {
-                            if (!isAdmin && userCityName != null) {
-                                filter { eq("cidade", userCityName) }
+                            // SÊNIOR REGIONAL FIX: Filtragem linear obrigatória sem redundâncias
+                            if (!isAdmin) {
+                                val targetCities = cityNames.ifEmpty { listOf("BLOCK_ALL_ACCESS") }
+                                filter { or { targetCities.forEach { eq("cidade", it) } } }
                             }
                             order("data", order = io.github.jan.supabase.postgrest.query.Order.DESCENDING)
                             limit(100)
@@ -88,7 +93,6 @@ class EconomyRepositoryImpl private constructor() : EconomyRepository {
 
     override suspend fun saveEconomyUpdate(item: EconomyUpdate) {
         localDb.saveEconomyUpdateOffline(item)
-        
         val profile = AuthRepositoryImpl.getInstance().currentUserProfile.value
         fetchEconomyUpdates(
             cidadeId = profile?.cidadeId,

@@ -18,6 +18,8 @@ data class EconomyUpdate(
     @SerialName("qtd_economias") val economiesCount: Int? = null,
     @SerialName("qtd_pavimentos") val floorsCount: Int? = null,
     @SerialName("medidor_energia") val electricityMeterNumber: String? = null,
+    @SerialName("til_esgoto") val tilEsgoto: String? = null,
+    @SerialName("acessibilidade_leitura") val accessibilityReading: String? = null,
     
     @SerialName("latitude") val latitude: Double? = null,
     @SerialName("longitude") val longitude: Double? = null,

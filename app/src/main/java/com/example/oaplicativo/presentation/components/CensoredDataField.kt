@@ -49,8 +49,23 @@ fun CensoredDataField(
         if (isAdmin) isRevealedByAdmin else isUnlockedForEdit
     } else true
 
+    // SÊNIOR BUFFER: Mantemos um estado local para a edição em andamento.
+    // Isso evita que o dado original no ViewModel seja apagado por acidente.
+    var hasStartedTyping by remember { mutableStateOf(false) }
+
+    // Reseta o estado local ao fechar o cadeado ou mudar o modo
+    LaunchedEffect(isUnlockedForEdit) {
+        if (!isUnlockedForEdit) {
+            hasStartedTyping = false
+        }
+    }
+
     val displayValue = if (isCensoredInitial && !isEffectivelyEnabled) {
         censoredValue
+    } else if (isUnlockedForEdit && !isAdmin && !hasStartedTyping) {
+        // Se acabou de clicar no lápis e não é admin, mostra vazio (proteção visual)
+        // mas o 'value' original continua salvo no ViewModel.
+        ""
     } else {
         value
     }
@@ -59,6 +74,9 @@ fun CensoredDataField(
         value = displayValue,
         onValueChange = {
             if (isEffectivelyEnabled) {
+                if (isUnlockedForEdit && !isAdmin) {
+                    hasStartedTyping = true
+                }
                 onValueChange(it)
             }
         },
@@ -74,11 +92,9 @@ fun CensoredDataField(
                     if (isAdmin) {
                         isRevealedByAdmin = !isRevealedByAdmin
                     } else {
-                        if (!isUnlockedForEdit) {
-                            // Ao desbloquear para edição sendo usuário comum, limpamos o campo
-                            // para que ele não tente editar o texto mascarado (ex: ****)
-                            onValueChange("") 
-                        }
+                        // SÊNIOR FIX: Não limpamos o ViewModel imediatamente ao clicar.
+                        // Apenas entramos no modo de edição. O dado original só será
+                        // sobrescrito se o usuário de fato digitar algo novo.
                         isUnlockedForEdit = !isUnlockedForEdit
                     }
                 }) {

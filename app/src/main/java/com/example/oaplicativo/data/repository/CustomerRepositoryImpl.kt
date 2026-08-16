@@ -84,8 +84,10 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
                     val cityNames = authorizedCities.map { it.nome }
 
                     client.postgrest["clientes"].select {
-                        if (!isAdmin && cityNames.isNotEmpty()) {
-                            filter { or { cityNames.forEach { eq("cidade", it) } } }
+                        // SÊNIOR REGIONAL FIX: Filtragem linear para eliminar redundância lógica
+                        if (!isAdmin) {
+                            val targetCities = cityNames.ifEmpty { listOf("BLOCK_ALL_ACCESS") }
+                            filter { or { targetCities.forEach { eq("cidade", it) } } }
                         }
                         order("capturado_em", order = io.github.jan.supabase.postgrest.query.Order.DESCENDING)
                         limit(500)
@@ -186,7 +188,14 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
                 val userCityName = com.example.oaplicativo.util.CityUtils.getFriendlyCityName(cidadeId)
                 client.postgrest["clientes"].select {
                     if (!isAdmin && userCityName != null) filter { eq("cidade", userCityName) }
-                    filter { or { ilike("name", "%$query%"); eq("matricula", query) } }
+                    // SÊNIOR SEARCH FIX: Agora busca por Nome, Matrícula ou Número do Hidrômetro
+                    filter { 
+                        or { 
+                            ilike("name", "%$query%")
+                            eq("matricula", query) 
+                            eq("numero_hidrometro", query)
+                        } 
+                    }
                     limit(50)
                 }.decodeList<Customer>()
             } catch (e: Exception) {

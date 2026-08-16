@@ -102,6 +102,7 @@ class RecadastroViewModel(
     var isStandardizedSeals by mutableStateOf<String?>(null)
     var isHdAccessible by mutableStateOf<String?>(null)
     var isVacationer by mutableStateOf<String?>(null)
+    var tilEsgoto by mutableStateOf<String?>(null)
     var locationStatus by mutableStateOf<String?>(null)
     var localInstalacao by mutableStateOf<String?>(null)
     var acessibilidade by mutableStateOf<String?>(null)
@@ -188,6 +189,7 @@ class RecadastroViewModel(
             isStandardizedSeals = customer.isStandardizedSeals.ifSpaceNull()
             isHdAccessible = customer.isHdAccessible.ifSpaceNull()
             isVacationer = customer.isVacationer.ifSpaceNull()
+            tilEsgoto = customer.tilEsgoto.ifSpaceNull()
             locationStatus = customer.locationStatus.ifSpaceNull()
             existeRedeAgua = customer.existeRedeAgua.ifSpaceNull()
             possuiPiscina = customer.possuiPiscina.ifSpaceNull()
@@ -196,7 +198,7 @@ class RecadastroViewModel(
             pavimentoCalcada = customer.pavimentoCalcada.ifSpaceNull()
             fonteAbastecimento = customer.fonteAbastecimento.ifSpaceNull()
             localInstalacao = customer.localInstalacao.ifSpaceNull()
-            acessibilidade = customer.acessibilidade.ifSpaceNull()
+            acessibilidade = customer.accessibilityReading.ifSpaceNull()
             observacao = customer.observacao ?: ""
             economias = customer.economiesCount?.toString() ?: ""
             cidade = customer.cidade ?: ""
@@ -306,11 +308,11 @@ class RecadastroViewModel(
                     fonteAbastecimento = fonteAbastecimento.orSpace(),
                     existeRedeAgua = existeRedeAgua.orSpace(),
                     localInstalacao = localInstalacao.orSpace(),
-                    acessibilidade = acessibilidade.orSpace(),
+                    accessibilityReading = acessibilidade.orSpace(),
                     observacao = if (snapshotObs.length > 1000) snapshotObs.take(1000) else snapshotObs,
-                    beneficiarioSocial = beneficiarioSocial.orSpace(),
                     usaAguaVizinho = usaAguaVizinho.orSpace(),
                     possuiHidrometro = possuiHidrometro.orSpace(),
+                    tilEsgoto = tilEsgoto.orSpace(),
                     electricityMeter = electricityMeter.orSpace(),
                     grupoSugerido = com.example.oaplicativo.util.GeoFencingHelper.findSuggestedGroup(selectedCity.nome, snapshotLat, snapshotLng) ?: "S/G",
                     setor = setor,
