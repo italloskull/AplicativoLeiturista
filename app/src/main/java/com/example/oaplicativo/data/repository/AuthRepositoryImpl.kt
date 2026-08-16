@@ -135,6 +135,12 @@ class AuthRepositoryImpl private constructor() : AuthRepository {
         try {
             CustomerRepositoryImpl.getInstance().clearCache()
             EconomyRepositoryImpl.getInstance().clearCache()
+            
+            // SÊNIOR SECURITY FIX: Limpa o chaveiro regional local no logout
+            applicationContext?.let { 
+                LocalDatabase.getInstance(it).clearCitiesCache() 
+            }
+
             client.auth.signOut()
         } catch (_: Exception) {}
         _currentUserProfile.value = null

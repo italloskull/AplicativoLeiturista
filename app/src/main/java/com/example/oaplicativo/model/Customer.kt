@@ -46,6 +46,8 @@ data class Customer(
     @SerialName("entrevistado_sexo") val entrevistadoSexo: String? = null,
     @SerialName("entrevistado_apresentou_doc") val entrevistadoApresentouDoc: String? = null,
     @SerialName("entrevistado_qual_doc") val entrevistadoQualDoc: String? = null,
+    @SerialName("entrevistado_email") val entrevistadoEmail: String? = null,
+    @SerialName("entrevistado_celular") val entrevistadoCelular: String? = null,
 
     // Endereço
     val logradouro: String? = null,

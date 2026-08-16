@@ -6,12 +6,9 @@ import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
-import com.example.oaplicativo.data.local.LocalDatabase
 import com.example.oaplicativo.data.repository.AuthRepositoryImpl
 import com.example.oaplicativo.data.repository.CustomerRepositoryImpl
 import com.example.oaplicativo.domain.repository.CustomerRepository
@@ -20,7 +17,6 @@ import com.example.oaplicativo.model.UserProfile
 import com.example.oaplicativo.model.Cidade
 import com.example.oaplicativo.util.ifSpaceNull
 import com.example.oaplicativo.util.orSpace
-import com.example.oaplicativo.util.DateVisualTransformation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -78,7 +74,6 @@ class RecadastroViewModel(
     var entrevistadoCelularApenas by mutableStateOf("")
 
     var email by mutableStateOf("")
-    var telefone by mutableStateOf("")
     var celular1 by mutableStateOf("")
     var logradouro by mutableStateOf("")
     var numero by mutableStateOf("")
@@ -86,7 +81,6 @@ class RecadastroViewModel(
     var bairro by mutableStateOf("")
     var cidade by mutableStateOf("")
     var uf by mutableStateOf("")
-    var cel by mutableStateOf("")
     var cep by mutableStateOf("")
 
     var pavimentoRua by mutableStateOf<String?>(null)
@@ -139,22 +133,87 @@ class RecadastroViewModel(
 
     private val _registrationProgress = derivedStateOf {
         var score = 0f
-        if (matricula.isNotBlank()) score += 10f
-        if (latitude != null && longitude != null) score += 15f
-        if (logradouro.isNotBlank() && numero.isNotBlank()) score += 10f
-        if (beneficiarioSocial != null) score += 5f
-        if (usaAguaVizinho != null) score += 5f
-        if (possuiPiscina != null) score += 5f
-        if (isVacationer != null) score += 5f
-        if (locationStatus != null) score += 5f
-        if (possuiHidrometro != null) score += 5f
-        if (numeroHidrometro.isNotBlank() && numeroHidrometro != " ") score += 10f
-        if (isStandardMeasurementBox != null) score += 5f
-        if (isStandardizedSeals != null) score += 5f
-        if (isHdAccessible != null) score += 5f
-        if (economias.isNotBlank()) score += 5f
-        if (responsavelData.nomeCompleto.isNotBlank()) score += 5f
-        score / 100f
+        val criticalWeight = 10f
+        val normalWeight = 2f
+        val totalWeight = 136f
+
+        // 1. CAMPOS CRÍTICOS (Peso 8 cada)
+        if (matricula.isNotBlank()) score += criticalWeight
+        if (numeroHidrometro.isNotBlank() && numeroHidrometro != " ") score += criticalWeight
+        
+        // E-mail e Celular (Conta do Responsável ou do Entrevistado dependendo do contexto)
+        if (entrevistadoEhOResponsavel == "Sim") {
+            if (email.isNotBlank()) score += criticalWeight
+            if (celular1.isNotBlank()) score += criticalWeight
+        } else {
+            if (entrevistadoEmailApenas.isNotBlank()) score += criticalWeight
+            if (entrevistadoCelularApenas.isNotBlank()) score += criticalWeight
+        }
+
+        // 2. DEMAIS CAMPOS (Peso 2 cada)
+        
+        // Identificação (4)
+        if (registrationDigit.isNotBlank()) score += normalWeight
+        if (setor.isNotBlank()) score += normalWeight
+        if (quadra.isNotBlank()) score += normalWeight
+        if (selectedCidadeForRegistry != null) score += normalWeight
+
+        // Localização (1)
+        if (latitude != null && longitude != null) score += normalWeight
+
+        // Endereço (6)
+        if (cep.isNotBlank()) score += normalWeight
+        if (logradouro.isNotBlank()) score += normalWeight
+        if (numero.isNotBlank()) score += normalWeight
+        if (complemento.isNotBlank()) score += normalWeight
+        if (bairro.isNotBlank()) score += normalWeight
+        if (uf.isNotBlank()) score += normalWeight
+
+        // Dados do Responsável (7)
+        if (responsavelData.nomeCompleto.isNotBlank()) score += normalWeight
+        if (responsavelData.cpfCnpj.isNotBlank()) score += normalWeight
+        if (responsavelData.nomeMae.isNotBlank()) score += normalWeight
+        if (responsavelData.dataNascimento.isNotBlank()) score += normalWeight
+        if (responsavelData.sexo != null) score += normalWeight
+        if (responsavelData.apresentouDoc != null) score += normalWeight
+        if (responsavelData.apresentouDoc == "Sim") {
+            if (responsavelData.qualDoc.isNotBlank()) score += normalWeight
+        } else {
+            // Se não apresentou, o ponto de "Qual Doc" é concedido por não ser aplicável? 
+            // Seguindo a lógica de peso fixo (124), se não é aplicável, não pontua.
+        }
+
+        // Dados do Entrevistado (1)
+        if (entrevistadoEhOResponsavel == "Não") {
+            if (entrevistadoNomeApenas.isNotBlank()) score += normalWeight
+        }
+
+        // Características Físicas e Sanitárias (17)
+        if (pavimentoRua != null) score += normalWeight
+        if (pavimentoCalcada != null) score += normalWeight
+        if (fonteAbastecimento != null) score += normalWeight
+        if (existeRedeAgua != null) score += normalWeight
+        if (possuiPiscina != null) score += normalWeight
+        if (possuiCaixaAgua != null) score += normalWeight
+        if (beneficiarioSocial != null) score += normalWeight
+        if (usaAguaVizinho != null) score += normalWeight
+        if (possuiHidrometro != null) score += normalWeight
+        if (isStandardMeasurementBox != null) score += normalWeight
+        if (isStandardizedSeals != null) score += normalWeight
+        if (isHdAccessible != null) score += normalWeight
+        if (isVacationer != null) score += normalWeight
+        if (tilEsgoto != null) score += normalWeight
+        if (locationStatus != null) score += normalWeight
+        if (localInstalacao != null) score += normalWeight
+        if (acessibilidade != null) score += normalWeight
+
+        // Medidores (1)
+        if (electricityMeter.isNotBlank()) score += normalWeight
+
+        // Outros (1)
+        if (economias.isNotBlank()) score += normalWeight
+
+        score / totalWeight
     }
     val registrationProgress: Float get() = _registrationProgress.value
 
@@ -179,7 +238,6 @@ class RecadastroViewModel(
             cidade = customer.cidade ?: ""
             uf = customer.uf ?: ""
             email = customer.email ?: ""
-            telefone = ""
             celular1 = customer.celular ?: ""
             
             beneficiarioSocial = customer.beneficiarioSocial.ifSpaceNull()
@@ -204,7 +262,7 @@ class RecadastroViewModel(
             cidade = customer.cidade ?: ""
 
             responsavelTipo = "Proprietário" 
-            responsavelData.nomeCompleto = customer.entrevistadoNome ?: ""
+            responsavelData.nomeCompleto = customer.name ?: ""
             responsavelData.cpfCnpj = customer.entrevistadoCpf ?: ""
             responsavelData.nomeMae = customer.entrevistadoMae ?: ""
             responsavelData.dataNascimento = customer.entrevistadoNascimento ?: ""
@@ -215,8 +273,21 @@ class RecadastroViewModel(
             numeroHidrometro = customer.numeroHidrometro ?: ""
             electricityMeter = customer.electricityMeter ?: ""
             
-            entrevistadoEhOResponsavel = "Sim"
-            entrevistadoNomeApenas = ""
+            // SÊNIOR FIX: Restaura o status do entrevistado de forma inteligente
+            val savedEntrevistadoNome = customer.entrevistadoNome?.trim()
+            val savedResponsavelNome = customer.name?.trim()
+            
+            if (!savedEntrevistadoNome.isNullOrBlank() && savedEntrevistadoNome != savedResponsavelNome) {
+                entrevistadoEhOResponsavel = "Não"
+                entrevistadoNomeApenas = savedEntrevistadoNome
+                entrevistadoEmailApenas = customer.entrevistadoEmail ?: ""
+                entrevistadoCelularApenas = customer.entrevistadoCelular ?: ""
+            } else {
+                entrevistadoEhOResponsavel = "Sim"
+                entrevistadoNomeApenas = ""
+                entrevistadoEmailApenas = ""
+                entrevistadoCelularApenas = ""
+            }
             
             _authorizedCities.value.find { it.nome == customer.cidade }?.let {
                 selectedCidadeForRegistry = it
@@ -228,23 +299,7 @@ class RecadastroViewModel(
         viewModelScope.launch {
             try {
                 val user = currentUserProfile.value ?: return@launch
-                val snapshotMatricula = matricula
-                val snapshotDigit = registrationDigit
-                val snapshotLat = latitude
-                val snapshotLng = longitude
-                val snapshotLogradouro = logradouro
-                val snapshotNumero = numero
-                val snapshotComplemento = complemento
-                val snapshotBairro = bairro
-                val snapshotCep = cep
-                val snapshotUf = uf
-                val snapshotEmail = email
-                val snapshotCelular = celular1
-                val snapshotObs = observacao
-                val sEco = economias.toIntOrNull()
-
-                val selectedCity = selectedCidadeForRegistry
-                if (selectedCity == null) {
+                val selectedCity = selectedCidadeForRegistry ?: run {
                     onError("Por favor, selecione a cidade do registro no topo da tela.")
                     return@launch
                 }
@@ -253,71 +308,65 @@ class RecadastroViewModel(
                 val brDate = brNow.format(DateTimeFormatter.ofPattern("yyyy/MM/dd"))
                 val brFullTimestamp = brNow.format(DateTimeFormatter.ofPattern("yyyy/MM/dd_HH:mm:ss"))
 
-                val sNome = responsavelData.nomeCompleto.trim()
-                val sCpf = responsavelData.cpfCnpj.trim()
-                val sMae = responsavelData.nomeMae.trim()
-                val rawNasc = responsavelData.dataNascimento.trim()
-                // SÊNIOR DATA FIX: Formata a data bruta (21062001) para o padrão banco (21/06/2001)
-                val sNasc = if (rawNasc.length == 8) {
-                    "${rawNasc.substring(0, 2)}/${rawNasc.substring(2, 4)}/${rawNasc.substring(4)}"
-                } else rawNasc
-
-                val sSexo = responsavelData.sexo
-                val sDoc = responsavelData.apresentouDoc
-                val sQual = responsavelData.qualDoc.trim()
+                // SÊNIOR DATA FIX: Formata a data de nascimento bruta
+                val sNasc = responsavelData.dataNascimento.trim().let { 
+                    if (it.length == 8) "${it.substring(0, 2)}/${it.substring(2, 4)}/${it.substring(4)}" else it 
+                }
 
                 val customer = Customer(
                     id = editingCustomerId ?: UUID.randomUUID().toString(),
                     cidadeId = selectedCity.id,
                     leituristaId = user.id,
-                    name = sNome.orSpace(),
-                    registrationNumber = snapshotMatricula.orSpace(),
-                    registrationDigit = snapshotDigit.orSpace(),
-                    email = if (responsavelTipo == "Proprietário") snapshotEmail.orSpace() else " ",
-                    celular = if (responsavelTipo == "Proprietário") snapshotCelular.orSpace() else " ",
+                    name = responsavelData.nomeCompleto.trim().orSpace(),
+                    registrationNumber = matricula.orSpace(),
+                    registrationDigit = registrationDigit.orSpace(),
+                    email = if (responsavelTipo == "Proprietário") email.orSpace() else " ",
+                    celular = if (responsavelTipo == "Proprietário") celular1.orSpace() else " ",
                     isStandardMeasurementBox = isStandardMeasurementBox.orSpace(),
                     isStandardizedSeals = isStandardizedSeals.orSpace(),
                     isHdAccessible = isHdAccessible.orSpace(),
                     isVacationer = isVacationer.orSpace(),
                     possuiPiscina = possuiPiscina.orSpace(),
                     possuiCaixaAgua = possuiCaixaAgua.orSpace(),
-                    latitude = snapshotLat,
-                    longitude = snapshotLng,
+                    latitude = latitude,
+                    longitude = longitude,
                     locationStatus = locationStatus.orSpace(),
-                    economiesCount = sEco,
+                    economiesCount = economias.toIntOrNull(),
                     addedBy = user.fullName ?: user.username ?: "Equipe de Campo",
                     capturedAt = brFullTimestamp,
                     date = brDate,
                     quality = calculateDataQuality(),
-                    entrevistadoNome = if (entrevistadoEhOResponsavel == "Sim") sNome else entrevistadoNomeApenas.orSpace(),
-                    entrevistadoCpf = if (entrevistadoEhOResponsavel == "Sim") sCpf else " ",
-                    entrevistadoMae = if (entrevistadoEhOResponsavel == "Sim") sMae else " ",
+                    entrevistadoNome = if (entrevistadoEhOResponsavel == "Sim") responsavelData.nomeCompleto.trim() else entrevistadoNomeApenas.trim().orSpace(),
+                    entrevistadoCpf = if (entrevistadoEhOResponsavel == "Sim") responsavelData.cpfCnpj.trim() else " ",
+                    entrevistadoMae = if (entrevistadoEhOResponsavel == "Sim") responsavelData.nomeMae.trim() else " ",
                     entrevistadoNascimento = if (entrevistadoEhOResponsavel == "Sim") sNasc else " ",
-                    entrevistadoSexo = if (entrevistadoEhOResponsavel == "Sim") sSexo else null,
-                    entrevistadoApresentouDoc = (if (entrevistadoEhOResponsavel == "Sim") sDoc else null).orSpace(),
-                    entrevistadoQualDoc = if (entrevistadoEhOResponsavel == "Sim") sQual else " ",
-                    logradouro = snapshotLogradouro,
-                    numero = snapshotNumero,
-                    complemento = snapshotComplemento,
-                    bairro = snapshotBairro,
+                    entrevistadoSexo = if (entrevistadoEhOResponsavel == "Sim") responsavelData.sexo else null,
+                    entrevistadoApresentouDoc = (if (entrevistadoEhOResponsavel == "Sim") responsavelData.apresentouDoc else null).orSpace(),
+                    entrevistadoQualDoc = if (entrevistadoEhOResponsavel == "Sim") responsavelData.qualDoc.trim() else " ",
+                    entrevistadoEmail = if (entrevistadoEhOResponsavel == "Sim") email.trim() else entrevistadoEmailApenas.trim().orSpace(),
+                    entrevistadoCelular = if (entrevistadoEhOResponsavel == "Sim") celular1.trim() else entrevistadoCelularApenas.trim().orSpace(),
+                    logradouro = logradouro,
+                    numero = numero,
+                    complemento = complemento,
+                    bairro = bairro,
                     cidade = selectedCity.nome,
-                    uf = snapshotUf,
-                    cep = snapshotCep,
+                    uf = uf,
+                    cep = cep,
                     pavimentoRua = pavimentoRua.orSpace(),
                     pavimentoCalcada = pavimentoCalcada.orSpace(),
                     fonteAbastecimento = fonteAbastecimento.orSpace(),
                     existeRedeAgua = existeRedeAgua.orSpace(),
                     localInstalacao = localInstalacao.orSpace(),
                     accessibilityReading = acessibilidade.orSpace(),
-                    observacao = if (snapshotObs.length > 1000) snapshotObs.take(1000) else snapshotObs,
+                    observacao = if (observacao.length > 1000) observacao.take(1000) else observacao,
                     usaAguaVizinho = usaAguaVizinho.orSpace(),
                     possuiHidrometro = possuiHidrometro.orSpace(),
                     tilEsgoto = tilEsgoto.orSpace(),
                     electricityMeter = electricityMeter.orSpace(),
-                    grupoSugerido = com.example.oaplicativo.util.GeoFencingHelper.findSuggestedGroup(selectedCity.nome, snapshotLat, snapshotLng) ?: "S/G",
+                    grupoSugerido = com.example.oaplicativo.util.GeoFencingHelper.findSuggestedGroup(selectedCity.nome, latitude, longitude) ?: "S/G",
                     setor = setor,
                     quadra = quadra,
-                    rotaSugerida = com.example.oaplicativo.util.GeoFencingHelper.findSuggestedRoute(selectedCity.nome, snapshotLat, snapshotLng) ?: "S/R",
+                    rotaSugerida = com.example.oaplicativo.util.GeoFencingHelper.findSuggestedRoute(selectedCity.nome, latitude, longitude) ?: "S/R",
                     numeroHidrometro = numeroHidrometro.trim().orSpace(),
                     isSynced = false
                 )
@@ -401,22 +450,5 @@ class RecadastroViewModel(
             progress >= 0.50f -> "Regular"
             else -> "Ruim"
         }
-    }
-
-    fun resetForm() {
-        editingCustomerId = null
-        matricula = ""; registrationDigit = ""; setor = ""; quadra = ""
-        latitude = null; longitude = null; isCapturingLocation = false
-        responsavelTipo = "Proprietário"; entrevistadoEhOResponsavel = "Sim"
-        responsavelData.nomeCompleto = ""; responsavelData.cpfCnpj = ""; responsavelData.nomeMae = ""
-        responsavelData.dataNascimento = ""; responsavelData.sexo = null; responsavelData.apresentouDoc = null
-        responsavelData.qualDoc = ""; entrevistadoNomeApenas = ""; entrevistadoEmailApenas = ""; entrevistadoCelularApenas = ""
-        email = ""; telefone = ""; celular1 = ""; logradouro = ""; numero = ""; complemento = ""
-        bairro = ""; cidade = ""; uf = ""; cep = ""
-        pavimentoRua = null; pavimentoCalcada = null; fonteAbastecimento = null; existeRedeAgua = null
-        possuiPiscina = null; possuiCaixaAgua = null; beneficiarioSocial = null; usaAguaVizinho = null
-        possuiHidrometro = null; isStandardMeasurementBox = null; isStandardizedSeals = null
-        isHdAccessible = null; isVacationer = null; locationStatus = null; localInstalacao = null
-        acessibilidade = null; numeroHidrometro = ""; economias = ""; observacao = ""
     }
 }

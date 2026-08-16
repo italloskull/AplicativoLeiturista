@@ -71,8 +71,8 @@ class StatsRepositoryImpl private constructor(context: Context) : StatsRepositor
         } catch (e: Exception) {
             Log.e("debugs", "❌ [STATS] Erro ao carregar: ${e.message}")
             // Fallback para o que estiver no SQLite no momento (pendentes)
-            val local = db.getTodayStats(cidadeId, isAdmin)
-            val total = local["Total"] ?: 0
+            val local = db.getTodayStats()
+            val total = local["pendentes"] ?: 0
             if (total > 0) {
                 _stats.value = VisitasStats(hojeTotal = total, totalHistorico = total)
             }

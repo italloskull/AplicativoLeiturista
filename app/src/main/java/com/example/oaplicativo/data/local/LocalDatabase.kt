@@ -4,6 +4,8 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import android.util.Log
+import androidx.core.database.sqlite.transaction
 import com.example.oaplicativo.model.Customer
 import com.example.oaplicativo.model.EconomyUpdate
 import com.example.oaplicativo.model.UserProfile
@@ -27,16 +29,11 @@ class LocalDatabase(context: Context) :
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        if (oldVersion < 45) {
-            // SÊNIOR CLEANUP: Migração concluída. A partir daqui o sistema é puramente acessibilidade_leitura.
+        if (oldVersion < 46) {
+            // SÊNIOR CLEANUP: Migração completa para v46 com resgate de entrevista
             try {
-                // Tentamos remover a coluna antiga apenas para economizar espaço local caso o Android permita
-                // Como SQLite não suporta DROP COLUMN em versões muito antigas, apenas garantimos que a nova existe
-                db.execSQL("ALTER TABLE customers ADD COLUMN acessibilidade_leitura TEXT")
-            } catch (_: Exception) {}
-            
-            try {
-                db.execSQL("ALTER TABLE grandes_empreendimentos ADD COLUMN acessibilidade_leitura TEXT")
+                db.execSQL("ALTER TABLE customers ADD COLUMN entrevistado_email TEXT")
+                db.execSQL("ALTER TABLE customers ADD COLUMN entrevistado_celular TEXT")
             } catch (_: Exception) {}
         }
     }
@@ -73,6 +70,8 @@ class LocalDatabase(context: Context) :
             put("entrevistado_sexo", customer.entrevistadoSexo)
             put("entrevistado_apresentou_doc", customer.entrevistadoApresentouDoc)
             put("entrevistado_qual_doc", customer.entrevistadoQualDoc)
+            put("entrevistado_email", customer.entrevistadoEmail)
+            put("entrevistado_celular", customer.entrevistadoCelular)
             put("logradouro", customer.logradouro)
             put("numero", customer.numero)
             put("complemento", customer.complemento)
@@ -141,6 +140,8 @@ class LocalDatabase(context: Context) :
                     entrevistadoSexo = cursor.getString(cursor.getColumnIndexOrThrow("entrevistado_sexo")),
                     entrevistadoApresentouDoc = cursor.getString(cursor.getColumnIndexOrThrow("entrevistado_apresentou_doc")),
                     entrevistadoQualDoc = cursor.getString(cursor.getColumnIndexOrThrow("entrevistado_qual_doc")),
+                    entrevistadoEmail = cursor.getString(cursor.getColumnIndexOrThrow("entrevistado_email")),
+                    entrevistadoCelular = cursor.getString(cursor.getColumnIndexOrThrow("entrevistado_celular")),
                     logradouro = cursor.getString(cursor.getColumnIndexOrThrow("logradouro")),
                     numero = cursor.getString(cursor.getColumnIndexOrThrow("numero")),
                     complemento = cursor.getString(cursor.getColumnIndexOrThrow("complemento")),
@@ -243,11 +244,6 @@ class LocalDatabase(context: Context) :
         writableDatabase.delete("grandes_empreendimentos", "id = ?", arrayOf(id))
     }
 
-    fun resetSyncAttempts() {
-        writableDatabase.execSQL("UPDATE customers SET sync_attempts = 0")
-        writableDatabase.execSQL("UPDATE grandes_empreendimentos SET sync_attempts = 0")
-    }
-
     fun getPersonalRecord(): Int {
         val db = readableDatabase
         db.query("stats", arrayOf("value"), "id = 'record'", null, null, null, null).use { cursor ->
@@ -268,29 +264,13 @@ class LocalDatabase(context: Context) :
         }
     }
 
-    fun getTodayStats(city: String? = null, isAdmin: Boolean = false): Map<String, Int> {
+    fun getTodayStats(): Map<String, Int> {
         val stats = mutableMapOf<String, Int>()
         val db = readableDatabase
         db.rawQuery("SELECT COUNT(*) FROM customers WHERE isSynced = 0", null).use { cursor ->
             if (cursor.moveToFirst()) stats["pendentes"] = cursor.getInt(0)
         }
         return stats
-    }
-
-    fun getRecadastroStats(city: String? = null, isAdmin: Boolean = false): Pair<Int, Int> {
-        val db = readableDatabase
-        var total = 0; var synced = 0
-        db.rawQuery("SELECT COUNT(*) FROM customers", null).use { cursor -> if (cursor.moveToFirst()) total = cursor.getInt(0) }
-        db.rawQuery("SELECT COUNT(*) FROM customers WHERE isSynced = 1", null).use { cursor -> if (cursor.moveToFirst()) synced = cursor.getInt(0) }
-        return total to synced
-    }
-
-    fun getEconomyStats(city: String? = null, isAdmin: Boolean = false): Pair<Int, Int> {
-        val db = readableDatabase
-        var total = 0; var synced = 0
-        db.rawQuery("SELECT COUNT(*) FROM grandes_empreendimentos", null).use { cursor -> if (cursor.moveToFirst()) total = cursor.getInt(0) }
-        db.rawQuery("SELECT COUNT(*) FROM grandes_empreendimentos WHERE isSynced = 1", null).use { cursor -> if (cursor.moveToFirst()) synced = cursor.getInt(0) }
-        return total to synced
     }
 
     fun cacheUserProfile(userId: String, email: String, name: String, user: String, cargo: String) {
@@ -327,20 +307,15 @@ class LocalDatabase(context: Context) :
     }
 
     fun cacheUserCities(cities: List<Cidade>) {
-        val db = writableDatabase
-        db.beginTransaction()
-        try {
-            db.delete("cities_cache", null, null) 
+        writableDatabase.transaction {
+            delete("cities_cache", null, null) 
             cities.forEach { city ->
                 val values = ContentValues().apply {
                     put("id", city.id)
                     put("nome", city.nome)
                 }
-                db.insert("cities_cache", null, values)
+                insert("cities_cache", null, values)
             }
-            db.setTransactionSuccessful()
-        } finally {
-            db.endTransaction()
         }
     }
 
@@ -358,6 +333,11 @@ class LocalDatabase(context: Context) :
         return list
     }
 
+    fun clearCitiesCache() {
+        writableDatabase.delete("cities_cache", null, null)
+        Log.d("debugs", "🧼 [SQLITE] Cache de cidades limpo com sucesso.")
+    }
+
     companion object {
         @Volatile private var instance: LocalDatabase? = null
         fun getInstance(context: Context): LocalDatabase {
@@ -366,8 +346,8 @@ class LocalDatabase(context: Context) :
             }
         }
 
-        private const val DATABASE_NAME = "sanitation_final_v16.db"
-        private const val DATABASE_VERSION = 45
+        private const val DATABASE_NAME = "sanitation_final_v17.db"
+        private const val DATABASE_VERSION = 46
         
         private const val CREATE_TABLE_CUSTOMERS = """
             CREATE TABLE IF NOT EXISTS customers (
@@ -378,7 +358,8 @@ class LocalDatabase(context: Context) :
                 entrevistado_apresentou_doc TEXT, entrevistado_qual_doc TEXT, logradouro TEXT, numero TEXT, complemento TEXT, bairro TEXT, cidade TEXT,
                 uf TEXT, cep TEXT, pavimento_rua TEXT, pavimento_calcada TEXT, fonte_abastecimento TEXT, existe_rede_agua TEXT, local_instalacao TEXT,
                 acessibilidade_leitura TEXT, observacao TEXT, beneficiario_social TEXT, usa_agua_vizinho TEXT, possui_hidrometro TEXT, til_esgoto TEXT, medidor_energia TEXT,
-                grupo_sugerido TEXT, setor TEXT, quadra TEXT, rota_sugerida TEXT, numero_hidrometro TEXT, isSynced INTEGER DEFAULT 0, sync_attempts INTEGER DEFAULT 0, last_error TEXT, sincronizado_em TEXT
+                grupo_sugerido TEXT, setor TEXT, quadra TEXT, rota_sugerida TEXT, numero_hidrometro TEXT, isSynced INTEGER DEFAULT 0, sync_attempts INTEGER DEFAULT 0, last_error TEXT, sincronizado_em TEXT,
+                entrevistado_email TEXT, entrevistado_celular TEXT
             )"""
             
         private const val CREATE_TABLE_ECONOMY_UPDATES = """

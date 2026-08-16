@@ -2,7 +2,6 @@
 package com.example.oaplicativo.data.repository
 
 import android.util.Log
-import java.util.UUID
 import com.example.oaplicativo.data.SupabaseClient
 import com.example.oaplicativo.domain.repository.CustomerRepository
 import com.example.oaplicativo.model.Customer
