@@ -27,3 +27,11 @@ fun String?.normalizeQuality(): String {
     val base = this?.lowercase(Locale.ROOT)?.trim() ?: "ruim"
     return base.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.ROOT) else it.toString() }
 }
+
+/**
+ * Remove acentos e caracteres especiais para comparação de busca.
+ */
+fun String.removeAccents(): String {
+    val temp = java.text.Normalizer.normalize(this, java.text.Normalizer.Form.NFD)
+    return "\\p{InCombiningDiacriticalMarks}+".toRegex().replace(temp, "")
+}

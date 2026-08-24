@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 
 interface CustomerRepository {
     val customers: StateFlow<List<Customer>>
-    suspend fun fetchCustomers(cidadeId: String? = null, isAdmin: Boolean = false)
+    suspend fun fetchCustomers(cidadeId: String? = null, isAdmin: Boolean = false, forceFull: Boolean = false)
     suspend fun addCustomer(customer: Customer)
     suspend fun addCustomers(customers: List<Customer>) // SÊNIOR PERF: Suporte a lote (batch)
     suspend fun updateCustomer(customer: Customer)
@@ -15,4 +15,5 @@ interface CustomerRepository {
     fun clearCache()
     suspend fun saveCustomerLocallyAndSync(customer: Customer)
     suspend fun searchCustomersRemote(query: String, cidadeId: String?, isAdmin: Boolean): List<com.example.oaplicativo.model.Customer> // SÊNIOR SEARCH: Busca remota blindada por cidade
+    suspend fun addRemoteResults(results: List<com.example.oaplicativo.model.Customer>)
 }

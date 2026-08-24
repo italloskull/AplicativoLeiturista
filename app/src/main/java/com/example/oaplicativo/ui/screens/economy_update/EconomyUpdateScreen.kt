@@ -70,8 +70,13 @@ fun EconomyUpdateScreen(
         }
     }
 
+    LaunchedEffect(itemId) {
+        // SÊNIOR RESET: Garante que a tela comece do zero, evitando fechar imediatamente se o estado anterior foi Success
+        viewModel.resetState()
+    }
+
     LaunchedEffect(state) {
-        if (state is EconomyUpdateState.Success) {
+        if (state is EconomyUpdateState.SaveSuccess) { // SÊNIOR FIX: Fecha apenas no sucesso de salvamento
             onSaveSuccess()
             viewModel.resetState()
         }

@@ -28,6 +28,7 @@ sealed class EconomyUpdateState {
     object Idle : EconomyUpdateState()
     object Loading : EconomyUpdateState()
     object Success : EconomyUpdateState()
+    object SaveSuccess : EconomyUpdateState() // SÊNIOR FIX: Estado específico para fechamento de tela
     data class Error(val message: String) : EconomyUpdateState()
 }
 
@@ -89,13 +90,20 @@ class EconomyUpdateViewModel @JvmOverloads constructor(
         }
     }
 
-    fun fetchEconomyUpdates() {
+    fun fetchEconomyUpdates(forceFull: Boolean = false) {
         viewModelScope.launch {
-            val user = AuthRepositoryImpl.getInstance().currentUserProfile.value
-            repository.fetchEconomyUpdates(
-                cidadeId = user?.cidadeId,
-                isAdmin = user?.cargo?.lowercase() == "desenvolvedor"
-            )
+            _state.value = EconomyUpdateState.Loading
+            try {
+                val user = AuthRepositoryImpl.getInstance().currentUserProfile.value
+                repository.fetchEconomyUpdates(
+                    cidadeId = user?.cidadeId,
+                    isAdmin = user?.cargo?.lowercase() == "desenvolvedor",
+                    forceFull = forceFull
+                )
+                _state.value = EconomyUpdateState.Success
+            } catch (e: Exception) {
+                _state.value = EconomyUpdateState.Error(e.message ?: "Erro ao carregar")
+            }
         }
     }
 
@@ -136,8 +144,7 @@ class EconomyUpdateViewModel @JvmOverloads constructor(
                 Log.d("debugs", "🟢 [GE_SAVE] Gravando no banco. Cidade: ${selectedCity.nome} | Grupo: $suggestedGroup")
 
                 db.saveEconomyUpdateOffline(finalItem.copy(isSynced = true)) 
-                fetchEconomyUpdates()
-
+                
                 val syncRequest = OneTimeWorkRequestBuilder<SyncWorker>()
                     .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
                     .setBackoffCriteria(BackoffPolicy.LINEAR, 30, java.util.concurrent.TimeUnit.SECONDS)
@@ -149,7 +156,7 @@ class EconomyUpdateViewModel @JvmOverloads constructor(
                     syncRequest
                 )
 
-                _state.value = EconomyUpdateState.Success
+                _state.value = EconomyUpdateState.SaveSuccess // SÊNIOR FIX: Dispara o fechamento apenas aqui
             } catch (e: Exception) {
                 Log.e("EconomyVM", "❌ FALHA AO SALVAR", e)
                 _state.value = EconomyUpdateState.Error(e.message ?: "Erro ao salvar")
@@ -166,7 +173,7 @@ class EconomyUpdateViewModel @JvmOverloads constructor(
     }
 
     fun refreshData() {
-        fetchEconomyUpdates()
+        fetchEconomyUpdates(forceFull = true)
     }
 
     fun forceSyncAll() {

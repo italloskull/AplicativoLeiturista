@@ -16,4 +16,5 @@ data class UserProfile(
 ) {
     val isAdmin: Boolean get() = cargo.lowercase() == "administrador"
     val isDeveloper: Boolean get() = cargo.lowercase() == "desenvolvedor"
+    val isPowerUser: Boolean get() = cargo.lowercase() == "administrador" || cargo.lowercase() == "desenvolvedor"
 }

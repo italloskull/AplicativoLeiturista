@@ -72,11 +72,17 @@ fun MenuScreen(
             ) {
                 GlobalActionMenu(
                     isDarkTheme = isDarkTheme,
-                    isAdmin = userProfile?.isAdmin ?: false,
+                    isAdmin = userProfile?.isPowerUser ?: false,
                     onToggleTheme = onToggleTheme,
                     onLogout = onLogout,
+                    onNavigateToUserRegistration = { onNavigate("user_registration") },
                     onNavigateToAdminPanel = { onNavigate("admin_dashboard") },
-                    onNavigateToUserManagement = { onNavigate("user_management") }
+                    onNavigateToUserManagement = { onNavigate("user_management") },
+                    onForceSync = {
+                        val syncRequest = androidx.work.OneTimeWorkRequestBuilder<com.example.oaplicativo.data.sync.SyncWorker>().build()
+                        androidx.work.WorkManager.getInstance(context).enqueueUniqueWork("force_sync_menu", androidx.work.ExistingWorkPolicy.REPLACE, syncRequest)
+                        Toast.makeText(context, "Sincronização iniciada manualmente! 🚀", Toast.LENGTH_SHORT).show()
+                    }
                 )
             }
         }
@@ -95,13 +101,13 @@ fun MenuScreen(
                 text = "RECADASTRE.IA",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Black,
-                color = MaterialTheme.colorScheme.primary,
+                color = if (isDarkTheme) Color(0xFF60A5FA) else MaterialTheme.colorScheme.primary, // SÊNIOR FIX: Azul mais claro no tema escuro
                 letterSpacing = 2.sp
             )
             Text(
                 text = "Informações Atualizadas",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f) // SÊNIOR FIX: Melhor contraste no escuro
             )
 
             Spacer(Modifier.height(40.dp))
@@ -253,7 +259,7 @@ fun MenuScreen(
                 }
             }
 
-            Text("Recadastre.IA • v$appVersion", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+            Text("Recadastre.IA • v$appVersion", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -273,8 +279,10 @@ fun MenuCard(
             .height(160.dp)
             .clickable { onClick() },
         shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f) // SÊNIOR FIX: Adaptável ao tema
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp) // SÊNIOR FIX: Flat design moderno
     ) {
         Column(
             modifier = Modifier
@@ -285,15 +293,25 @@ fun MenuCard(
             Surface(
                 modifier = Modifier.size(40.dp),
                 shape = CircleShape,
-                color = statusColor.copy(alpha = 0.1f)
+                color = statusColor.copy(alpha = 0.2f) // SÊNIOR FIX: Cor de fundo do ícone mais visível
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(icon, null, tint = statusColor, modifier = Modifier.size(20.dp))
                 }
             }
             Column {
-                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(status, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.ExtraBold, color = statusColor)
+                Text(
+                    text = title, 
+                    style = MaterialTheme.typography.titleMedium, 
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface // SÊNIOR FIX: Garante cor correta do texto
+                )
+                Text(
+                    text = status, 
+                    style = MaterialTheme.typography.labelSmall, 
+                    fontWeight = FontWeight.ExtraBold, 
+                    color = statusColor
+                )
             }
         }
     }

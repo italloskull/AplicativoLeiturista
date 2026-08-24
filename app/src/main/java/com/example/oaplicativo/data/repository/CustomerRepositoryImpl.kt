@@ -72,31 +72,74 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
         }
     }
 
-    override suspend fun fetchCustomers(cidadeId: String?, isAdmin: Boolean) {
+    override suspend fun fetchCustomers(cidadeId: String?, isAdmin: Boolean, forceFull: Boolean) {
         refreshMutex.withLock {
             try {
                 val userCityName = com.example.oaplicativo.util.CityUtils.getFriendlyCityName(cidadeId)
+                val ctx = applicationContext ?: return@withLock
+                val db = com.example.oaplicativo.data.local.LocalDatabase.getInstance(ctx)
+
+                // 1. SÊNIOR CACHE LOAD: Carrega o que já temos localmente para UI instantânea
+                if (!forceFull) {
+                    val cached = try { db.getRemoteCache(userCityName) } catch (e: Exception) { emptyList() }
+                    if (cached.isNotEmpty()) {
+                        remoteCustomers = cached
+                        combineAndEmit()
+                    }
+                } else {
+                    // Se for Full Refresh, limpa a lista da memória e TAMBÉM o SQLite antes de buscar
+                    remoteCustomers = emptyList()
+                    try { db.clearRemoteCache(userCityName) } catch (_: Exception) {}
+                    combineAndEmit()
+                    Log.d("debugs", "🚀 [FORCE_SYNC] Cache local limpo e iniciando carga total do servidor...")
+                }
+
+                // 2. SÊNIOR DELTA SYNC: Descobrimos o que já temos (apenas se não for carga total)
+                val lastTimestamp = if (!forceFull) {
+                    try { db.getLatestCacheTimestamp(userCityName) } catch (e: Exception) { null }
+                } else null
                 
                 val list = withContext(Dispatchers.IO) {
                     val authRepo = AuthRepositoryImpl.getInstance()
                     val authorizedCities = authRepo.getUserCities()
-                    val cityNames = authorizedCities.map { it.nome }
+                    val cityNames = if (userCityName != null) listOf(userCityName) else authorizedCities.map { it.nome }
 
                     client.postgrest["clientes"].select {
-                        // SÊNIOR REGIONAL FIX: Filtragem linear para eliminar redundância lógica
                         if (!isAdmin) {
                             val targetCities = cityNames.ifEmpty { listOf("BLOCK_ALL_ACCESS") }
-                            filter { or { targetCities.forEach { eq("cidade", it) } } }
+                            filter { or { targetCities.forEach { ilike("cidade", it) } } }
                         }
-                        order("capturado_em", order = io.github.jan.supabase.postgrest.query.Order.DESCENDING)
-                        limit(500)
+                        
+                        // SÊNIOR DELTA FILTER: Se temos um timestamp, pedimos apenas as novidades (criados ou editados)
+                        if (lastTimestamp != null && lastTimestamp.isNotBlank()) {
+                            filter { gt("updated_at", lastTimestamp) }
+                            Log.d("debugs", "🔄 [DELTA_SYNC] Buscando novidades desde: $lastTimestamp")
+                        } else {
+                            // Baseline: Se não tem nada ou é Full Refresh, carrega os 1000 mais recentes
+                            order("updated_at", order = io.github.jan.supabase.postgrest.query.Order.DESCENDING)
+                            limit(1000)
+                        }
                     }.decodeList<Customer>()
                 }
                 
-                remoteCustomers = list
-                combineAndEmit()
+                if (list.isNotEmpty()) {
+                    // SÊNIOR MERGE LOGIC: Atualiza o que já existe e adiciona o que é novo
+                    val customerMap = remoteCustomers.associateBy { it.id }.toMutableMap()
+                    
+                    list.forEach { updatedCustomer ->
+                        val id = updatedCustomer.id ?: return@forEach
+                        customerMap[id] = updatedCustomer
+                    }
+                    
+                    remoteCustomers = customerMap.values.toList()
+                    db.saveRemoteCustomersToCache(list) 
+                    combineAndEmit()
+                    Log.d("debugs", "✅ [SYNC] Lista atualizada com ${list.size} registros.")
+                } else {
+                    Log.d("debugs", "☁️ [SYNC] Nenhuma novidade encontrada.")
+                }
             } catch (e: Exception) {
-                Log.e("debugs", "❌ [RECADASTRO] Falha: ${e.message}")
+                Log.e("debugs", "❌ [SYNC] Falha: ${e.message}")
             }
         }
     }
@@ -115,17 +158,22 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
     private fun combineAndEmit() {
         scope.launch(Dispatchers.Default) {
             refreshMutex.withLock {
-                // SÊNIOR SMART MERGE: Identificamos quais IDs já estão no servidor
-                val remoteIds = remoteCustomers.mapNotNull { it.id }.toSet()
+                // SÊNIOR PERF: Indexamos os itens locais e remotos em um Map para merge instantâneo (O(N))
+                // Isso substitui a busca linear dentro do loop, que era O(N²)
+                val customerMap = mutableMapOf<String, Customer>()
 
-                val combined = (localPendingCustomers.asSequence().map { 
-                    // Se o item local já foi detectado no servidor, mudamos o status visual IMEDIATAMENTE
-                    if (remoteIds.contains(it.id)) it.copy(isSynced = true) else it
-                } + remoteCustomers.asSequence())
-                .distinctBy { it.id ?: "TEMP_${System.nanoTime()}" }
-                .toList()
-                
-                _customers.value = combined
+                // 1. Processa itens remotos
+                remoteCustomers.forEach { it.id?.let { id -> customerMap[id] = it } }
+
+                // 2. Mescla com itens locais pendentes (Local sobrepõe remoto em caso de conflito de ID)
+                localPendingCustomers.forEach { local ->
+                    local.id?.let { id ->
+                        val remoteVersion = customerMap[id]
+                        customerMap[id] = if (remoteVersion != null) local.copy(isSynced = true) else local
+                    }
+                }
+
+                _customers.value = customerMap.values.toList()
             }
         }
     }
@@ -135,10 +183,23 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
     }
 
     override suspend fun addCustomers(customers: List<Customer>) {
-        if (customers.isEmpty()) return
+        if (customers.isEmpty()) {
+            Log.d("Supauploads", "ℹ️ addCustomers chamado com lista vazia.")
+            return
+        }
         withContext(Dispatchers.IO) {
             try {
-                client.postgrest["clientes"].upsert(customers)
+                // SÊNIOR DIAGNOSTIC: Log do objeto que está sendo enviado para detectar campos nulos/inválidos
+                customers.forEach { 
+                    Log.d("Supauploads", "⬆️ [REPO] Tentando UPSERT Supabase: ${it.name} | ID: ${it.id} | Data: ${it.updatedAt}")
+                    if (it.updatedAt.isNullOrBlank()) Log.e("Supauploads", "‼️ ALERTA: updated_at está VAZIO para ${it.name}. Isso pode causar problemas de ordenação!")
+                    if (it.cidadeId.isNullOrBlank()) Log.e("Supauploads", "‼️ CRÍTICO: cidade_id está NULO para ${it.name}")
+                }
+                
+                val response = client.postgrest["clientes"].upsert(customers) {
+                    select() // SÊNIOR DIAGNOSTIC: Pede o retorno dos dados para confirmar gravação
+                }
+                Log.d("Supauploads", "✅ [REPO] Resposta Supabase: ${response.data}")
                 
                 // SÊNIOR FIX: Recuperamos o perfil atual para garantir que o fetch ocorra com os filtros certos
                 val profile = AuthRepositoryImpl.getInstance().currentUserProfile.value
@@ -147,7 +208,10 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
                     isAdmin = profile?.cargo?.lowercase() == "desenvolvedor"
                 )
             } catch (e: Exception) {
-                Log.e("SyncDebug", "❌ ERRO NO LOTE: ${e.message}")
+                // SÊNIOR LOGGING: Captura o erro detalhado do Supabase (Constraints, RLS, etc)
+                Log.e("Supauploads", "❌ [REPO] FALHA CRÍTICA NO UPSERT SUPABASE: ${e.message}")
+                Log.e("Supauploads", "❌ [REPO] Causa: ${e.cause}")
+                e.printStackTrace()
                 throw e
             }
         }
@@ -186,20 +250,43 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
             try {
                 val userCityName = com.example.oaplicativo.util.CityUtils.getFriendlyCityName(cidadeId)
                 client.postgrest["clientes"].select {
-                    if (!isAdmin && userCityName != null) filter { eq("cidade", userCityName) }
-                    // SÊNIOR SEARCH FIX: Agora busca por Nome, Matrícula ou Número do Hidrômetro
+                    // SÊNIOR FIX: Usamos ILIKE na cidade para ignorar case/acentos do banco
+                    if (userCityName != null) filter { ilike("cidade", userCityName) }
+                    
+                    // SÊNIOR SEARCH FIX: Busca por Nome, Matrícula ou Hidrômetro com ILIKE (Case Insensitive)
                     filter { 
                         or { 
                             ilike("name", "%$query%")
-                            eq("matricula", query) 
-                            eq("numero_hidrometro", query)
+                            ilike("matricula", "%$query%") 
+                            ilike("numero_hidrometro", "%$query%")
                         } 
                     }
-                    limit(50)
+                    // REMOVIDO LIMIT: A busca remota agora é exaustiva em todos os registros da cidade
                 }.decodeList<Customer>()
             } catch (e: Exception) {
                 Log.e("debugs", "❌ [SEARCH_REMOTE] Falha: ${e.message}")
                 emptyList()
+            }
+        }
+    }
+
+    override suspend fun addRemoteResults(results: List<Customer>) {
+        if (results.isEmpty()) return
+        scope.launch {
+            refreshMutex.withLock {
+                // SÊNIOR SMART MERGE: Adiciona resultados sem duplicar e sem upsert no servidor
+                val currentIds = remoteCustomers.mapNotNull { it.id }.toSet()
+                val newItems = results.filter { it.id !in currentIds }
+                if (newItems.isNotEmpty()) {
+                    remoteCustomers = remoteCustomers + newItems
+                    combineAndEmit()
+                    
+                    // Persiste no cache também
+                    applicationContext?.let { ctx ->
+                        val db = com.example.oaplicativo.data.local.LocalDatabase.getInstance(ctx)
+                        db.saveRemoteCustomersToCache(newItems)
+                    }
+                }
             }
         }
     }

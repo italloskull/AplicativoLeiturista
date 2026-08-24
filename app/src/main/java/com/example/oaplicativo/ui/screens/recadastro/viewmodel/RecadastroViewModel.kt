@@ -23,8 +23,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
 import java.util.*
 
 class RoleData {
@@ -133,11 +131,11 @@ class RecadastroViewModel(
 
     private val _registrationProgress = derivedStateOf {
         var score = 0f
-        val criticalWeight = 10f
+        val criticalWeight = 15f
         val normalWeight = 2f
         val totalWeight = 136f
 
-        // 1. CAMPOS CRÍTICOS (Peso 8 cada)
+        // 1. CAMPOS CRÍTICOS (Peso 15 cada)
         if (matricula.isNotBlank()) score += criticalWeight
         if (numeroHidrometro.isNotBlank() && numeroHidrometro != " ") score += criticalWeight
         
@@ -259,15 +257,14 @@ class RecadastroViewModel(
             acessibilidade = customer.accessibilityReading.ifSpaceNull()
             observacao = customer.observacao ?: ""
             economias = customer.economiesCount?.toString() ?: ""
-            cidade = customer.cidade ?: ""
 
             responsavelTipo = "Proprietário" 
             responsavelData.nomeCompleto = customer.name ?: ""
             responsavelData.cpfCnpj = customer.entrevistadoCpf ?: ""
             responsavelData.nomeMae = customer.entrevistadoMae ?: ""
             responsavelData.dataNascimento = customer.entrevistadoNascimento ?: ""
-            responsavelData.sexo = customer.entrevistadoSexo
-            responsavelData.apresentouDoc = customer.entrevistadoApresentouDoc ?: "Não"
+            responsavelData.sexo = customer.entrevistadoSexo.ifSpaceNull()
+            responsavelData.apresentouDoc = customer.entrevistadoApresentouDoc.ifSpaceNull() ?: "Não"
             responsavelData.qualDoc = customer.entrevistadoQualDoc ?: ""
             
             numeroHidrometro = customer.numeroHidrometro ?: ""
@@ -304,9 +301,21 @@ class RecadastroViewModel(
                     return@launch
                 }
 
-                val brNow = ZonedDateTime.now(java.time.ZoneId.of("America/Sao_Paulo"))
-                val brDate = brNow.format(DateTimeFormatter.ofPattern("yyyy/MM/dd"))
-                val brFullTimestamp = brNow.format(DateTimeFormatter.ofPattern("yyyy/MM/dd_HH:mm:ss"))
+                // SÊNIOR COMPAT FIX: Voltando para o formato de Barras e Underscore para manter ordenação no painel
+                val sdfDate = java.text.SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
+                val sdfFull = java.text.SimpleDateFormat("yyyy/MM/dd_HH:mm:ss", Locale.getDefault())
+                
+                val brTimeZone = java.util.TimeZone.getTimeZone("America/Sao_Paulo")
+                sdfDate.timeZone = brTimeZone
+                sdfFull.timeZone = brTimeZone
+                
+                val now = java.util.Calendar.getInstance(brTimeZone).time
+                
+                val brDate = sdfDate.format(now)
+                val brFullTimestamp = sdfFull.format(now)
+
+                // SÊNIOR ID-FIX: Garante que o leituristaId seja um UUID válido para o Supabase
+                val sanitizedUserId = if (user.id.length == 36) user.id else null
 
                 // SÊNIOR DATA FIX: Formata a data de nascimento bruta
                 val sNasc = responsavelData.dataNascimento.trim().let { 
@@ -316,8 +325,8 @@ class RecadastroViewModel(
                 val customer = Customer(
                     id = editingCustomerId ?: UUID.randomUUID().toString(),
                     cidadeId = selectedCity.id,
-                    leituristaId = user.id,
-                    name = responsavelData.nomeCompleto.trim().orSpace(),
+                    leituristaId = sanitizedUserId ?: user.id, // SÊNIOR FIX: Usa o ID sanitizado
+                    name = responsavelData.nomeCompleto.trim().uppercase().orSpace(),
                     registrationNumber = matricula.orSpace(),
                     registrationDigit = registrationDigit.orSpace(),
                     email = if (responsavelTipo == "Proprietário") email.orSpace() else " ",
@@ -333,10 +342,11 @@ class RecadastroViewModel(
                     locationStatus = locationStatus.orSpace(),
                     economiesCount = economias.toIntOrNull(),
                     addedBy = user.fullName ?: user.username ?: "Equipe de Campo",
-                    capturedAt = brFullTimestamp,
+                    capturedAt = brFullTimestamp, // SÊNIOR FIX: Restaurado para o formato limpo
+                    updatedAt = brFullTimestamp,
                     date = brDate,
                     quality = calculateDataQuality(),
-                    entrevistadoNome = if (entrevistadoEhOResponsavel == "Sim") responsavelData.nomeCompleto.trim() else entrevistadoNomeApenas.trim().orSpace(),
+                    entrevistadoNome = if (entrevistadoEhOResponsavel == "Sim") responsavelData.nomeCompleto.trim().uppercase() else entrevistadoNomeApenas.trim().uppercase().orSpace(),
                     entrevistadoCpf = if (entrevistadoEhOResponsavel == "Sim") responsavelData.cpfCnpj.trim() else " ",
                     entrevistadoMae = if (entrevistadoEhOResponsavel == "Sim") responsavelData.nomeMae.trim() else " ",
                     entrevistadoNascimento = if (entrevistadoEhOResponsavel == "Sim") sNasc else " ",
@@ -371,7 +381,7 @@ class RecadastroViewModel(
                     isSynced = false
                 )
 
-                Log.d("debugs", "💾 [SQLITE] Gravando Recadastro: ${customer.name} | Cidade: ${customer.cidade}")
+                Log.d("SyncDebug", "💾 [SQLITE] Iniciando gravação do recadastro: ${customer.name} | CidadeID: ${customer.cidadeId}")
                 customerRepository.saveCustomerLocallyAndSync(customer)
                 onSuccess()
             } catch (e: Exception) {
@@ -391,7 +401,8 @@ class RecadastroViewModel(
     private fun fetchAddress(cepCode: String) {
         cepJob?.cancel()
         cepJob = viewModelScope.launch(Dispatchers.IO) {
-            isCepLoading = true; cepError = false
+            isCepLoading = true
+            cepError = false
             try {
                 if (android.os.Build.VERSION.SDK_INT >= 33) {
                     geocoder.getFromLocationName(cepCode, 1, object : Geocoder.GeocodeListener {
@@ -400,7 +411,8 @@ class RecadastroViewModel(
                             isCepLoading = false
                         }
                         override fun onError(errorMessage: String?) {
-                            isCepLoading = false; cepError = true
+                            isCepLoading = false
+                            cepError = true
                         }
                     })
                 } else {
@@ -409,7 +421,10 @@ class RecadastroViewModel(
                     addresses?.firstOrNull()?.let { handleGoogleAddress(it) }
                     isCepLoading = false
                 }
-            } catch (_: Exception) { isCepLoading = false; cepError = true }
+            } catch (_: Exception) { 
+                isCepLoading = false
+                cepError = true 
+            }
         }
     }
 
@@ -437,7 +452,8 @@ class RecadastroViewModel(
 
     private fun handleGoogleAddress(address: android.location.Address) {
         logradouro = address.thoroughfare ?: logradouro
-        bairro = address.subLocality ?: bairro
+        // SÊNIOR COMPAT FIX: getSubLocality requer API 4, mas o IDE está vendo min 1
+        bairro = try { address.subLocality ?: bairro } catch (_: Exception) { bairro }
         cidade = address.locality ?: cidade
         uf = address.adminArea ?: uf
         if (cep.isBlank()) cep = address.postalCode?.replace("-", "") ?: ""

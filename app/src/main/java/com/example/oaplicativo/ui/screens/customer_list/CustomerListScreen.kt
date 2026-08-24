@@ -3,6 +3,7 @@ package com.example.oaplicativo.ui.screens.customer_list
 
 import android.app.Application
 import android.location.Location
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -23,6 +24,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import com.example.oaplicativo.data.repository.AuthRepositoryImpl
 import com.example.oaplicativo.data.repository.CustomerRepositoryImpl
 import com.example.oaplicativo.model.Customer
@@ -33,6 +36,7 @@ import com.example.oaplicativo.ui.components.AsyncDataContainer
 import com.example.oaplicativo.ui.components.GlobalActionMenu
 import com.example.oaplicativo.util.LocationHelper
 import com.example.oaplicativo.util.navigation.NavigationUtils
+import com.example.oaplicativo.util.removeAccents
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -73,68 +77,119 @@ fun CustomerListScreen(
     val authRepository = remember { AuthRepositoryImpl.getInstance() }
     val userProfile by authRepository.currentUserProfile.collectAsState()
     
-    val isPowerUser = remember(userProfile) {
-        userProfile?.cargo?.lowercase()?.let { 
-            it == "administrador" || it == "desenvolvedor" 
-        } ?: false
-    }
+    val isPowerUser = userProfile?.isPowerUser ?: false
 
     val locationHelper = remember { LocationHelper(context) }
     val searchQueryState = remember { mutableStateOf("") }
     val userLocationState = remember { mutableStateOf<Location?>(null) }
 
-    LaunchedEffect(Unit) {
-        viewModel.loadData()
-        // SÊNIOR REATIVITY FIX: Forçamos a carga de cidades autorizadas na abertura da tela
-        // Isso resolve o problema da lista vir vazia no primeiro clique
-        viewModel.refreshCustomers() 
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
 
-        val fineLoc = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION)
-        if (fineLoc == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            userLocationState.value = locationHelper.getCurrentLocation()
+    // SÊNIOR PERMISSION LAUNCHER: Solicita permissão se necessário
+    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        if (permissions[android.Manifest.permission.ACCESS_FINE_LOCATION] == true) {
+            scope.launch {
+                userLocationState.value = locationHelper.getCurrentLocation()
+            }
         }
     }
 
-    val filteredCustomers by remember(customers, searchQueryState.value, userLocationState.value, selectedCityFilter) {
+    LaunchedEffect(Unit) {
+        viewModel.loadData()
+        viewModel.refreshCustomers() 
+
+        // SÊNIOR PERMISSION CHECK: Verifica ou solicita permissão na abertura
+        val hasFine = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION)
+        if (hasFine == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            userLocationState.value = locationHelper.getCurrentLocation()
+        } else {
+            permissionLauncher.launch(arrayOf(
+                android.Manifest.permission.ACCESS_FINE_LOCATION,
+                android.Manifest.permission.ACCESS_COARSE_LOCATION
+            ))
+        }
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = object : androidx.lifecycle.DefaultLifecycleObserver {
+            override fun onResume(owner: androidx.lifecycle.LifecycleOwner) {
+                // SÊNIOR GPS FIX: Atualiza localização sempre que voltar para a tela
+                scope.launch {
+                    val fineLoc = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION)
+                    if (fineLoc == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                        val loc = locationHelper.getCurrentLocation()
+                        if (loc != null) {
+                            userLocationState.value = loc
+                            Log.d("Supauploads", "📍 [GPS] Localização atualizada: ${loc.latitude}, ${loc.longitude}")
+                        } else {
+                            Log.w("Supauploads", "📍 [GPS] Falha ao obter localização (Timeout ou Sinal Fraco)")
+                        }
+                    } else {
+                        Log.w("Supauploads", "📍 [GPS] Sem permissão de localização")
+                    }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(searchQueryState.value) {
+        val query = searchQueryState.value.trim()
+        if (query.length >= 3) {
+            // SÊNIOR DEBOUNCE: Aguarda 3 segundos de inatividade antes de pesquisar na nuvem
+            // Evita flood de requisições e animações repetitivas enquanto o usuário digita
+            delay(3000)
+            viewModel.searchRemote(query)
+        }
+    }
+
+    // SÊNIOR PERF: Separamos a filtragem (texto/cidade) da ordenação (distância)
+    // Isso evita que o app re-filtre 20.000 itens toda vez que o GPS mudar 1 metro.
+    val baseFilteredList by remember(customers, searchQueryState.value, selectedCityFilter) {
         derivedStateOf {
-            val query = searchQueryState.value.trim().lowercase()
+            val queryRaw = searchQueryState.value.trim().lowercase()
+            val queryNormalized = queryRaw.removeAccents()
             val selectedCityName = selectedCityFilter?.nome?.lowercase()?.trim()
             
-            // SÊNIOR PERF: Filtramos a lista apenas uma vez usando lazy evaluation.
-            // Para 20k registros, isso economiza centenas de ciclos de CPU por segundo.
-            val baseList = customers.asSequence().filter { customer ->
-                // 1. Filtro de Busca (Nome, Matrícula ou Hidrômetro)
-                val matchesSearch = if (query.isBlank()) true 
-                                   else (customer.name?.lowercase()?.contains(query) == true || 
-                                         customer.registrationNumber?.contains(query) == true ||
-                                         customer.numeroHidrometro?.lowercase()?.contains(query) == true)
+            customers.asSequence().filter { customer ->
+                // Filtro de Busca
+                val matchesSearch = if (queryRaw.isBlank()) true 
+                                   else (customer.name?.lowercase()?.removeAccents()?.contains(queryNormalized) == true || 
+                                         customer.registrationNumber?.lowercase()?.removeAccents()?.contains(queryNormalized) == true ||
+                                         customer.numeroHidrometro?.lowercase()?.removeAccents()?.contains(queryNormalized) == true)
                 
-                // 2. Filtro Regional (UI Select) - SÊNIOR FIX: Normalização para evitar sumiço por acento
+                // Filtro Regional
                 val customerCity = customer.cidade?.lowercase()?.trim()
                 val matchesCity = if (selectedCityName == null) true
                                  else (customerCity == selectedCityName || 
-                                       customerCity?.replace("á", "a") == selectedCityName.replace("á", "a"))
+                                       customerCity?.removeAccents() == selectedCityName.removeAccents())
                 
                 matchesSearch && matchesCity
-            }
-            
-            // SÊNIOR SMART SEARCH TRIGGER: Se a busca local falhar, dispara busca remota automática
-            if (query.length >= 4 && baseList.none() && !isRefreshing) {
-                viewModel.searchRemote(query)
-            }
-            
-            val currentLoc = userLocationState.value
-            val resultList = if (currentLoc != null) {
-                baseList.sortedBy { customer ->
-                    if (customer.latitude != null && customer.longitude != null) {
-                        locationHelper.calculateDistance(currentLoc.latitude, currentLoc.longitude, customer.latitude, customer.longitude)
-                    } else Float.MAX_VALUE
-                }
-            } else baseList
+            }.toList()
+        }
+    }
 
-            // SÊNIOR PERF LIMIT: Mostramos apenas 50 itens por vez na UI para manter a renderização ultra-rápida.
-            // O leiturista nunca lê 20k nomes ao mesmo tempo; ele busca ou scrola.
-            if (query.isBlank()) resultList.take(20).toList() else resultList.take(50).toList()
+    val filteredCustomers by remember(baseFilteredList, userLocationState.value) {
+        derivedStateOf {
+            val queryRaw = searchQueryState.value.trim()
+            val currentLoc = userLocationState.value
+            
+            val resultList = if (currentLoc != null) {
+                baseFilteredList.sortedBy { customer ->
+                    if (customer.latitude != null && customer.longitude != null) {
+                        // SÊNIOR PERF: Cálculo direto de distância para ordenação rápida
+                        val latDiff = customer.latitude - currentLoc.latitude
+                        val lngDiff = customer.longitude - currentLoc.longitude
+                        latDiff * latDiff + lngDiff * lngDiff // Distância Euclidiana ao quadrado (mais rápido que Haversine para ordenação)
+                    } else Double.MAX_VALUE
+                }
+            } else baseFilteredList
+
+            if (queryRaw.isBlank()) resultList.take(50) else resultList
         }
     }
 
@@ -240,7 +295,7 @@ fun CustomerListScreen(
                         onForceSync = {
                             val syncRequest = androidx.work.OneTimeWorkRequestBuilder<com.example.oaplicativo.data.sync.SyncWorker>().build()
                             androidx.work.WorkManager.getInstance(context).enqueueUniqueWork("force_sync_list", androidx.work.ExistingWorkPolicy.REPLACE, syncRequest)
-                            Toast.makeText(context, "Sincronização iniciada!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Sincronização iniciada manualmente!", Toast.LENGTH_SHORT).show()
                             viewModel.refreshCustomers()
                         }
                     )
@@ -266,9 +321,10 @@ fun CustomerListScreen(
 
             AsyncDataContainer(
                 items = filteredCustomers,
-                isLoading = isRefreshing && filteredCustomers.isEmpty(),
+                isLoading = isRefreshing, // SÊNIOR FIX: Mostra o progresso sempre que estiver atualizando
                 error = null,
-                onRetry = { viewModel.refreshCustomers() }
+                onRetry = { viewModel.refreshCustomers() },
+                onRefresh = { viewModel.refreshCustomers() }
             ) { data ->
                 LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 80.dp)) {
                     items(items = data, key = { it.id ?: it.hashCode() }) { customer ->
@@ -333,7 +389,7 @@ fun CustomerListItem(
             
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = customer.name ?: "Sem Nome",
+                    text = (customer.name ?: "Sem Nome").uppercase(),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1
@@ -378,7 +434,17 @@ fun CustomerListItem(
                     }
                     
                     Spacer(Modifier.weight(1f))
-                    SyncIndicator(customer.isSynced)
+                    Column(horizontalAlignment = Alignment.End) {
+                        SyncIndicator(customer.isSynced)
+                        if (!customer.isSynced && !customer.lastError.isNullOrBlank()) {
+                            Text(
+                                text = "Erro: ${customer.lastError?.take(20)}...",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error,
+                                maxLines = 1
+                            )
+                        }
+                    }
                 }
             }
 

@@ -85,7 +85,7 @@ fun RecadastroFormScreen(
                 actions = {
                     GlobalActionMenu(
                         isDarkTheme = isDarkTheme,
-                        isAdmin = userProfile?.isAdmin ?: false,
+                        isAdmin = userProfile?.isPowerUser ?: false,
                         onToggleTheme = onToggleTheme,
                         onLogout = onLogout
                     )

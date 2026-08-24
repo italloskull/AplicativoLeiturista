@@ -64,6 +64,8 @@ fun SetupNavGraph(
                         "economy_update_list" -> Screen.EconomyUpdateList.route
                         "visitas" -> Screen.VisitasDashboard.route
                         "user_registration" -> Screen.UserRegistration.route
+                        "admin_dashboard" -> Screen.AdminDashboard.route
+                        "user_management" -> Screen.UserManagement.route
                         else -> routeName
                     }
                     navController.navigate(finalRoute)
@@ -116,10 +118,16 @@ fun SetupNavGraph(
 
         composable(route = Screen.EconomyUpdateList.route) {
             EconomyUpdateListScreen(
+                isDarkTheme = isDarkTheme,
                 onBack = { navController.popBackStack() },
                 onAddClick = { navController.navigate(Screen.EconomyUpdateForm.createRoute()) },
                 onItemClick = { itemId -> 
                     navController.navigate(Screen.EconomyUpdateForm.createRoute(itemId))
+                },
+                onLogout = { onLogoutGlobal() },
+                onToggleTheme = onToggleTheme,
+                onNavigateToUserRegistration = {
+                    navController.navigate(Screen.UserRegistration.route)
                 },
                 onNavigateToAdminPanel = {
                     navController.navigate(Screen.AdminDashboard.route)

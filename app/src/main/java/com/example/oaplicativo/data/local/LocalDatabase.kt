@@ -22,6 +22,7 @@ class LocalDatabase(context: Context) :
         db.execSQL(CREATE_TABLE_HISTORY)
         db.execSQL(CREATE_TABLE_USER_CACHE)
         db.execSQL(CREATE_TABLE_CITIES_CACHE)
+        db.execSQL(CREATE_TABLE_REMOTE_CACHE)
 
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_customers_sync ON customers (isSynced)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_customers_city ON customers (cidade)")
@@ -34,6 +35,23 @@ class LocalDatabase(context: Context) :
             try {
                 db.execSQL("ALTER TABLE customers ADD COLUMN entrevistado_email TEXT")
                 db.execSQL("ALTER TABLE customers ADD COLUMN entrevistado_celular TEXT")
+            } catch (_: Exception) {}
+        }
+        if (oldVersion < 47) {
+            // SÊNIOR CACHE MIGRATION: Garante a criação da tabela de cache remoto
+            db.execSQL(CREATE_TABLE_REMOTE_CACHE)
+        }
+        if (oldVersion < 48) {
+            // SÊNIOR DELTA OPTIMIZATION: Adiciona coluna de índice para sincronização incremental
+            try {
+                db.execSQL("ALTER TABLE remote_cache ADD COLUMN updated_at TEXT")
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_remote_updated ON remote_cache (updated_at)")
+            } catch (_: Exception) {}
+        }
+        if (oldVersion < 49) {
+            // SÊNIOR FIX: Adiciona updated_at na tabela de clientes local para não perder o timestamp no sync
+            try {
+                db.execSQL("ALTER TABLE customers ADD COLUMN updated_at TEXT")
             } catch (_: Exception) {}
         }
     }
@@ -61,6 +79,7 @@ class LocalDatabase(context: Context) :
             put("qtd_economias", customer.economiesCount)
             put("adicionado_por", customer.addedBy)
             put("capturado_em", customer.capturedAt)
+            put("updated_at", customer.updatedAt)
             put("date", customer.date)
             put("qualidade", customer.quality)
             put("entrevistado_nome", customer.entrevistadoNome)
@@ -131,6 +150,7 @@ class LocalDatabase(context: Context) :
                     economiesCount = if (cursor.isNull(cursor.getColumnIndexOrThrow("qtd_economias"))) null else cursor.getInt(cursor.getColumnIndexOrThrow("qtd_economias")),
                     addedBy = cursor.getString(cursor.getColumnIndexOrThrow("adicionado_por")),
                     capturedAt = cursor.getString(cursor.getColumnIndexOrThrow("capturado_em")),
+                    updatedAt = cursor.getString(cursor.getColumnIndexOrThrow("updated_at")),
                     date = cursor.getString(cursor.getColumnIndexOrThrow("date")),
                     quality = cursor.getString(cursor.getColumnIndexOrThrow("qualidade")),
                     entrevistadoNome = cursor.getString(cursor.getColumnIndexOrThrow("entrevistado_nome")),
@@ -166,7 +186,8 @@ class LocalDatabase(context: Context) :
                     quadra = cursor.getString(cursor.getColumnIndexOrThrow("quadra")),
                     rotaSugerida = cursor.getString(cursor.getColumnIndexOrThrow("rota_sugerida")),
                     numeroHidrometro = cursor.getString(cursor.getColumnIndexOrThrow("numero_hidrometro")),
-                    isSynced = false
+                    isSynced = false,
+                    lastError = cursor.getString(cursor.getColumnIndexOrThrow("last_error")) // SÊNIOR FIX: Carrega o erro
                 )
                 list.add(currentId to customer)
             }
@@ -176,6 +197,17 @@ class LocalDatabase(context: Context) :
 
     fun deleteSyncedCustomer(id: String) {
         writableDatabase.delete("customers", "id = ?", arrayOf(id))
+    }
+
+    // SÊNIOR DIAGNOSTIC: Grava o motivo da falha de sincronismo para facilitar o suporte
+    fun updateCustomerError(id: String, error: String) {
+        Log.e("Supauploads", "💾 [SQLITE] Gravando erro para cliente $id: $error")
+        val values = ContentValues().apply {
+            put("last_error", error)
+            put("sync_attempts", 1) // Incrementa sinalizando que houve tentativa
+        }
+        val rows = writableDatabase.update("customers", values, "id = ?", arrayOf(id))
+        Log.d("Supauploads", "💾 [SQLITE] $rows linha(s) atualizada(s) com o erro.")
     }
 
     fun saveEconomyUpdateOffline(item: EconomyUpdate): Int {
@@ -338,6 +370,96 @@ class LocalDatabase(context: Context) :
         Log.d("debugs", "🧼 [SQLITE] Cache de cidades limpo com sucesso.")
     }
 
+    // SÊNIOR CLEANUP: Limpeza manual do cache remoto (Útil para testes ou correções de integridade)
+    fun clearRemoteCache(city: String? = null) {
+        val rows = if (city != null) {
+            writableDatabase.delete("remote_cache", "cidade = ?", arrayOf(city))
+        } else {
+            writableDatabase.delete("remote_cache", null, null)
+        }
+        Log.d("Supauploads", "🧼 [SQLITE] Cache remoto limpo. Linhas removidas: $rows")
+    }
+
+    // SÊNIOR CACHE: Sistema de Cache Remoto com expiração diária
+    fun saveRemoteCustomersToCache(customers: List<Customer>) {
+        val db = writableDatabase
+        val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+        
+        db.transaction {
+            customers.forEach { customer ->
+                val values = ContentValues().apply {
+                    put("id", customer.id)
+                    put("cidade", customer.cidade)
+                    put("updated_at", customer.updatedAt ?: customer.capturedAt) // SÊNIOR INDEX: Para Delta Sync rápido
+                    put("data_json", JSONObject().apply {
+                        put("id", customer.id)
+                        put("cidade_id", customer.cidadeId)
+                        put("leiturista_id", customer.leituristaId)
+                        put("name", customer.name)
+                        put("matricula", customer.registrationNumber)
+                        put("numero_hidrometro", customer.numeroHidrometro)
+                        put("latitude", customer.latitude)
+                        put("longitude", customer.longitude)
+                        put("qualidade", customer.quality)
+                        put("capturado_em", customer.capturedAt)
+                        put("updated_at", customer.updatedAt) // Armazena o tempo da última edição
+                        put("isSynced", true)
+                    }.toString())
+                    put("cached_at", today)
+                }
+                insertWithOnConflict("remote_cache", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+            }
+        }
+    }
+
+    fun getRemoteCache(city: String? = null): List<Customer> {
+        val list = mutableListOf<Customer>()
+        val db = readableDatabase
+        val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+        
+        // SÊNIOR CLEANUP: Limpa cache antigo antes de ler (Reset Diário)
+        db.delete("remote_cache", "cached_at != ?", arrayOf(today))
+
+        val selection = if (city != null) "cidade = ?" else null
+        val args = if (city != null) arrayOf(city) else null
+
+        db.query("remote_cache", arrayOf("data_json"), selection, args, null, null, "updated_at DESC").use { cursor ->
+            while (cursor.moveToNext()) {
+                val json = JSONObject(cursor.getString(0))
+                list.add(Customer(
+                    id = json.optString("id"),
+                    cidadeId = json.optString("cidade_id"),
+                    leituristaId = json.optString("leiturista_id"),
+                    name = json.optString("name"),
+                    registrationNumber = json.optString("matricula"),
+                    numeroHidrometro = json.optString("numero_hidrometro"),
+                    latitude = if (json.isNull("latitude")) null else json.getDouble("latitude"),
+                    longitude = if (json.isNull("longitude")) null else json.getDouble("longitude"),
+                    quality = json.optString("qualidade"),
+                    capturedAt = json.optString("capturado_em"),
+                    updatedAt = json.optString("updated_at"), // SÊNIOR DELTA: Recupera o tempo da edição
+                    isSynced = true
+                ))
+            }
+        }
+        return list
+    }
+
+    // SÊNIOR DELTA HELPER: Retorna o timestamp da atualização mais recente no cache via índice
+    fun getLatestCacheTimestamp(city: String?): String? {
+        val db = readableDatabase
+        val selection = if (city != null) "cidade = ?" else null
+        val args = if (city != null) arrayOf(city) else null
+        
+        // SÊNIOR PERF: Busca direta na coluna de índice (Muito mais rápido que processar JSON)
+        db.query("remote_cache", arrayOf("updated_at"), selection, args, null, null, "updated_at DESC", "1").use { cursor ->
+            if (cursor.moveToFirst()) {
+                return cursor.getString(0).ifBlank { null }
+            }
+        }
+        return null
+    }
+
     companion object {
         @Volatile private var instance: LocalDatabase? = null
         fun getInstance(context: Context): LocalDatabase {
@@ -347,13 +469,13 @@ class LocalDatabase(context: Context) :
         }
 
         private const val DATABASE_NAME = "sanitation_final_v17.db"
-        private const val DATABASE_VERSION = 46
+        private const val DATABASE_VERSION = 49
         
         private const val CREATE_TABLE_CUSTOMERS = """
             CREATE TABLE IF NOT EXISTS customers (
                 id TEXT PRIMARY KEY, cidade_id TEXT, leiturista_id TEXT, name TEXT, matricula TEXT, digito_matricula TEXT, email TEXT, celular TEXT,
                 caixa_padrao TEXT, lacres_padronizados TEXT, hd_acessivel TEXT, veranista TEXT, possui_piscina TEXT, possui_caixa_agua TEXT,
-                latitude REAL, longitude REAL, situacao_local TEXT, qtd_economias INTEGER, adicionado_por TEXT, capturado_em TEXT, date TEXT,
+                latitude REAL, longitude REAL, situacao_local TEXT, qtd_economias INTEGER, adicionado_por TEXT, capturado_em TEXT, updated_at TEXT, date TEXT,
                 qualidade TEXT, entrevistado_nome TEXT, entrevistado_cpf TEXT, entrevistado_mae TEXT, entrevistado_nascimento TEXT, entrevistado_sexo TEXT,
                 entrevistado_apresentou_doc TEXT, entrevistado_qual_doc TEXT, logradouro TEXT, numero TEXT, complemento TEXT, bairro TEXT, cidade TEXT,
                 uf TEXT, cep TEXT, pavimento_rua TEXT, pavimento_calcada TEXT, fonte_abastecimento TEXT, existe_rede_agua TEXT, local_instalacao TEXT,
@@ -373,5 +495,13 @@ class LocalDatabase(context: Context) :
         private const val CREATE_TABLE_HISTORY = "CREATE TABLE IF NOT EXISTS history (id TEXT PRIMARY KEY, date TEXT, count INTEGER)"
         private const val CREATE_TABLE_USER_CACHE = "CREATE TABLE IF NOT EXISTS user_cache (id TEXT PRIMARY KEY, data TEXT)"
         private const val CREATE_TABLE_CITIES_CACHE = "CREATE TABLE IF NOT EXISTS cities_cache (id TEXT PRIMARY KEY, nome TEXT)"
+        private const val CREATE_TABLE_REMOTE_CACHE = """
+            CREATE TABLE IF NOT EXISTS remote_cache (
+                id TEXT PRIMARY KEY, 
+                cidade TEXT, 
+                updated_at TEXT,
+                data_json TEXT, 
+                cached_at TEXT
+            )"""
     }
 }

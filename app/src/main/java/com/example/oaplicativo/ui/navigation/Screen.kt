@@ -9,7 +9,7 @@ sealed class Screen(val route: String) {
     }
     object EconomyUpdateList : Screen("economy_update_list")
     object EconomyUpdateForm : Screen(route = "economy_update_form?itemId={itemId}") {
-        fun createRoute(itemId: String? = null) = "economy_update_form?itemId=$itemId"
+        fun createRoute(itemId: String? = null) = "economy_update_form" + (itemId?.let { "?itemId=$it" } ?: "")
     }
     object UserRegistration : Screen("user_registration")
     object RecadastroForm : Screen("recadastro_form")

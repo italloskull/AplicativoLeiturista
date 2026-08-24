@@ -23,7 +23,12 @@ class StatsRepositoryImpl private constructor(context: Context) : StatsRepositor
             // Resolve o problema de dados deletados localmente após o sincronismo.
             val profile = AuthRepositoryImpl.getInstance().currentUserProfile.value
             val userCityName = getFriendlyCityName(cidadeId)
-            val today = ZonedDateTime.now(java.time.ZoneId.of("America/Sao_Paulo")).format(DateTimeFormatter.ofPattern("yyyy/MM/dd"))
+            
+            // SÊNIOR COMPAT FIX: Padronização de TimeZone para Stats
+            val sdf = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault())
+            val brTimeZone = java.util.TimeZone.getTimeZone("America/Sao_Paulo")
+            sdf.timeZone = brTimeZone
+            val today = sdf.format(java.util.Calendar.getInstance(brTimeZone).time)
             
             Log.d("debugs", "📊 [STATS] Sincronizando dashboard via Nuvem ($today)")
 

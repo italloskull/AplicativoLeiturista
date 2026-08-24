@@ -16,8 +16,8 @@ android {
         applicationId = "com.example.oaplicativo"
         minSdk = 29
         targetSdk = 35
-        versionCode = 32
-        versionName = "0.9.2.7.3"
+        versionCode = 34
+        versionName = "0.9.2.7.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -89,6 +89,7 @@ dependencies {
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.client.serialization)
     implementation(libs.ktor.client.websockets)
+    implementation(libs.ktor.client.logging)
     implementation(libs.ktor.serialization.kotlinx.json)
     
     // Retrofit
@@ -104,6 +105,8 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
+
+
 
 
 

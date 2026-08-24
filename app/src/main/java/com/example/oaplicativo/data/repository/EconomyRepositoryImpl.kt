@@ -37,11 +37,16 @@ class EconomyRepositoryImpl private constructor() : EconomyRepository {
         }
     }
 
-    override suspend fun fetchEconomyUpdates(cidadeId: String?, isAdmin: Boolean) {
+    override suspend fun fetchEconomyUpdates(cidadeId: String?, isAdmin: Boolean, forceFull: Boolean) {
         mutex.withLock {
             try {
                 val userCityName = getFriendlyCityName(cidadeId)
-                Log.d("debugs", "🔍 [GE] Buscando na nuvem. Cidade: $userCityName | Admin: $isAdmin")
+                Log.d("debugs", "🔍 [GE] Buscando na nuvem. Cidade: $userCityName | Admin: $isAdmin | Force: $forceFull")
+
+                if (forceFull) {
+                    remoteItems = emptyList()
+                    combineAndEmit()
+                }
 
                 // 1. Busca local de pendentes
                 localPendingItems = try {
@@ -65,7 +70,7 @@ class EconomyRepositoryImpl private constructor() : EconomyRepository {
                                 filter { or { targetCities.forEach { eq("cidade", it) } } }
                             }
                             order("data", order = io.github.jan.supabase.postgrest.query.Order.DESCENDING)
-                            limit(100)
+                            limit(5000) // SÊNIOR PERF: Aumentado para suportar crescimento da base de GE
                         }.decodeList<EconomyUpdate>()
                 } catch (e: Exception) {
                     Log.e("debugs", "❌ [GE] Erro servidor: ${e.message}")
@@ -103,10 +108,11 @@ class EconomyRepositoryImpl private constructor() : EconomyRepository {
     override suspend fun saveEconomyUpdates(items: List<EconomyUpdate>) {
         mutex.withLock {
             try {
+                Log.d("Supauploads", "⬆️ [REPO_GE] Tentando UPSERT Supabase de ${items.size} itens...")
                 client.postgrest["grandes_empreendimentos"].upsert(items)
-                Log.d("debugs", "✅ [GE] Sincronizado com sucesso.")
+                Log.d("Supauploads", "✅ [REPO_GE] Sincronizado com sucesso no Supabase.")
             } catch (e: Exception) {
-                Log.e("debugs", "❌ [GE] Erro no Upsert: ${e.message}")
+                Log.e("Supauploads", "❌ [REPO_GE] Erro no Upsert Supabase: ${e.message}")
                 throw e
             }
         }

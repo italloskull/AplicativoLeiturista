@@ -34,6 +34,7 @@ data class Customer(
     
     @SerialName("adicionado_por") val addedBy: String? = null,
     @SerialName("capturado_em") val capturedAt: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null, // SÊNIOR DELTA: Campo para rastreio de edições
     @SerialName("sincronizado_em") val synchronizedAt: String? = null,
     val date: String? = null,
     @SerialName("qualidade") val quality: String? = null,
@@ -76,5 +77,6 @@ data class Customer(
     @SerialName("rota_sugerida") val rotaSugerida: String? = null,
     @SerialName("numero_hidrometro") val numeroHidrometro: String? = null,
 
-    @Transient val isSynced: Boolean = true
+    @Transient val isSynced: Boolean = true,
+    @Transient val lastError: String? = null // SÊNIOR DIAGNOSTIC: Transporta o erro do SQLite para a UI
 )

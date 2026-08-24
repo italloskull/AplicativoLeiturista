@@ -11,6 +11,8 @@ import io.github.jan.supabase.realtime.Realtime
 import io.github.jan.supabase.serializer.KotlinXSerializer
 import io.ktor.client.engine.okhttp.OkHttp
 import kotlinx.serialization.json.Json
+import android.util.Log
+import okhttp3.logging.HttpLoggingInterceptor
 
 /**
  * CLIENTE SUPABASE (SÊNIOR)
@@ -20,7 +22,15 @@ object SupabaseClient {
     private const val SUPABASE_KEY = BuildConfig.SUPABASE_KEY
 
     val client = createSupabaseClient(SUPABASE_URL, SUPABASE_KEY) {
-        httpEngine = OkHttp.create()
+        httpEngine = OkHttp.create {
+            addInterceptor(HttpLoggingInterceptor { message ->
+                if (message.contains("Postgrest") || message.contains("clientes") || message.contains("supabase")) {
+                    Log.d("Supauploads", "🌐 [OKHTTP] $message")
+                }
+            }.apply {
+                level = HttpLoggingInterceptor.Level.BODY
+            })
+        }
         defaultSerializer = KotlinXSerializer(Json {
             ignoreUnknownKeys = true
             explicitNulls = true 

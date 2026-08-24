@@ -92,14 +92,28 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
             val currentState = _uiState.value
 
             try {
-                val brFormatter = DateTimeFormatter.ofPattern("yyyy/MM/dd")
-                val now = ZonedDateTime.now(java.time.ZoneId.of("America/Sao_Paulo"))
+                // SÊNIOR COMPAT FIX: Padronização de TimeZone para BI
+                val brFormatter = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault())
+                val brTimeZone = java.util.TimeZone.getTimeZone("America/Sao_Paulo")
+                brFormatter.timeZone = brTimeZone
+                
+                val calendar = java.util.Calendar.getInstance(brTimeZone)
+                val nowStr = brFormatter.format(calendar.time)
                 
                 val filterStartDate = when(currentState.period) {
-                    DashboardPeriod.TODAY -> now.format(brFormatter)
-                    DashboardPeriod.LAST_7_DAYS -> now.minusDays(7).format(brFormatter)
-                    DashboardPeriod.LAST_30_DAYS -> now.minusDays(30).format(brFormatter)
-                    DashboardPeriod.LAST_YEAR -> now.minusYears(1).format(brFormatter)
+                    DashboardPeriod.TODAY -> nowStr
+                    DashboardPeriod.LAST_7_DAYS -> {
+                        calendar.add(java.util.Calendar.DAY_OF_YEAR, -7)
+                        brFormatter.format(calendar.time)
+                    }
+                    DashboardPeriod.LAST_30_DAYS -> {
+                        calendar.add(java.util.Calendar.DAY_OF_YEAR, -30)
+                        brFormatter.format(calendar.time)
+                    }
+                    DashboardPeriod.LAST_YEAR -> {
+                        calendar.add(java.util.Calendar.YEAR, -1)
+                        brFormatter.format(calendar.time)
+                    }
                     DashboardPeriod.CUSTOM -> currentState.startDate?.take(10)?.replace("-", "/")
                 }
                 val filterEndDate = if (currentState.period == DashboardPeriod.CUSTOM) currentState.endDate?.take(10)?.replace("-", "/") else null
@@ -113,40 +127,53 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                 Log.d("debugs", "🆔 [BI_SECURITY] Meu UID Local: $currentUid")
                 Log.d("debugs", "🎯 [BI_QUERY] Chaveiro do Gestor: $cityNames")
 
-                // SÊNIOR PERF: Consultas paralelas reais com FILTRAGEM REGIONAL MANDATÓRIA
-                val customersDef = async {
-                    SupabaseClient.client.postgrest["clientes"].select {
-                        // SÊNIOR SECURITY FIX: Filtragem linear para eliminar redundância lógica
-                        if (cityNameFilter != null) {
-                            filter { eq("cidade", cityNameFilter) }
-                        } else if (!isDev) {
+                // SÊNIOR BI PAGINATION: Busca exaustiva para superar o limite de 1000 do Supabase
+                val remoteCustomers = mutableListOf<Customer>()
+                var offset = 0L
+                val pageSize = 1000L
+                
+                while (true) {
+                    val chunk = SupabaseClient.client.postgrest["clientes"].select {
+                        if (cityNameFilter != null) filter { eq("cidade", cityNameFilter) }
+                        else if (!isDev) {
                             val targetCities = cityNames.ifEmpty { listOf("BLOCK_ALL_ACCESS") }
                             filter { or { targetCities.forEach { eq("cidade", it) } } }
                         }
-
                         if (filterStartDate != null) filter { gte("date", filterStartDate) }
                         if (filterEndDate != null) filter { lte("date", filterEndDate) }
+                        
+                        range(offset, offset + pageSize - 1)
                     }.decodeList<Customer>()
+                    
+                    remoteCustomers.addAll(chunk)
+                    if (chunk.size < pageSize) break
+                    offset += pageSize
+                    if (offset > 50000) break // Segurança contra loop infinito
                 }
 
-                val geDef = async {
-                    SupabaseClient.client.postgrest["grandes_empreendimentos"].select {
-                        if (cityNameFilter != null) {
-                            filter { eq("cidade", cityNameFilter) }
-                        } else if (!isDev) {
+                // SÊNIOR BI PAGINATION: Grandes Empreendimentos
+                val remoteGE = mutableListOf<EconomyUpdate>()
+                offset = 0L
+                while (true) {
+                    val chunk = SupabaseClient.client.postgrest["grandes_empreendimentos"].select {
+                        if (cityNameFilter != null) filter { eq("cidade", cityNameFilter) }
+                        else if (!isDev) {
                             val targetCities = cityNames.ifEmpty { listOf("BLOCK_ALL_ACCESS") }
                             filter { or { targetCities.forEach { eq("cidade", it) } } }
                         }
-
                         if (filterStartDate != null) filter { gte("data", filterStartDate) }
                         if (filterEndDate != null) filter { lte("data", filterEndDate) }
+                        
+                        range(offset, offset + pageSize - 1)
                     }.decodeList<EconomyUpdate>()
+                    
+                    remoteGE.addAll(chunk)
+                    if (chunk.size < pageSize) break
+                    offset += pageSize
+                    if (offset > 10000) break
                 }
 
-                val remoteCustomers = customersDef.await()
-                val remoteGE = geDef.await()
-
-                Log.d("debugs", "✅ [BI_LIVE] Filtrados no Celular: ${remoteCustomers.size} Rec. e ${remoteGE.size} GE.")
+                Log.d("debugs", "✅ [BI_LIVE] Total Real Capturado: ${remoteCustomers.size} Rec. e ${remoteGE.size} GE.")
 
                 // Processamento pesado via Sequence para economia de RAM
                 val totalRec = remoteCustomers.size

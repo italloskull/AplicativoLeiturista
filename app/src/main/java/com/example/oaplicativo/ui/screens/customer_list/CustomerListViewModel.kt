@@ -13,6 +13,8 @@ import com.example.oaplicativo.domain.repository.CustomerRepository
 import com.example.oaplicativo.model.Customer
 import com.example.oaplicativo.model.UserProfile
 import com.example.oaplicativo.model.Cidade
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -37,6 +39,7 @@ class CustomerListViewModel(
     val selectedCityFilter: StateFlow<Cidade?> = _selectedCityFilter.asStateFlow()
 
     private val localDb = LocalDatabase.getInstance(application)
+    private var searchJob: Job? = null
 
     init {
         loadData()
@@ -80,7 +83,8 @@ class CustomerListViewModel(
                 // SÊNIOR BI AUDIT: Forçamos a recarga total baseada no perfil mais recente
                 customerRepository.fetchCustomers(
                     cidadeId = profile?.cidadeId,
-                    isAdmin = profile?.isDeveloper == true
+                    isAdmin = profile?.isDeveloper == true,
+                    forceFull = true // SÊNIOR FIX: Força carga total para refletir edições externas
                 )
                 
                 // Recarrega permissões caso tenham mudado na Gestão de Equipe
@@ -95,11 +99,16 @@ class CustomerListViewModel(
         }
     }
 
-    // SÊNIOR SMART SEARCH: Busca remota se a local falhar ou para busca exaustiva
+    // SÊNIOR SMART SEARCH: Busca remota acionada pela UI com controle de concorrência
     fun searchRemote(query: String) {
-        if (query.isBlank() || query.length < 2) return
+        if (query.isBlank() || query.length < 3) return
         
-        viewModelScope.launch {
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            // SÊNIOR NOTE: O debounce de 3s agora é controlado pela UI via LaunchedEffect
+            // Aqui mantemos apenas um pequeno delay de respiro (100ms) e a execução
+            delay(100) 
+            
             _isRefreshing.value = true
             try {
                 val profile = authRepository.currentUserProfile.value
@@ -116,7 +125,7 @@ class CustomerListViewModel(
                 )
                 
                 if (remoteResults.isNotEmpty()) {
-                    customerRepository.addCustomers(remoteResults)
+                    customerRepository.addRemoteResults(remoteResults)
                     Log.d("debugs", "✅ [SEARCH_REMOTE] Encontrados ${remoteResults.size} registros para '$query'.")
                 }
             } catch (e: Exception) {

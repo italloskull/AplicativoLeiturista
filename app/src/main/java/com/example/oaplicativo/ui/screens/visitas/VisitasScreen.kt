@@ -76,23 +76,21 @@ fun VisitasScreen(
                     }
                 },
                 actions = {
-                    val profile by com.example.oaplicativo.data.repository.AuthRepositoryImpl.getInstance().currentUserProfile.collectAsState()
-                    val isPowerUser = profile?.cargo?.lowercase()?.let { 
-                        it == "administrador" || it == "desenvolvedor" 
-                    } ?: false
+                    val authRepo = remember { com.example.oaplicativo.data.repository.AuthRepositoryImpl.getInstance() }
+                    val profile by authRepo.currentUserProfile.collectAsState()
+                    val isPowerUser = profile?.isPowerUser ?: false
 
                     com.example.oaplicativo.ui.components.GlobalActionMenu(
-                        isDarkTheme = false, // TODO
+                        isDarkTheme = false, // TODO: Implementar tema global aqui
                         isAdmin = isPowerUser,
-                        onToggleTheme = { /* TODO */ },
-                        onLogout = { /* TODO */ },
-                        onNavigateToUserRegistration = { /* TODO */ },
+                        onToggleTheme = { /* Implementar via NavGraph/App */ },
+                        onLogout = { /* Implementar logout global */ },
                         onNavigateToAdminPanel = onNavigateToAdminPanel,
                         onNavigateToUserManagement = onNavigateToUserManagement,
                         onForceSync = {
                             val syncRequest = androidx.work.OneTimeWorkRequestBuilder<com.example.oaplicativo.data.sync.SyncWorker>().build()
                             androidx.work.WorkManager.getInstance(context).enqueueUniqueWork("force_sync_visitas", androidx.work.ExistingWorkPolicy.REPLACE, syncRequest)
-                            android.widget.Toast.makeText(context, "Sincronização iniciada!", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, "Sincronização iniciada manualmente!", android.widget.Toast.LENGTH_SHORT).show()
                             viewModel.loadStats()
                         }
                     )
