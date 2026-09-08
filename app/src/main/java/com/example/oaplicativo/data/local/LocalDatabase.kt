@@ -54,6 +54,46 @@ class LocalDatabase(context: Context) :
                 db.execSQL("ALTER TABLE customers ADD COLUMN updated_at TEXT")
             } catch (_: Exception) {}
         }
+        if (oldVersion < 50) {
+            // SÊNIOR MIGRATION: Adiciona Lote em clientes e Observações, Blocos, Piscina, Setor, Quadra, Lote em GE
+            try {
+                db.execSQL("ALTER TABLE customers ADD COLUMN lote TEXT")
+                db.execSQL("ALTER TABLE grandes_empreendimentos ADD COLUMN qtd_blocos INTEGER")
+                db.execSQL("ALTER TABLE grandes_empreendimentos ADD COLUMN possui_piscina TEXT")
+                db.execSQL("ALTER TABLE grandes_empreendimentos ADD COLUMN observacao TEXT")
+                db.execSQL("ALTER TABLE grandes_empreendimentos ADD COLUMN setor TEXT")
+                db.execSQL("ALTER TABLE grandes_empreendimentos ADD COLUMN quadra TEXT")
+                db.execSQL("ALTER TABLE grandes_empreendimentos ADD COLUMN lote TEXT")
+            } catch (_: Exception) {}
+        }
+        if (oldVersion < 51) {
+            // SÊNIOR MIGRATION v51: Adiciona campos de assinatura digital no cliente
+            try {
+                db.execSQL("ALTER TABLE customers ADD COLUMN assinatura_url TEXT")
+                db.execSQL("ALTER TABLE customers ADD COLUMN local_assinatura_path TEXT")
+            } catch (_: Exception) {}
+        }
+        if (oldVersion < 52) {
+            // SÊNIOR MIGRATION v52: Adiciona campos de assinatura digital em grandes empreendimentos
+            try {
+                db.execSQL("ALTER TABLE grandes_empreendimentos ADD COLUMN assinatura_url TEXT")
+                db.execSQL("ALTER TABLE grandes_empreendimentos ADD COLUMN local_assinatura_path TEXT")
+            } catch (_: Exception) {}
+        }
+        if (oldVersion < 53) {
+            // SÊNIOR MIGRATION v53: Adiciona coluna assinatura_hash de 64 caracteres em ambas as tabelas
+            try {
+                db.execSQL("ALTER TABLE customers ADD COLUMN assinatura_hash TEXT")
+                db.execSQL("ALTER TABLE grandes_empreendimentos ADD COLUMN assinatura_hash TEXT")
+            } catch (_: Exception) {}
+        }
+        if (oldVersion < 54) {
+            // SÊNIOR MIGRATION v54: Adiciona coluna assinatura_payload para auditoria direta de Hash
+            try {
+                db.execSQL("ALTER TABLE customers ADD COLUMN assinatura_payload TEXT")
+                db.execSQL("ALTER TABLE grandes_empreendimentos ADD COLUMN assinatura_payload TEXT")
+            } catch (_: Exception) {}
+        }
     }
 
     fun saveCustomerOffline(customer: Customer): Int {
@@ -91,6 +131,10 @@ class LocalDatabase(context: Context) :
             put("entrevistado_qual_doc", customer.entrevistadoQualDoc)
             put("entrevistado_email", customer.entrevistadoEmail)
             put("entrevistado_celular", customer.entrevistadoCelular)
+            put("assinatura_url", customer.assinaturaUrl)
+            put("local_assinatura_path", customer.localAssinaturaPath)
+            put("assinatura_hash", customer.assinaturaHash)
+            put("assinatura_payload", customer.assinaturaPayload)
             put("logradouro", customer.logradouro)
             put("numero", customer.numero)
             put("complemento", customer.complemento)
@@ -113,6 +157,7 @@ class LocalDatabase(context: Context) :
             put("grupo_sugerido", customer.grupoSugerido)
             put("setor", customer.setor)
             put("quadra", customer.quadra)
+            put("lote", customer.lote)
             put("rota_sugerida", customer.rotaSugerida)
             put("numero_hidrometro", customer.numeroHidrometro)
             put("isSynced", 0)
@@ -162,6 +207,10 @@ class LocalDatabase(context: Context) :
                     entrevistadoQualDoc = cursor.getString(cursor.getColumnIndexOrThrow("entrevistado_qual_doc")),
                     entrevistadoEmail = cursor.getString(cursor.getColumnIndexOrThrow("entrevistado_email")),
                     entrevistadoCelular = cursor.getString(cursor.getColumnIndexOrThrow("entrevistado_celular")),
+                    assinaturaUrl = cursor.getString(cursor.getColumnIndexOrThrow("assinatura_url")),
+                    localAssinaturaPath = cursor.getString(cursor.getColumnIndexOrThrow("local_assinatura_path")),
+                    assinaturaHash = cursor.getString(cursor.getColumnIndexOrThrow("assinatura_hash")),
+                    assinaturaPayload = cursor.getString(cursor.getColumnIndexOrThrow("assinatura_payload")),
                     logradouro = cursor.getString(cursor.getColumnIndexOrThrow("logradouro")),
                     numero = cursor.getString(cursor.getColumnIndexOrThrow("numero")),
                     complemento = cursor.getString(cursor.getColumnIndexOrThrow("complemento")),
@@ -184,6 +233,7 @@ class LocalDatabase(context: Context) :
                     grupoSugerido = cursor.getString(cursor.getColumnIndexOrThrow("grupo_sugerido")),
                     setor = cursor.getString(cursor.getColumnIndexOrThrow("setor")),
                     quadra = cursor.getString(cursor.getColumnIndexOrThrow("quadra")),
+                    lote = cursor.getString(cursor.getColumnIndexOrThrow("lote")),
                     rotaSugerida = cursor.getString(cursor.getColumnIndexOrThrow("rota_sugerida")),
                     numeroHidrometro = cursor.getString(cursor.getColumnIndexOrThrow("numero_hidrometro")),
                     isSynced = false,
@@ -220,17 +270,27 @@ class LocalDatabase(context: Context) :
             put("construtora", item.constructionCompany)
             put("qtd_economias", item.economiesCount)
             put("qtd_pavimentos", item.floorsCount)
+            put("qtd_blocos", item.blockCount)
             put("medidor_energia", item.electricityMeterNumber)
             put("til_esgoto", item.tilEsgoto)
             put("acessibilidade_leitura", item.accessibilityReading)
+            put("possui_piscina", item.possuiPiscina)
+            put("observacao", item.observacao)
             put("latitude", item.latitude)
             put("longitude", item.longitude)
             put("cidade", item.cidade)
             put("cidade_id", item.cidadeId)
             put("grupo_sugerido", item.grupoSugerido)
+            put("setor", item.setor)
+            put("quadra", item.quadra)
+            put("lote", item.lote)
             put("rota_sugerida", item.rotaSugerida)
             put("adicionado_por", item.addedBy)
             put("data", item.date)
+            put("assinatura_url", item.assinaturaUrl)
+            put("local_assinatura_path", item.localAssinaturaPath)
+            put("assinatura_hash", item.assinaturaHash)
+            put("assinatura_payload", item.assinaturaPayload)
             put("isSynced", 0)
         }
         return db.insertWithOnConflict("grandes_empreendimentos", null, values, SQLiteDatabase.CONFLICT_REPLACE).toInt()
@@ -255,15 +315,25 @@ class LocalDatabase(context: Context) :
                     constructionCompany = cursor.getString(cursor.getColumnIndexOrThrow("construtora")),
                     economiesCount = if (cursor.isNull(cursor.getColumnIndexOrThrow("qtd_economias"))) null else cursor.getInt(cursor.getColumnIndexOrThrow("qtd_economias")),
                     floorsCount = if (cursor.isNull(cursor.getColumnIndexOrThrow("qtd_pavimentos"))) null else cursor.getInt(cursor.getColumnIndexOrThrow("qtd_pavimentos")),
+                    blockCount = if (cursor.isNull(cursor.getColumnIndexOrThrow("qtd_blocos"))) null else cursor.getInt(cursor.getColumnIndexOrThrow("qtd_blocos")),
                     electricityMeterNumber = cursor.getString(cursor.getColumnIndexOrThrow("medidor_energia")),
                     tilEsgoto = cursor.getString(cursor.getColumnIndexOrThrow("til_esgoto")),
                     accessibilityReading = cursor.getString(cursor.getColumnIndexOrThrow("acessibilidade_leitura")),
+                    possuiPiscina = cursor.getString(cursor.getColumnIndexOrThrow("possui_piscina")),
+                    observacao = cursor.getString(cursor.getColumnIndexOrThrow("observacao")),
                     latitude = if (cursor.isNull(cursor.getColumnIndexOrThrow("latitude"))) null else cursor.getDouble(cursor.getColumnIndexOrThrow("latitude")),
                     longitude = if (cursor.isNull(cursor.getColumnIndexOrThrow("longitude"))) null else cursor.getDouble(cursor.getColumnIndexOrThrow("longitude")),
                     addedBy = cursor.getString(cursor.getColumnIndexOrThrow("adicionado_por")),
                     date = cursor.getString(cursor.getColumnIndexOrThrow("data")),
                     grupoSugerido = cursor.getString(cursor.getColumnIndexOrThrow("grupo_sugerido")),
+                    setor = cursor.getString(cursor.getColumnIndexOrThrow("setor")),
+                    quadra = cursor.getString(cursor.getColumnIndexOrThrow("quadra")),
+                    lote = cursor.getString(cursor.getColumnIndexOrThrow("lote")),
                     rotaSugerida = cursor.getString(cursor.getColumnIndexOrThrow("rota_sugerida")),
+                    assinaturaUrl = cursor.getString(cursor.getColumnIndexOrThrow("assinatura_url")),
+                    localAssinaturaPath = cursor.getString(cursor.getColumnIndexOrThrow("local_assinatura_path")),
+                    assinaturaHash = cursor.getString(cursor.getColumnIndexOrThrow("assinatura_hash")),
+                    assinaturaPayload = cursor.getString(cursor.getColumnIndexOrThrow("assinatura_payload")),
                     isSynced = false
                 )
                 list.add(currentId to ge)
@@ -383,7 +453,7 @@ class LocalDatabase(context: Context) :
     // SÊNIOR CACHE: Sistema de Cache Remoto com expiração diária
     fun saveRemoteCustomersToCache(customers: List<Customer>) {
         val db = writableDatabase
-        val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+        val today = com.example.oaplicativo.util.DateUtils.getTodayBrasilia()
         
         db.transaction {
             customers.forEach { customer ->
@@ -415,7 +485,7 @@ class LocalDatabase(context: Context) :
     fun getRemoteCache(city: String? = null): List<Customer> {
         val list = mutableListOf<Customer>()
         val db = readableDatabase
-        val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+        val today = com.example.oaplicativo.util.DateUtils.getTodayBrasilia()
         
         // SÊNIOR CLEANUP: Limpa cache antigo antes de ler (Reset Diário)
         db.delete("remote_cache", "cached_at != ?", arrayOf(today))
@@ -469,7 +539,7 @@ class LocalDatabase(context: Context) :
         }
 
         private const val DATABASE_NAME = "sanitation_final_v17.db"
-        private const val DATABASE_VERSION = 49
+        private const val DATABASE_VERSION = 54
         
         private const val CREATE_TABLE_CUSTOMERS = """
             CREATE TABLE IF NOT EXISTS customers (
@@ -480,15 +550,15 @@ class LocalDatabase(context: Context) :
                 entrevistado_apresentou_doc TEXT, entrevistado_qual_doc TEXT, logradouro TEXT, numero TEXT, complemento TEXT, bairro TEXT, cidade TEXT,
                 uf TEXT, cep TEXT, pavimento_rua TEXT, pavimento_calcada TEXT, fonte_abastecimento TEXT, existe_rede_agua TEXT, local_instalacao TEXT,
                 acessibilidade_leitura TEXT, observacao TEXT, beneficiario_social TEXT, usa_agua_vizinho TEXT, possui_hidrometro TEXT, til_esgoto TEXT, medidor_energia TEXT,
-                grupo_sugerido TEXT, setor TEXT, quadra TEXT, rota_sugerida TEXT, numero_hidrometro TEXT, isSynced INTEGER DEFAULT 0, sync_attempts INTEGER DEFAULT 0, last_error TEXT, sincronizado_em TEXT,
-                entrevistado_email TEXT, entrevistado_celular TEXT
+                grupo_sugerido TEXT, setor TEXT, quadra TEXT, lote TEXT, rota_sugerida TEXT, numero_hidrometro TEXT, isSynced INTEGER DEFAULT 0, sync_attempts INTEGER DEFAULT 0, last_error TEXT, sincronizado_em TEXT,
+                entrevistado_email TEXT, entrevistado_celular TEXT, assinatura_url TEXT, local_assinatura_path TEXT, assinatura_hash TEXT, assinatura_payload TEXT
             )"""
             
         private const val CREATE_TABLE_ECONOMY_UPDATES = """
             CREATE TABLE IF NOT EXISTS grandes_empreendimentos (
-                id TEXT PRIMARY KEY, leiturista_id TEXT, numero_hd TEXT, nome_edificio TEXT, construtora TEXT, qtd_economias INTEGER, qtd_pavimentos INTEGER,
-                medidor_energia TEXT, til_esgoto TEXT, acessibilidade_leitura TEXT, latitude REAL, longitude REAL, cidade TEXT, cidade_id TEXT, grupo_sugerido TEXT, rota_sugerida TEXT, adicionado_por TEXT,
-                data TEXT, isSynced INTEGER DEFAULT 0, sync_attempts INTEGER DEFAULT 0, last_error TEXT, sincronizado_em TEXT
+                id TEXT PRIMARY KEY, leiturista_id TEXT, numero_hd TEXT, nome_edificio TEXT, construtora TEXT, qtd_economias INTEGER, qtd_pavimentos INTEGER, qtd_blocos INTEGER,
+                medidor_energia TEXT, til_esgoto TEXT, acessibilidade_leitura TEXT, possui_piscina TEXT, observacao TEXT, latitude REAL, longitude REAL, cidade TEXT, cidade_id TEXT, grupo_sugerido TEXT, setor TEXT, quadra TEXT, lote TEXT, rota_sugerida TEXT, adicionado_por TEXT,
+                data TEXT, isSynced INTEGER DEFAULT 0, sync_attempts INTEGER DEFAULT 0, last_error TEXT, sincronizado_em TEXT, assinatura_url TEXT, local_assinatura_path TEXT, assinatura_hash TEXT, assinatura_payload TEXT
             )"""
 
         private const val CREATE_TABLE_STATS = "CREATE TABLE IF NOT EXISTS stats (id TEXT PRIMARY KEY, value INTEGER)"

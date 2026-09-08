@@ -253,7 +253,7 @@ fun AppTextField(
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        label = { Text(label, fontWeight = FontWeight.Medium) },
+        label = { Text(label, fontWeight = FontWeight.Medium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
         placeholder = placeholder?.let { { Text(it) } },
         modifier = modifier.fillMaxWidth(),
         leadingIcon = finalLeadingIcon?.let { { Icon(it, null, tint = MaterialTheme.colorScheme.primary) } },

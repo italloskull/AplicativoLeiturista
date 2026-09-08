@@ -51,7 +51,12 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
                     try {
                         Log.d("Supauploads", "⬆️ [WORKER] Tentando enviar lote de ${pendingCustomers.size} clientes...")
                         customerRepo.addCustomers(pendingCustomers.map { it.second })
-                        pendingCustomers.forEach { db.deleteSyncedCustomer(it.first) }
+                        pendingCustomers.forEach { (localId, customer) ->
+                            db.deleteSyncedCustomer(localId)
+                            customer.localAssinaturaPath?.let { path ->
+                                try { java.io.File(path).delete() } catch (_: Exception) {}
+                            }
+                        }
                         Log.d("Supauploads", "✅ [WORKER] Lote de clientes enviado e deletado do local.")
                         
                         // SÊNIOR FIX: Atualiza o repositório no SUCESSO também para remover os "fantasmas" da UI
@@ -64,6 +69,9 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
                                 Log.d("Supauploads", "⬆️ [WORKER] Tentando envio individual: ${customer.name}")
                                 customerRepo.addCustomers(listOf(customer))
                                 db.deleteSyncedCustomer(localId)
+                                customer.localAssinaturaPath?.let { path ->
+                                    try { java.io.File(path).delete() } catch (_: Exception) {}
+                                }
                                 Log.d("Supauploads", "✅ [WORKER] Cliente '${customer.name}' enviado com sucesso individualmente.")
                             } catch (err: Exception) {
                                 val errorMsg = err.message ?: "Erro desconhecido"
@@ -86,8 +94,13 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
                         Log.d("Supauploads", "⬆️ [WORKER] Tentando enviar lote de ${pendingEconomy.size} GE...")
                         economyRepo.saveEconomyUpdates(pendingEconomy.map { it.second })
                         // SÊNIOR FIX: Deleção sequencial e segura para evitar travamento de SQLite
-                        pendingEconomy.forEach { (localId, _) -> 
-                            try { db.deleteSyncedEconomyUpdate(localId) } catch (_: Exception) {} 
+                        pendingEconomy.forEach { (localId, item) -> 
+                            try {
+                                db.deleteSyncedEconomyUpdate(localId)
+                                item.localAssinaturaPath?.let { path ->
+                                    try { java.io.File(path).delete() } catch (_: Exception) {}
+                                }
+                            } catch (_: Exception) {} 
                         }
                         Log.d("Supauploads", "✅ [WORKER] Lote de GE enviado com sucesso.")
                         true

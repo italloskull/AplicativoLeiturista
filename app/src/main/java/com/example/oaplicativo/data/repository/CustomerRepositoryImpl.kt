@@ -5,12 +5,15 @@ import android.util.Log
 import com.example.oaplicativo.data.SupabaseClient
 import com.example.oaplicativo.domain.repository.CustomerRepository
 import com.example.oaplicativo.model.Customer
+import com.example.oaplicativo.util.removeAccents
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.realtime.PostgresAction
 import io.github.jan.supabase.realtime.RealtimeChannel
 import io.github.jan.supabase.realtime.channel
 import io.github.jan.supabase.realtime.postgresChangeFlow
 import io.github.jan.supabase.realtime.realtime
+import io.github.jan.supabase.storage.storage
+import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -189,14 +192,61 @@ class CustomerRepositoryImpl private constructor() : CustomerRepository {
         }
         withContext(Dispatchers.IO) {
             try {
+                // SÊNIOR STORAGE UPLOAD: Faz o upload da assinatura para o Supabase Storage se existir arquivo local
+                val processedCustomers = customers.map { customer ->
+                    var customerToUpload = customer
+                    val localPath = customer.localAssinaturaPath
+                    if (!localPath.isNullOrBlank()) {
+                        val file = java.io.File(localPath)
+                        if (file.exists()) {
+                            try {
+                                // SÊNIOR FILE NAMING: Nomenclatura legível {Cidade}/{Matricula}_{Nome}_por_{Leiturista}_{DataHora}_$shortUuid.png
+                                val cityName = (customer.cidade?.trim()?.ifBlank { null } ?: customer.cidadeId ?: "geral")
+                                    .removeAccents()
+                                    .replace("[^a-zA-Z0-9_]".toRegex(), "_")
+
+                                val rawName = customer.name?.trim()?.ifBlank { "CLIENTE" } ?: "CLIENTE"
+                                val nameClean = rawName.removeAccents()
+                                    .uppercase()
+                                    .replace("[^a-zA-Z0-9_]".toRegex(), "_")
+                                    .take(20)
+
+                                val rawUser = customer.addedBy?.trim()?.ifBlank { "LEITURISTA" } ?: "LEITURISTA"
+                                val userClean = rawUser.removeAccents()
+                                    .uppercase()
+                                    .replace("[^a-zA-Z0-9_]".toRegex(), "_")
+                                    .take(15)
+
+                                val matriculaClean = customer.registrationNumber?.trim()?.filter { it.isDigit() }?.ifBlank { "0" } ?: "0"
+
+                                val dateStr = com.example.oaplicativo.util.DateUtils.getFileNameTimestampBrasilia()
+
+                                val shortUuid = (customer.id ?: UUID.randomUUID().toString()).take(8)
+
+                                val fileName = "$cityName/${matriculaClean}_${nameClean}_por_${userClean}_${dateStr}_$shortUuid.png"
+                                val bucket = client.storage.from("assinaturas")
+                                bucket.upload(fileName, file.readBytes()) {
+                                    upsert = true
+                                }
+                                val publicUrl = bucket.publicUrl(fileName)
+                                Log.d("Supauploads", "✅ [STORAGE] Assinatura enviada: $publicUrl")
+                                customerToUpload = customerToUpload.copy(assinaturaUrl = publicUrl)
+                            } catch (stErr: Exception) {
+                                Log.e("Supauploads", "⚠️ [STORAGE] Falha ao enviar assinatura para o Storage: ${stErr.message}")
+                            }
+                        }
+                    }
+                    customerToUpload
+                }
+
                 // SÊNIOR DIAGNOSTIC: Log do objeto que está sendo enviado para detectar campos nulos/inválidos
-                customers.forEach { 
-                    Log.d("Supauploads", "⬆️ [REPO] Tentando UPSERT Supabase: ${it.name} | ID: ${it.id} | Data: ${it.updatedAt}")
+                processedCustomers.forEach { 
+                    Log.d("Supauploads", "⬆️ [REPO] Tentando UPSERT Supabase: ${it.name} | ID: ${it.id} | AssinaturaUrl: ${it.assinaturaUrl}")
                     if (it.updatedAt.isNullOrBlank()) Log.e("Supauploads", "‼️ ALERTA: updated_at está VAZIO para ${it.name}. Isso pode causar problemas de ordenação!")
                     if (it.cidadeId.isNullOrBlank()) Log.e("Supauploads", "‼️ CRÍTICO: cidade_id está NULO para ${it.name}")
                 }
                 
-                val response = client.postgrest["clientes"].upsert(customers) {
+                val response = client.postgrest["clientes"].upsert(processedCustomers) {
                     select() // SÊNIOR DIAGNOSTIC: Pede o retorno dos dados para confirmar gravação
                 }
                 Log.d("Supauploads", "✅ [REPO] Resposta Supabase: ${response.data}")

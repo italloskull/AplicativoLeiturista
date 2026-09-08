@@ -24,11 +24,8 @@ class StatsRepositoryImpl private constructor(context: Context) : StatsRepositor
             val profile = AuthRepositoryImpl.getInstance().currentUserProfile.value
             val userCityName = getFriendlyCityName(cidadeId)
             
-            // SÊNIOR COMPAT FIX: Padronização de TimeZone para Stats
-            val sdf = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault())
-            val brTimeZone = java.util.TimeZone.getTimeZone("America/Sao_Paulo")
-            sdf.timeZone = brTimeZone
-            val today = sdf.format(java.util.Calendar.getInstance(brTimeZone).time)
+            // SÊNIOR COMPAT FIX: Padronização de TimeZone de Brasília (DateUtils)
+            val today = com.example.oaplicativo.util.DateUtils.getTodayBrasilia()
             
             Log.d("debugs", "📊 [STATS] Sincronizando dashboard via Nuvem ($today)")
 

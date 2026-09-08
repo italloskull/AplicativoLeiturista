@@ -7,6 +7,8 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
@@ -19,6 +21,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -98,7 +101,58 @@ fun RecadastroFormScreen(
                 color = MaterialTheme.colorScheme.surface,
                 modifier = Modifier.navigationBarsPadding() 
             ) {
-                Box(modifier = Modifier.padding(24.dp)) {
+                var showSignatureDialog by remember { mutableStateOf(false) }
+                var showPreviewDialog by remember { mutableStateOf(false) }
+
+                Column(
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    val localBitmap = viewModel.signatureBitmap
+                    val remoteUrl = viewModel.assinaturaUrl
+                    val remoteBitmap = viewModel.remoteSignatureBitmap
+                    val isDownloading = viewModel.isDownloadingSignature
+                    val hasSignature = localBitmap != null || remoteBitmap != null || !remoteUrl.isNullOrBlank()
+
+                    // SÊNIOR UX FIX: Botão de Assinatura com alto contraste e prévia ao clicar
+                    Button(
+                        onClick = {
+                            if (hasSignature) {
+                                if (!remoteUrl.isNullOrBlank() && remoteBitmap == null && localBitmap == null) {
+                                    viewModel.loadRemoteSignature()
+                                }
+                                showPreviewDialog = true
+                            } else {
+                                showSignatureDialog = true
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = MaterialTheme.shapes.large,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (hasSignature) Color(0xFFDCFCE7) else MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = if (hasSignature) Color(0xFF15803D) else MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    ) {
+                        Icon(
+                            imageVector = if (hasSignature) Icons.Default.CheckCircle else Icons.Default.Draw,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = if (hasSignature) Color(0xFF15803D) else MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = when {
+                                localBitmap != null || remoteBitmap != null -> "Ver Assinatura Coletada ✓"
+                                !remoteUrl.isNullOrBlank() -> if (isDownloading) "Baixando Assinatura..." else "Ver Assinatura na Nuvem"
+                                else -> "Coletar Assinatura do Entrevistado"
+                            },
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
+
                     AppButton(
                         text = if (viewModel.isCapturingGpsOnSave) "Capturando GPS..." else "Salvar Recadastro",
                         icon = if (viewModel.isCapturingGpsOnSave) null else Icons.Default.CloudUpload,
@@ -129,6 +183,35 @@ fun RecadastroFormScreen(
                             }
                         }
                     )
+
+                    if (showSignatureDialog) {
+                        val entrevistadoNome = if (viewModel.entrevistadoEhOResponsavel == "Sim") viewModel.responsavelData.nomeCompleto else viewModel.entrevistadoNomeApenas
+                        val entrevistadoCpf = if (viewModel.entrevistadoEhOResponsavel == "Sim") viewModel.responsavelData.cpfCnpj else ""
+                        val entrevistadoLabel = if (entrevistadoCpf.isNotBlank()) "$entrevistadoNome (CPF: $entrevistadoCpf)" else entrevistadoNome
+                        val leituristaLabel = userProfile?.fullName ?: userProfile?.username ?: "Equipe de Campo"
+                        val gpsLabel = if (viewModel.latitude != null && viewModel.longitude != null) "${viewModel.latitude}, ${viewModel.longitude}" else "GPS PENDENTE"
+
+                        SignatureDialog(
+                            entrevistadoInfo = entrevistadoLabel,
+                            leituristaInfo = leituristaLabel,
+                            gpsInfo = gpsLabel,
+                            onDismiss = { showSignatureDialog = false },
+                            onSignatureConfirmed = { bitmap, lines ->
+                                viewModel.onSignatureCaptured(bitmap, lines)
+                            }
+                        )
+                    }
+
+                    if (showPreviewDialog) {
+                        SignaturePreviewDialog(
+                            bitmap = viewModel.generateLatestStampedSignature() ?: remoteBitmap,
+                            onDismiss = { showPreviewDialog = false },
+                            onRedo = {
+                                viewModel.clearSignature()
+                                showSignatureDialog = true
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -216,12 +299,15 @@ fun RecadastroFormScreen(
 
                     Spacer(Modifier.height(16.dp))
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Box(Modifier.weight(1f)) {
-                            AppTextField(value = viewModel.setor, onValueChange = { viewModel.setor = it }, label = "Setor", leadingIcon = Icons.Default.Map)
+                            AppTextField(value = viewModel.setor, onValueChange = { viewModel.setor = it }, label = "Setor")
                         }
                         Box(Modifier.weight(1f)) {
-                            AppTextField(value = viewModel.quadra, onValueChange = { viewModel.quadra = it }, label = "Quadra", leadingIcon = Icons.Default.GridOn)
+                            AppTextField(value = viewModel.quadra, onValueChange = { viewModel.quadra = it }, label = "Quadra")
+                        }
+                        Box(Modifier.weight(1f)) {
+                            AppTextField(value = viewModel.lote, onValueChange = { viewModel.lote = it }, label = "Lote")
                         }
                     }
 
@@ -501,6 +587,110 @@ fun RecadastroFormScreen(
                     }
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = 20.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+                }
+            }
+
+            item {
+                var showSignatureDialog by remember { mutableStateOf(false) }
+
+                AppCard(title = "Assinatura do Entrevistado", icon = Icons.Default.Draw) {
+                    val localBitmap = viewModel.signatureBitmap
+                    val remoteUrl = viewModel.assinaturaUrl
+                    val remoteBitmap = viewModel.remoteSignatureBitmap
+                    val isDownloading = viewModel.isDownloadingSignature
+                    val activeBitmap = viewModel.generateLatestStampedSignature() ?: localBitmap ?: remoteBitmap
+
+                    when {
+                        activeBitmap != null -> {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Image(
+                                    bitmap = activeBitmap.asImageBitmap(),
+                                    contentDescription = "Assinatura Capturada",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(140.dp)
+                                        .background(Color.White, shape = MaterialTheme.shapes.medium)
+                                        .padding(8.dp)
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    TextButton(onClick = { viewModel.clearSignature() }) {
+                                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("Refazer Assinatura", color = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                            }
+                        }
+
+                        remoteBitmap != null -> {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Image(
+                                    bitmap = remoteBitmap.asImageBitmap(),
+                                    contentDescription = "Assinatura Remota",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(140.dp)
+                                        .background(Color.White, shape = MaterialTheme.shapes.medium)
+                                        .padding(8.dp)
+                                )
+                            }
+                        }
+
+                        !remoteUrl.isNullOrBlank() -> {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "Assinatura registrada na nuvem",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(Modifier.height(12.dp))
+                                AppButton(
+                                    text = if (isDownloading) "Baixando..." else "Ver Assinatura",
+                                    onClick = { viewModel.loadRemoteSignature() },
+                                    isLoading = isDownloading,
+                                    icon = Icons.Default.Visibility
+                                )
+                            }
+                        }
+
+                        else -> {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "Nenhuma assinatura coletada.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                )
+                                Spacer(Modifier.height(12.dp))
+                                AppButton(
+                                    text = "Coletar Assinatura",
+                                    onClick = { showSignatureDialog = true },
+                                    icon = Icons.Default.Draw
+                                )
+                            }
+                        }
+                    }
+
+                    if (showSignatureDialog) {
+                        val entrevistadoNome = if (viewModel.entrevistadoEhOResponsavel == "Sim") viewModel.responsavelData.nomeCompleto else viewModel.entrevistadoNomeApenas
+                        val entrevistadoCpf = if (viewModel.entrevistadoEhOResponsavel == "Sim") viewModel.responsavelData.cpfCnpj else ""
+                        val entrevistadoLabel = if (entrevistadoCpf.isNotBlank()) "$entrevistadoNome (CPF: $entrevistadoCpf)" else entrevistadoNome
+                        val leituristaLabel = userProfile?.fullName ?: userProfile?.username ?: "Equipe de Campo"
+                        val gpsLabel = if (viewModel.latitude != null && viewModel.longitude != null) "${viewModel.latitude}, ${viewModel.longitude}" else "GPS PENDENTE"
+
+                        SignatureDialog(
+                            entrevistadoInfo = entrevistadoLabel,
+                            leituristaInfo = leituristaLabel,
+                            gpsInfo = gpsLabel,
+                            onDismiss = { showSignatureDialog = false },
+                            onSignatureConfirmed = { bitmap, lines ->
+                                viewModel.onSignatureCaptured(bitmap, lines)
+                            }
+                        )
+                    }
                 }
             }
 

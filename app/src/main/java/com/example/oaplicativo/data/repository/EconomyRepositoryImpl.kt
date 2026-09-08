@@ -8,6 +8,9 @@ import com.example.oaplicativo.domain.repository.EconomyRepository
 import com.example.oaplicativo.model.EconomyUpdate
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Order
+import io.github.jan.supabase.storage.storage
+import com.example.oaplicativo.util.removeAccents
+import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -108,8 +111,51 @@ class EconomyRepositoryImpl private constructor() : EconomyRepository {
     override suspend fun saveEconomyUpdates(items: List<EconomyUpdate>) {
         mutex.withLock {
             try {
-                Log.d("Supauploads", "⬆️ [REPO_GE] Tentando UPSERT Supabase de ${items.size} itens...")
-                client.postgrest["grandes_empreendimentos"].upsert(items)
+                // SÊNIOR STORAGE UPLOAD: Faz o upload da assinatura do GE para o Storage se houver arquivo local
+                val processedItems = items.map { item ->
+                    var itemToUpload = item
+                    val localPath = item.localAssinaturaPath
+                    if (!localPath.isNullOrBlank()) {
+                        val file = java.io.File(localPath)
+                        if (file.exists()) {
+                            try {
+                                val cityName = (item.cidade?.trim()?.ifBlank { null } ?: item.cidadeId ?: "geral")
+                                    .removeAccents()
+                                    .replace("[^a-zA-Z0-9_]".toRegex(), "_")
+
+                                val rawName = item.buildingName?.trim()?.ifBlank { "GE" } ?: "GE"
+                                val nameClean = rawName.removeAccents()
+                                    .uppercase()
+                                    .replace("[^a-zA-Z0-9_]".toRegex(), "_")
+                                    .take(20)
+
+                                val rawUser = item.addedBy?.trim()?.ifBlank { "LEITURISTA" } ?: "LEITURISTA"
+                                val userClean = rawUser.removeAccents()
+                                    .uppercase()
+                                    .replace("[^a-zA-Z0-9_]".toRegex(), "_")
+                                    .take(15)
+
+                                val dateStr = com.example.oaplicativo.util.DateUtils.getFileNameTimestampBrasilia()
+                                val shortUuid = (item.id ?: UUID.randomUUID().toString()).take(8)
+
+                                val fileName = "$cityName/GE_${nameClean}_por_${userClean}_${dateStr}_$shortUuid.png"
+                                val bucket = client.storage.from("assinaturas")
+                                bucket.upload(fileName, file.readBytes()) {
+                                    upsert = true
+                                }
+                                val publicUrl = bucket.publicUrl(fileName)
+                                Log.d("Supauploads", "✅ [STORAGE_GE] Assinatura enviada: $publicUrl")
+                                itemToUpload = itemToUpload.copy(assinaturaUrl = publicUrl)
+                            } catch (stErr: Exception) {
+                                Log.e("Supauploads", "⚠️ [STORAGE_GE] Falha ao enviar assinatura: ${stErr.message}")
+                            }
+                        }
+                    }
+                    itemToUpload
+                }
+
+                Log.d("Supauploads", "⬆️ [REPO_GE] Tentando UPSERT Supabase de ${processedItems.size} itens...")
+                client.postgrest["grandes_empreendimentos"].upsert(processedItems)
                 Log.d("Supauploads", "✅ [REPO_GE] Sincronizado com sucesso no Supabase.")
             } catch (e: Exception) {
                 Log.e("Supauploads", "❌ [REPO_GE] Erro no Upsert Supabase: ${e.message}")

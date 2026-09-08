@@ -92,12 +92,11 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
             val currentState = _uiState.value
 
             try {
-                // SÊNIOR COMPAT FIX: Padronização de TimeZone para BI
-                val brFormatter = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault())
-                val brTimeZone = java.util.TimeZone.getTimeZone("America/Sao_Paulo")
-                brFormatter.timeZone = brTimeZone
-                
-                val calendar = java.util.Calendar.getInstance(brTimeZone)
+                // SÊNIOR COMPAT FIX: Padronização de TimeZone de Brasília (DateUtils)
+                val brFormatter = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault()).apply {
+                    timeZone = com.example.oaplicativo.util.DateUtils.BRASILIA_TIMEZONE
+                }
+                val calendar = java.util.Calendar.getInstance(com.example.oaplicativo.util.DateUtils.BRASILIA_TIMEZONE)
                 val nowStr = brFormatter.format(calendar.time)
                 
                 val filterStartDate = when(currentState.period) {

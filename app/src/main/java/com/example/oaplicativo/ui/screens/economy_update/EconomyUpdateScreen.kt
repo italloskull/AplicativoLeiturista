@@ -5,18 +5,22 @@ import android.content.pm.PackageManager
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Comment
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -27,6 +31,8 @@ import com.example.oaplicativo.model.EconomyUpdate
 import com.example.oaplicativo.ui.components.AppTextField
 import com.example.oaplicativo.ui.components.AppButton
 import com.example.oaplicativo.ui.components.AppCard
+import com.example.oaplicativo.ui.components.SignatureDialog
+import com.example.oaplicativo.ui.components.SignaturePreviewDialog
 import com.example.oaplicativo.util.LocationHelper
 import kotlinx.coroutines.launch
 
@@ -46,9 +52,15 @@ fun EconomyUpdateScreen(
     var constructionCompany by remember(existingItem) { mutableStateOf(existingItem?.constructionCompany ?: "") }
     var economiesCount by remember(existingItem) { mutableStateOf(existingItem?.economiesCount?.toString() ?: "") }
     var floorsCount by remember(existingItem) { mutableStateOf(existingItem?.floorsCount?.toString() ?: "") }
+    var blockCount by remember(existingItem) { mutableStateOf(existingItem?.blockCount?.toString() ?: "") }
     var electricityMeter by remember(existingItem) { mutableStateOf(existingItem?.electricityMeterNumber ?: "") }
     var tilEsgoto by remember(existingItem) { mutableStateOf(existingItem?.tilEsgoto) }
     var accessibilityReading by remember(existingItem) { mutableStateOf(existingItem?.accessibilityReading) }
+    var possuiPiscina by remember(existingItem) { mutableStateOf(existingItem?.possuiPiscina) }
+    var observacao by remember(existingItem) { mutableStateOf(existingItem?.observacao ?: "") }
+    var setor by remember(existingItem) { mutableStateOf(existingItem?.setor ?: "") }
+    var quadra by remember(existingItem) { mutableStateOf(existingItem?.quadra ?: "") }
+    var lote by remember(existingItem) { mutableStateOf(existingItem?.lote ?: "") }
     
     var latitude by remember(existingItem) { mutableStateOf(existingItem?.latitude) }
     var longitude by remember(existingItem) { mutableStateOf(existingItem?.longitude) }
@@ -71,8 +83,9 @@ fun EconomyUpdateScreen(
     }
 
     LaunchedEffect(itemId) {
-        // SÊNIOR RESET: Garante que a tela comece do zero, evitando fechar imediatamente se o estado anterior foi Success
+        // SÊNIOR RESET & LOAD: Carrega assinatura do item se for edição
         viewModel.resetState()
+        viewModel.loadItemForEdit(itemId)
     }
 
     LaunchedEffect(state) {
@@ -90,6 +103,131 @@ fun EconomyUpdateScreen(
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar") }
                 }
             )
+        },
+        bottomBar = {
+            Surface(
+                shadowElevation = 8.dp,
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.navigationBarsPadding() 
+            ) {
+                var showSignatureDialog by remember { mutableStateOf(false) }
+                var showPreviewDialog by remember { mutableStateOf(false) }
+
+                Column(
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    val localBitmap = viewModel.signatureBitmap
+                    val remoteUrl = viewModel.assinaturaUrl
+                    val remoteBitmap = viewModel.remoteSignatureBitmap
+                    val isDownloading = viewModel.isDownloadingSignature
+                    val hasSignature = localBitmap != null || remoteBitmap != null || !remoteUrl.isNullOrBlank()
+
+                    Button(
+                        onClick = {
+                            if (hasSignature) {
+                                if (!remoteUrl.isNullOrBlank() && remoteBitmap == null && localBitmap == null) {
+                                    viewModel.loadRemoteSignature()
+                                }
+                                showPreviewDialog = true
+                            } else {
+                                showSignatureDialog = true
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = MaterialTheme.shapes.large,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (hasSignature) Color(0xFFDCFCE7) else MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = if (hasSignature) Color(0xFF15803D) else MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    ) {
+                        Icon(
+                            imageVector = if (hasSignature) Icons.Default.CheckCircle else Icons.Default.Draw,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = if (hasSignature) Color(0xFF15803D) else MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = when {
+                                localBitmap != null || remoteBitmap != null -> "Ver Assinatura Coletada ✓"
+                                !remoteUrl.isNullOrBlank() -> if (isDownloading) "Baixando Assinatura..." else "Ver Assinatura na Nuvem"
+                                else -> "Coletar Assinatura do Entrevistado"
+                            },
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
+
+                    AppButton(
+                        text = "SALVAR ATUALIZAÇÃO",
+                        icon = Icons.Default.CloudUpload,
+                        isLoading = state is EconomyUpdateState.Loading,
+                        onClick = {
+                            scope.launch {
+                                if (latitude == null) {
+                                    val loc = locationHelper.getCurrentLocation()
+                                    latitude = loc?.latitude
+                                    longitude = loc?.longitude
+                                }
+                                
+                                val itemToSave = EconomyUpdate(
+                                    id = existingItem?.id,
+                                    hdNumber = hdNumber.trim().ifBlank { null }, 
+                                    buildingName = buildingName.trim().ifBlank { null },
+                                    constructionCompany = constructionCompany.trim().ifBlank { null },
+                                    economiesCount = economiesCount.toIntOrNull(),
+                                    floorsCount = floorsCount.toIntOrNull(),
+                                    blockCount = blockCount.toIntOrNull(),
+                                    electricityMeterNumber = electricityMeter.trim().ifBlank { null },
+                                    tilEsgoto = tilEsgoto,
+                                    accessibilityReading = accessibilityReading,
+                                    possuiPiscina = possuiPiscina,
+                                    observacao = observacao.trim().ifBlank { null },
+                                    setor = setor.trim().ifBlank { null },
+                                    quadra = quadra.trim().ifBlank { null },
+                                    lote = lote.trim().ifBlank { null },
+                                    latitude = latitude,
+                                    longitude = longitude
+                                )
+                                
+                                Log.d("EconomyScreen", "🟢 Botão Salvar clicado. Enviando para o ViewModel: Edifício: ${itemToSave.buildingName}")
+                                viewModel.saveEconomyUpdate(itemToSave)
+                            }
+                        }
+                    )
+
+                    if (showSignatureDialog) {
+                        val buildingLabel = buildingName.ifBlank { "GE EMPREENDIMENTO" }
+                        val userProfile = com.example.oaplicativo.data.repository.AuthRepositoryImpl.getInstance().currentUserProfile.collectAsState().value
+                        val leituristaLabel = userProfile?.fullName ?: userProfile?.username ?: "Equipe de Campo"
+                        val gpsLabel = if (latitude != null && longitude != null) "$latitude, $longitude" else "GPS PENDENTE"
+
+                        SignatureDialog(
+                            entrevistadoInfo = buildingLabel,
+                            leituristaInfo = leituristaLabel,
+                            gpsInfo = gpsLabel,
+                            onDismiss = { showSignatureDialog = false },
+                            onSignatureConfirmed = { bitmap, lines ->
+                                viewModel.onSignatureCaptured(bitmap, lines)
+                            }
+                        )
+                    }
+
+                    if (showPreviewDialog) {
+                        SignaturePreviewDialog(
+                            bitmap = viewModel.generateLatestStampedSignature(buildingName, latitude, longitude) ?: remoteBitmap,
+                            onDismiss = { showPreviewDialog = false },
+                            onRedo = {
+                                viewModel.clearSignature()
+                                showSignatureDialog = true
+                            }
+                        )
+                    }
+                }
+            }
         }
     ) { paddingValues ->
         Column(
@@ -133,40 +271,6 @@ fun EconomyUpdateScreen(
                 }
             }
 
-                // SÊNIOR UX: Barra de Qualidade em Tempo Real para Grandes Empreendimentos
-                val currentGE = com.example.oaplicativo.model.EconomyUpdate(
-                    hdNumber = hdNumber,
-                    buildingName = buildingName,
-                    constructionCompany = constructionCompany,
-                    economiesCount = economiesCount.toIntOrNull(),
-                    floorsCount = floorsCount.toIntOrNull(),
-                    electricityMeterNumber = electricityMeter,
-                    latitude = latitude,
-                    longitude = longitude,
-                    cidade = ""
-                )
-                val qualityLabel = viewModel.calculateEconomyQuality(currentGE)
-                val qualityColor = when(qualityLabel) {
-                    "Boa" -> Color(0xFF10B981)
-                    "Regular" -> Color(0xFFF59E0B)
-                    else -> Color(0xFFEF4444)
-                }
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = qualityColor.copy(alpha = 0.1f)),
-                    shape = MaterialTheme.shapes.medium
-                ) {
-                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Verified, null, tint = qualityColor)
-                        Spacer(Modifier.width(12.dp))
-                        Text("Qualidade do Cadastro: ", style = MaterialTheme.typography.labelMedium)
-                        Text(qualityLabel.uppercase(), fontWeight = FontWeight.Black, color = qualityColor)
-                    }
-                }
-
-                Spacer(Modifier.height(8.dp))
-
                 AppCard(title = "Empreendimento", icon = Icons.Default.Business) {
                 AppTextField(
                     value = buildingName, 
@@ -181,6 +285,20 @@ fun EconomyUpdateScreen(
                     label = "Empresa Construtora",
                     leadingIcon = Icons.Default.CorporateFare
                 )
+            }
+
+            AppCard(title = "Localização Cadastral", icon = Icons.Default.Map) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(Modifier.weight(1f)) {
+                        AppTextField(value = setor, onValueChange = { setor = it }, label = "Setor")
+                    }
+                    Box(Modifier.weight(1f)) {
+                        AppTextField(value = quadra, onValueChange = { quadra = it }, label = "Quadra")
+                    }
+                    Box(Modifier.weight(1f)) {
+                        AppTextField(value = lote, onValueChange = { lote = it }, label = "Lote")
+                    }
+                }
             }
 
             AppCard(title = "Técnico", icon = Icons.Default.SettingsInputComponent) {
@@ -210,6 +328,15 @@ fun EconomyUpdateScreen(
                 }
 
                 Spacer(Modifier.height(12.dp))
+
+                com.example.oaplicativo.ui.components.BooleanOption(
+                    label = "Possui piscina?", 
+                    selectedOption = possuiPiscina
+                ) { 
+                    possuiPiscina = it 
+                }
+
+                Spacer(Modifier.height(12.dp))
                 
                 com.example.oaplicativo.ui.components.SpinnerOption(
                     label = "Acessibilidade para leitura mensal", 
@@ -225,7 +352,7 @@ fun EconomyUpdateScreen(
                         AppTextField(
                             value = economiesCount, 
                             onValueChange = { if (it.all { c -> c.isDigit() }) economiesCount = it }, 
-                            label = "Econ. Ativas",
+                            label = "Economias",
                             leadingIcon = Icons.Default.HomeWork,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                         )
@@ -238,6 +365,99 @@ fun EconomyUpdateScreen(
                             leadingIcon = Icons.Default.Layers,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                         )
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                AppTextField(
+                    value = blockCount, 
+                    onValueChange = { if (it.all { c -> c.isDigit() }) blockCount = it }, 
+                    label = "Quantidade de Blocos",
+                    leadingIcon = Icons.Default.Domain,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+            }
+
+            AppCard(title = "Observações", icon = Icons.Default.NoteAlt) {
+                AppTextField(
+                    value = observacao, 
+                    onValueChange = { observacao = it }, 
+                    label = "Notas de Campo / Observações", 
+                    leadingIcon = Icons.AutoMirrored.Filled.Comment
+                )
+            }
+
+            AppCard(title = "Assinatura do Entrevistado / Responsável", icon = Icons.Default.Draw) {
+                val localBitmap = viewModel.signatureBitmap
+                val remoteUrl = viewModel.assinaturaUrl
+                val remoteBitmap = viewModel.remoteSignatureBitmap
+                val isDownloading = viewModel.isDownloadingSignature
+                val activeBitmap = viewModel.generateLatestStampedSignature(buildingName, latitude, longitude) ?: localBitmap ?: remoteBitmap
+
+                when {
+                    activeBitmap != null -> {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Image(
+                                bitmap = activeBitmap.asImageBitmap(),
+                                contentDescription = "Assinatura Capturada",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(140.dp)
+                                    .background(Color.White, shape = MaterialTheme.shapes.medium)
+                                    .padding(8.dp)
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                TextButton(onClick = { viewModel.clearSignature() }) {
+                                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Refazer Assinatura", color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+
+                    remoteBitmap != null -> {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Image(
+                                bitmap = remoteBitmap.asImageBitmap(),
+                                contentDescription = "Assinatura Remota",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(140.dp)
+                                    .background(Color.White, shape = MaterialTheme.shapes.medium)
+                                    .padding(8.dp)
+                            )
+                        }
+                    }
+
+                    !remoteUrl.isNullOrBlank() -> {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "Assinatura registrada na nuvem",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            AppButton(
+                                text = if (isDownloading) "Baixando..." else "Ver Assinatura",
+                                onClick = { viewModel.loadRemoteSignature() },
+                                isLoading = isDownloading,
+                                icon = Icons.Default.Visibility
+                            )
+                        }
+                    }
+
+                    else -> {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "Nenhuma assinatura coletada.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                            )
+                        }
                     }
                 }
             }
@@ -336,40 +556,6 @@ fun EconomyUpdateScreen(
                     }
                 }
             }
-            
-            AppButton(
-                text = "SALVAR ATUALIZAÇÃO",
-                onClick = {
-                    scope.launch {
-                        if (latitude == null) {
-                            val loc = locationHelper.getCurrentLocation()
-                            latitude = loc?.latitude
-                            longitude = loc?.longitude
-                        }
-                        
-                        // LÓGICA "INDSTRUTÍVEL": Todos os campos são opcionais.
-                        // Aplicamos trim() e tratamos nulos/vazios.
-                        val itemToSave = EconomyUpdate(
-                            id = existingItem?.id,
-                            hdNumber = hdNumber.trim().ifBlank { null }, 
-                            buildingName = buildingName.trim().ifBlank { null },
-                            constructionCompany = constructionCompany.trim().ifBlank { null },
-                            economiesCount = economiesCount.toIntOrNull(),
-                            floorsCount = floorsCount.toIntOrNull(),
-                            electricityMeterNumber = electricityMeter.trim().ifBlank { null },
-                            tilEsgoto = tilEsgoto,
-                            accessibilityReading = accessibilityReading,
-                            latitude = latitude,
-                            longitude = longitude
-                        )
-                        
-                        Log.d("EconomyScreen", "🟢 Botão Salvar clicado. Enviando para o ViewModel: Edifício: ${itemToSave.buildingName}")
-                        viewModel.saveEconomyUpdate(itemToSave)
-                    }
-                },
-                isLoading = state is EconomyUpdateState.Loading,
-                enabled = true // SÊNIOR FIX: Nada bloqueia o salvamento
-            )
             
             Spacer(modifier = Modifier.height(32.dp))
         }

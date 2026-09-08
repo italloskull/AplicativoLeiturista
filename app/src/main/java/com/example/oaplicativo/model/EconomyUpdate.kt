@@ -17,9 +17,12 @@ data class EconomyUpdate(
     @SerialName("construtora") val constructionCompany: String? = null,
     @SerialName("qtd_economias") val economiesCount: Int? = null,
     @SerialName("qtd_pavimentos") val floorsCount: Int? = null,
+    @SerialName("qtd_blocos") val blockCount: Int? = null,
     @SerialName("medidor_energia") val electricityMeterNumber: String? = null,
     @SerialName("til_esgoto") val tilEsgoto: String? = null,
     @SerialName("acessibilidade_leitura") val accessibilityReading: String? = null,
+    @SerialName("possui_piscina") val possuiPiscina: String? = null,
+    val observacao: String? = null,
     
     @SerialName("latitude") val latitude: Double? = null,
     @SerialName("longitude") val longitude: Double? = null,
@@ -29,7 +32,14 @@ data class EconomyUpdate(
     @SerialName("cidade") val cidade: String? = null,
     @SerialName("cidade_id") val cidadeId: String? = null,
     @SerialName("grupo_sugerido") val grupoSugerido: String? = null,
+    @SerialName("setor") val setor: String? = null,
+    @SerialName("quadra") val quadra: String? = null,
+    @SerialName("lote") val lote: String? = null,
     @SerialName("rota_sugerida") val rotaSugerida: String? = null,
+    @SerialName("assinatura_url") val assinaturaUrl: String? = null,
+    @SerialName("assinatura_hash") val assinaturaHash: String? = null,
+    @SerialName("assinatura_payload") val assinaturaPayload: String? = null,
+    @Transient val localAssinaturaPath: String? = null,
     
     @Transient val isSynced: Boolean = true
 )

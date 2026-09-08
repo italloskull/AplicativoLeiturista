@@ -53,6 +53,7 @@ class RecadastroViewModel(
     var registrationDigit by mutableStateOf("")
     var setor by mutableStateOf("")
     var quadra by mutableStateOf("")
+    var lote by mutableStateOf("")
     var latitude by mutableStateOf<Double?>(null)
     var longitude by mutableStateOf<Double?>(null)
     
@@ -108,6 +109,73 @@ class RecadastroViewModel(
     var cepError by mutableStateOf(false)
     var isCapturingGpsOnSave by mutableStateOf(false)
 
+    // SÊNIOR SIGNATURE STATE
+    var signatureBitmap by mutableStateOf<android.graphics.Bitmap?>(null)
+    var signatureLines by mutableStateOf<List<com.example.oaplicativo.ui.components.LinePath>>(emptyList())
+    var localAssinaturaPath by mutableStateOf<String?>(null)
+    var assinaturaUrl by mutableStateOf<String?>(null)
+    var assinaturaHash by mutableStateOf<String?>(null)
+    var assinaturaPayload by mutableStateOf<String?>(null)
+    var isDownloadingSignature by mutableStateOf(false)
+    var remoteSignatureBitmap by mutableStateOf<android.graphics.Bitmap?>(null)
+
+    fun onSignatureCaptured(bitmap: android.graphics.Bitmap, lines: List<com.example.oaplicativo.ui.components.LinePath> = emptyList()) {
+        signatureLines = lines
+        signatureBitmap = bitmap
+    }
+
+    fun generateLatestStampedSignature(): android.graphics.Bitmap? {
+        if (signatureLines.isEmpty()) return signatureBitmap
+        val entrevistadoNome = if (entrevistadoEhOResponsavel == "Sim") responsavelData.nomeCompleto.trim() else entrevistadoNomeApenas.trim()
+        val entrevistadoCpf = if (entrevistadoEhOResponsavel == "Sim") responsavelData.cpfCnpj.trim() else ""
+        val entrevistadoLabel = if (entrevistadoCpf.isNotBlank()) "$entrevistadoNome (CPF: $entrevistadoCpf)" else entrevistadoNome
+        val userProfile = currentUserProfile.value
+        val leituristaLabel = userProfile?.fullName ?: userProfile?.username ?: "Equipe de Campo"
+        val gpsLabel = if (latitude != null && longitude != null) "$latitude, $longitude" else "GPS PENDENTE"
+        val tsBrasilia = com.example.oaplicativo.util.DateUtils.getFullTimestampBrasilia()
+
+        val rawPayload = "${entrevistadoLabel.ifBlank { "NÃO INFORMADO" }}|${leituristaLabel.ifBlank { "EQUIPE DE CAMPO" }}|$tsBrasilia|${gpsLabel.ifBlank { "GPS NÃO CAPTURADO" }}"
+        assinaturaPayload = rawPayload
+
+        return com.example.oaplicativo.ui.components.createBitmapFromLinesWithStamp(
+            lines = signatureLines,
+            entrevistadoInfo = entrevistadoLabel,
+            leituristaInfo = leituristaLabel,
+            gpsInfo = gpsLabel,
+            timestampBrasilia = tsBrasilia
+        )
+    }
+
+    fun clearSignature() {
+        signatureLines = emptyList()
+        signatureBitmap = null
+        localAssinaturaPath = null
+        assinaturaUrl = null
+        assinaturaHash = null
+        assinaturaPayload = null
+        remoteSignatureBitmap = null
+    }
+
+    fun loadRemoteSignature() {
+        val url = assinaturaUrl ?: return
+        if (remoteSignatureBitmap != null || isDownloadingSignature) return
+        viewModelScope.launch(Dispatchers.IO) {
+            isDownloadingSignature = true
+            try {
+                val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                connection.doInput = true
+                connection.connect()
+                val input = connection.inputStream
+                val downloadedBitmap = android.graphics.BitmapFactory.decodeStream(input)
+                remoteSignatureBitmap = downloadedBitmap
+            } catch (e: Exception) {
+                Log.e("RecadastroVM", "Erro ao baixar assinatura remota: ${e.message}")
+            } finally {
+                isDownloadingSignature = false
+            }
+        }
+    }
+
     private var geocodeJob: Job? = null
     private var cepJob: Job? = null
 
@@ -133,11 +201,12 @@ class RecadastroViewModel(
         var score = 0f
         val criticalWeight = 15f
         val normalWeight = 2f
-        val totalWeight = 136f
+        val totalWeight = 140f
 
         // 1. CAMPOS CRÍTICOS (Peso 15 cada)
         if (matricula.isNotBlank()) score += criticalWeight
         if (numeroHidrometro.isNotBlank() && numeroHidrometro != " ") score += criticalWeight
+        if (signatureBitmap != null || !assinaturaUrl.isNullOrBlank()) score += criticalWeight // SÊNIOR SCORE: Assinatura Digital vale 15 pontos!
         
         // E-mail e Celular (Conta do Responsável ou do Entrevistado dependendo do contexto)
         if (entrevistadoEhOResponsavel == "Sim") {
@@ -150,10 +219,11 @@ class RecadastroViewModel(
 
         // 2. DEMAIS CAMPOS (Peso 2 cada)
         
-        // Identificação (4)
+        // Identificação (5)
         if (registrationDigit.isNotBlank()) score += normalWeight
         if (setor.isNotBlank()) score += normalWeight
         if (quadra.isNotBlank()) score += normalWeight
+        if (lote.isNotBlank()) score += normalWeight
         if (selectedCidadeForRegistry != null) score += normalWeight
 
         // Localização (1)
@@ -176,9 +246,6 @@ class RecadastroViewModel(
         if (responsavelData.apresentouDoc != null) score += normalWeight
         if (responsavelData.apresentouDoc == "Sim") {
             if (responsavelData.qualDoc.isNotBlank()) score += normalWeight
-        } else {
-            // Se não apresentou, o ponto de "Qual Doc" é concedido por não ser aplicável? 
-            // Seguindo a lógica de peso fixo (124), se não é aplicável, não pontua.
         }
 
         // Dados do Entrevistado (1)
@@ -208,8 +275,9 @@ class RecadastroViewModel(
         // Medidores (1)
         if (electricityMeter.isNotBlank()) score += normalWeight
 
-        // Outros (1)
+        // Outros (2)
         if (economias.isNotBlank()) score += normalWeight
+        if (observacao.isNotBlank()) score += normalWeight
 
         score / totalWeight
     }
@@ -226,6 +294,7 @@ class RecadastroViewModel(
             registrationDigit = customer.registrationDigit ?: ""
             setor = customer.setor ?: ""
             quadra = customer.quadra ?: ""
+            lote = customer.lote ?: ""
             latitude = customer.latitude
             longitude = customer.longitude
             cep = customer.cep ?: ""
@@ -267,6 +336,18 @@ class RecadastroViewModel(
             responsavelData.apresentouDoc = customer.entrevistadoApresentouDoc.ifSpaceNull() ?: "Não"
             responsavelData.qualDoc = customer.entrevistadoQualDoc ?: ""
             
+            assinaturaUrl = customer.assinaturaUrl
+            assinaturaHash = customer.assinaturaHash
+            assinaturaPayload = customer.assinaturaPayload
+            localAssinaturaPath = customer.localAssinaturaPath
+            val path = localAssinaturaPath
+            if (!path.isNullOrBlank()) {
+                val file = java.io.File(path)
+                if (file.exists()) {
+                    signatureBitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+                }
+            }
+            
             numeroHidrometro = customer.numeroHidrometro ?: ""
             electricityMeter = customer.electricityMeter ?: ""
             
@@ -301,18 +382,9 @@ class RecadastroViewModel(
                     return@launch
                 }
 
-                // SÊNIOR COMPAT FIX: Voltando para o formato de Barras e Underscore para manter ordenação no painel
-                val sdfDate = java.text.SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
-                val sdfFull = java.text.SimpleDateFormat("yyyy/MM/dd_HH:mm:ss", Locale.getDefault())
-                
-                val brTimeZone = java.util.TimeZone.getTimeZone("America/Sao_Paulo")
-                sdfDate.timeZone = brTimeZone
-                sdfFull.timeZone = brTimeZone
-                
-                val now = java.util.Calendar.getInstance(brTimeZone).time
-                
-                val brDate = sdfDate.format(now)
-                val brFullTimestamp = sdfFull.format(now)
+                // SÊNIOR COMPAT FIX: Padronização de TimeZone de Brasília (DateUtils)
+                val brDate = com.example.oaplicativo.util.DateUtils.getTodayBrasilia()
+                val brFullTimestamp = com.example.oaplicativo.util.DateUtils.getFullTimestampBrasilia()
 
                 // SÊNIOR ID-FIX: Garante que o leituristaId seja um UUID válido para o Supabase
                 val sanitizedUserId = if (user.id.length == 36) user.id else null
@@ -320,6 +392,24 @@ class RecadastroViewModel(
                 // SÊNIOR DATA FIX: Formata a data de nascimento bruta
                 val sNasc = responsavelData.dataNascimento.trim().let { 
                     if (it.length == 8) "${it.substring(0, 2)}/${it.substring(2, 4)}/${it.substring(4)}" else it 
+                }
+
+                // SÊNIOR SIGNATURE FIX: Regenera a assinatura e calcula o Hash SHA-256 do ARQUIVO PNG FÍSICO
+                val finalStampedSig = generateLatestStampedSignature()
+                if (finalStampedSig != null && signatureLines.isNotEmpty()) {
+                    try {
+                        val sigDir = java.io.File(getApplication<Application>().filesDir, "signatures").apply { if (!exists()) mkdirs() }
+                        val file = java.io.File(sigDir, "sig_${UUID.randomUUID()}.png")
+                        val pngBytes = com.example.oaplicativo.ui.components.bitmapToPngBytes(finalStampedSig)
+                        file.writeBytes(pngBytes)
+                        
+                        localAssinaturaPath = file.absolutePath
+                        signatureBitmap = finalStampedSig
+                        assinaturaHash = com.example.oaplicativo.ui.components.computePngBytesSha256(pngBytes)
+                        Log.d("RecadastroVM", "🔒 Hash SHA-256 do arquivo PNG físico: $assinaturaHash")
+                    } catch (e: Exception) {
+                        Log.e("RecadastroVM", "Erro ao salvar PNG final estampado: ${e.message}")
+                    }
                 }
 
                 val customer = Customer(
@@ -355,6 +445,10 @@ class RecadastroViewModel(
                     entrevistadoQualDoc = if (entrevistadoEhOResponsavel == "Sim") responsavelData.qualDoc.trim() else " ",
                     entrevistadoEmail = if (entrevistadoEhOResponsavel == "Sim") email.trim() else entrevistadoEmailApenas.trim().orSpace(),
                     entrevistadoCelular = if (entrevistadoEhOResponsavel == "Sim") celular1.trim() else entrevistadoCelularApenas.trim().orSpace(),
+                    assinaturaUrl = assinaturaUrl,
+                    assinaturaHash = assinaturaHash,
+                    assinaturaPayload = assinaturaPayload,
+                    localAssinaturaPath = localAssinaturaPath,
                     logradouro = logradouro,
                     numero = numero,
                     complemento = complemento,
@@ -376,6 +470,7 @@ class RecadastroViewModel(
                     grupoSugerido = com.example.oaplicativo.util.GeoFencingHelper.findSuggestedGroup(selectedCity.nome, latitude, longitude) ?: "S/G",
                     setor = setor,
                     quadra = quadra,
+                    lote = lote,
                     rotaSugerida = com.example.oaplicativo.util.GeoFencingHelper.findSuggestedRoute(selectedCity.nome, latitude, longitude) ?: "S/R",
                     numeroHidrometro = numeroHidrometro.trim().orSpace(),
                     isSynced = false

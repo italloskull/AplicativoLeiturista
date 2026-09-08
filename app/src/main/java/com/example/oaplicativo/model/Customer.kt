@@ -49,6 +49,10 @@ data class Customer(
     @SerialName("entrevistado_qual_doc") val entrevistadoQualDoc: String? = null,
     @SerialName("entrevistado_email") val entrevistadoEmail: String? = null,
     @SerialName("entrevistado_celular") val entrevistadoCelular: String? = null,
+    @SerialName("assinatura_url") val assinaturaUrl: String? = null,
+    @SerialName("assinatura_hash") val assinaturaHash: String? = null,
+    @SerialName("assinatura_payload") val assinaturaPayload: String? = null,
+    @Transient val localAssinaturaPath: String? = null,
 
     // Endereço
     val logradouro: String? = null,
@@ -74,6 +78,7 @@ data class Customer(
     @SerialName("grupo_sugerido") val grupoSugerido: String? = null,
     val setor: String? = null,
     val quadra: String? = null,
+    val lote: String? = null,
     @SerialName("rota_sugerida") val rotaSugerida: String? = null,
     @SerialName("numero_hidrometro") val numeroHidrometro: String? = null,
 
