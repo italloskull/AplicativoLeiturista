@@ -103,6 +103,7 @@ fun RecadastroFormScreen(
             ) {
                 var showSignatureDialog by remember { mutableStateOf(false) }
                 var showPreviewDialog by remember { mutableStateOf(false) }
+                var formErrorMessage by remember { mutableStateOf<String?>(null) }
 
                 Column(
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
@@ -113,6 +114,51 @@ fun RecadastroFormScreen(
                     val remoteBitmap = viewModel.remoteSignatureBitmap
                     val isDownloading = viewModel.isDownloadingSignature
                     val hasSignature = localBitmap != null || remoteBitmap != null || !remoteUrl.isNullOrBlank()
+
+                    // SÊNIOR ERROR BANNER: Exibe aviso de erro sem cortes na tela
+                    if (formErrorMessage != null) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            shape = MaterialTheme.shapes.medium,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.Error,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        text = formErrorMessage!!,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onErrorContainer,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { formErrorMessage = null },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "Fechar",
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
 
                     // SÊNIOR UX FIX: Botão de Assinatura com alto contraste e prévia ao clicar
                     Button(
@@ -159,6 +205,7 @@ fun RecadastroFormScreen(
                         isLoading = viewModel.isCapturingGpsOnSave,
                         onClick = {
                             scope.launch {
+                                formErrorMessage = null
                                 if (viewModel.latitude == null || viewModel.longitude == null) {
                                     viewModel.isCapturingGpsOnSave = true
                                     val fineLoc = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
@@ -177,8 +224,14 @@ fun RecadastroFormScreen(
                                 }
                                 
                                 viewModel.saveRecadastro(
-                                    onSuccess = onSaveSuccess,
-                                    onError = { msg -> Toast.makeText(context, msg, Toast.LENGTH_LONG).show() }
+                                    onSuccess = {
+                                        formErrorMessage = null
+                                        onSaveSuccess()
+                                    },
+                                    onError = { msg ->
+                                        formErrorMessage = msg
+                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                    }
                                 )
                             }
                         }
@@ -251,7 +304,7 @@ fun RecadastroFormScreen(
 
             item {
                 AppCard(title = "Localização e Hidrometria", icon = Icons.Default.Map) {
-                    BooleanOption(label = "Medição via Hidrômetro?", selectedOption = viewModel.possuiHidrometro) { viewModel.possuiHidrometro = it }
+                    BooleanOption(label = "Medição via Hidrômetro? *", selectedOption = viewModel.possuiHidrometro) { viewModel.possuiHidrometro = it }
                     if (viewModel.possuiHidrometro == "Sim") {
                         Spacer(Modifier.height(12.dp))
                         AppTextField(value = viewModel.numeroHidrometro, onValueChange = { viewModel.numeroHidrometro = it }, label = "Nº de Série do Hidrômetro", leadingIcon = Icons.Default.Pin)

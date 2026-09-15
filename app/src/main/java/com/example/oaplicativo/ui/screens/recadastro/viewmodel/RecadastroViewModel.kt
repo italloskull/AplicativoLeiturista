@@ -376,6 +376,12 @@ class RecadastroViewModel(
     fun saveRecadastro(onSuccess: () -> Unit, onError: (String) -> Unit) {
         viewModelScope.launch {
             try {
+                // SÊNIOR VALIDATION: Validação do campo obrigatório 'Medição via Hidrômetro?'
+                if (possuiHidrometro.isNullOrBlank() || possuiHidrometro == " ") {
+                    onError("Selecione 'Medição via Hidrômetro'.")
+                    return@launch
+                }
+
                 val user = currentUserProfile.value ?: return@launch
                 val selectedCity = selectedCidadeForRegistry ?: run {
                     onError("Por favor, selecione a cidade do registro no topo da tela.")

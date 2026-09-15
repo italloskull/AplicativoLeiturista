@@ -16,8 +16,8 @@ android {
         applicationId = "com.example.oaplicativo"
         minSdk = 29
         targetSdk = 35
-        versionCode = 34
-        versionName = "0.9.2.7.6"
+        versionCode = 35
+        versionName = "0.9.2.7.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -105,6 +105,7 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
+
 
 
 
