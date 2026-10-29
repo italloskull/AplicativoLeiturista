@@ -488,16 +488,15 @@ fun RecadastroFormScreen(
 
             item {
                 AppCard(title = "Hidrometria Técnica", icon = Icons.Default.WaterDrop) {
-                    BooleanOption(label = "Possui Caixa Padrão?", selectedOption = viewModel.isStandardMeasurementBox) { viewModel.isStandardMeasurementBox = it }
                     BooleanOption(label = "Lacres Padronizados?", selectedOption = viewModel.isStandardizedSeals) { viewModel.isStandardizedSeals = it }
-                    BooleanOption(label = "Hidrômetro Acessível?", selectedOption = viewModel.isHdAccessible) { viewModel.isHdAccessible = it }
+                    BooleanOption(label = "Hidrômetro acessível para manutenção?", selectedOption = viewModel.isAccessibleForMaintenance) { viewModel.isAccessibleForMaintenance = it }
                     
                     Spacer(Modifier.height(12.dp))
                     SpinnerOption(label = "Possui reservatório (Caixa)?", options = listOf("Sim", "Não", "Não Visível"), selectedOption = viewModel.possuiCaixaAgua, onOptionSelected = { viewModel.possuiCaixaAgua = it })
                     AppTextField(value = viewModel.economias, onValueChange = { if (it.all { c -> c.isDigit() }) viewModel.economias = it }, label = "Nº de Economias", leadingIcon = Icons.Default.MapsHomeWork, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                     Spacer(Modifier.height(12.dp))
                     SpinnerOption(label = "Local da Instalação", options = listOf("CAIXA PADRÃO", "INTERNO", "CAVALETE EXTERNO"), selectedOption = viewModel.localInstalacao, onOptionSelected = { viewModel.localInstalacao = it })
-                    SpinnerOption(label = "Acessibilidade para leitura mensal", options = listOf("Facil Acesso", "Dificil Acesso"), selectedOption = viewModel.acessibilidade, onOptionSelected = { viewModel.acessibilidade = it })
+                    SpinnerOption(label = "Facilidade de visualização para leitura mensal", options = listOf("Facil Acesso", "Dificil Acesso"), selectedOption = viewModel.acessibilidade, onOptionSelected = { viewModel.acessibilidade = it })
                 }
             }
 

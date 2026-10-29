@@ -20,9 +20,8 @@ data class Customer(
     val email: String? = null,
     val celular: String? = null,
     
-    @SerialName("caixa_padrao") val isStandardMeasurementBox: String? = null,
     @SerialName("lacres_padronizados") val isStandardizedSeals: String? = null,
-    @SerialName("hd_acessivel") val isHdAccessible: String? = null,
+    @SerialName("hidrometro_acessivel_manutencao") val isAccessibleForMaintenance: String? = null,
     @SerialName("veranista") val isVacationer: String? = null,
     @SerialName("possui_piscina") val possuiPiscina: String? = null,
     @SerialName("possui_caixa_agua") val possuiCaixaAgua: String? = null,

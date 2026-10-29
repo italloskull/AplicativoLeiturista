@@ -91,9 +91,8 @@ class RecadastroViewModel(
     var beneficiarioSocial by mutableStateOf<String?>(null)
     var usaAguaVizinho by mutableStateOf<String?>(null)
     var possuiHidrometro by mutableStateOf<String?>(null)
-    var isStandardMeasurementBox by mutableStateOf<String?>(null)
     var isStandardizedSeals by mutableStateOf<String?>(null)
-    var isHdAccessible by mutableStateOf<String?>(null)
+    var isAccessibleForMaintenance by mutableStateOf<String?>(null)
     var isVacationer by mutableStateOf<String?>(null)
     var tilEsgoto by mutableStateOf<String?>(null)
     var locationStatus by mutableStateOf<String?>(null)
@@ -201,7 +200,7 @@ class RecadastroViewModel(
         var score = 0f
         val criticalWeight = 15f
         val normalWeight = 2f
-        val totalWeight = 140f
+        val totalWeight = 138f
 
         // 1. CAMPOS CRÍTICOS (Peso 15 cada)
         if (matricula.isNotBlank()) score += criticalWeight
@@ -253,7 +252,7 @@ class RecadastroViewModel(
             if (entrevistadoNomeApenas.isNotBlank()) score += normalWeight
         }
 
-        // Características Físicas e Sanitárias (17)
+        // Características Físicas e Sanitárias (16)
         if (pavimentoRua != null) score += normalWeight
         if (pavimentoCalcada != null) score += normalWeight
         if (fonteAbastecimento != null) score += normalWeight
@@ -263,9 +262,8 @@ class RecadastroViewModel(
         if (beneficiarioSocial != null) score += normalWeight
         if (usaAguaVizinho != null) score += normalWeight
         if (possuiHidrometro != null) score += normalWeight
-        if (isStandardMeasurementBox != null) score += normalWeight
         if (isStandardizedSeals != null) score += normalWeight
-        if (isHdAccessible != null) score += normalWeight
+        if (isAccessibleForMaintenance != null) score += normalWeight
         if (isVacationer != null) score += normalWeight
         if (tilEsgoto != null) score += normalWeight
         if (locationStatus != null) score += normalWeight
@@ -310,9 +308,8 @@ class RecadastroViewModel(
             beneficiarioSocial = customer.beneficiarioSocial.ifSpaceNull()
             usaAguaVizinho = customer.usaAguaVizinho.ifSpaceNull()
             possuiHidrometro = customer.possuiHidrometro.ifSpaceNull()
-            isStandardMeasurementBox = customer.isStandardMeasurementBox.ifSpaceNull()
             isStandardizedSeals = customer.isStandardizedSeals.ifSpaceNull()
-            isHdAccessible = customer.isHdAccessible.ifSpaceNull()
+            isAccessibleForMaintenance = customer.isAccessibleForMaintenance.ifSpaceNull()
             isVacationer = customer.isVacationer.ifSpaceNull()
             tilEsgoto = customer.tilEsgoto.ifSpaceNull()
             locationStatus = customer.locationStatus.ifSpaceNull()
@@ -427,9 +424,8 @@ class RecadastroViewModel(
                     registrationDigit = registrationDigit.orSpace(),
                     email = if (responsavelTipo == "Proprietário") email.orSpace() else " ",
                     celular = if (responsavelTipo == "Proprietário") celular1.orSpace() else " ",
-                    isStandardMeasurementBox = isStandardMeasurementBox.orSpace(),
                     isStandardizedSeals = isStandardizedSeals.orSpace(),
-                    isHdAccessible = isHdAccessible.orSpace(),
+                    isAccessibleForMaintenance = isAccessibleForMaintenance.orSpace(),
                     isVacationer = isVacationer.orSpace(),
                     possuiPiscina = possuiPiscina.orSpace(),
                     possuiCaixaAgua = possuiCaixaAgua.orSpace(),

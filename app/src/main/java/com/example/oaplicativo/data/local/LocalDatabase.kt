@@ -94,6 +94,15 @@ class LocalDatabase(context: Context) :
                 db.execSQL("ALTER TABLE grandes_empreendimentos ADD COLUMN assinatura_payload TEXT")
             } catch (_: Exception) {}
         }
+        if (oldVersion < 55) {
+            // SÊNIOR MIGRATION v55: Migração atômica de hd_acessivel para hidrometro_acessivel_manutencao (API 29+)
+            try {
+                db.transaction {
+                    execSQL("ALTER TABLE customers ADD COLUMN hidrometro_acessivel_manutencao TEXT")
+                    execSQL("UPDATE customers SET hidrometro_acessivel_manutencao = hd_acessivel WHERE hd_acessivel IS NOT NULL")
+                }
+            } catch (_: Exception) {}
+        }
     }
 
     fun saveCustomerOffline(customer: Customer): Int {
@@ -107,9 +116,9 @@ class LocalDatabase(context: Context) :
             put("digito_matricula", customer.registrationDigit)
             put("email", customer.email)
             put("celular", customer.celular)
-            put("caixa_padrao", customer.isStandardMeasurementBox)
+            put("caixa_padrao", " ")
             put("lacres_padronizados", customer.isStandardizedSeals)
-            put("hd_acessivel", customer.isHdAccessible)
+            put("hidrometro_acessivel_manutencao", customer.isAccessibleForMaintenance)
             put("veranista", customer.isVacationer)
             put("possui_piscina", customer.possuiPiscina)
             put("possui_caixa_agua", customer.possuiCaixaAgua)
@@ -183,9 +192,8 @@ class LocalDatabase(context: Context) :
                     registrationDigit = cursor.getString(cursor.getColumnIndexOrThrow("digito_matricula")),
                     email = cursor.getString(cursor.getColumnIndexOrThrow("email")),
                     celular = cursor.getString(cursor.getColumnIndexOrThrow("celular")),
-                    isStandardMeasurementBox = cursor.getString(cursor.getColumnIndexOrThrow("caixa_padrao")),
                     isStandardizedSeals = cursor.getString(cursor.getColumnIndexOrThrow("lacres_padronizados")),
-                    isHdAccessible = cursor.getString(cursor.getColumnIndexOrThrow("hd_acessivel")),
+                    isAccessibleForMaintenance = cursor.getString(cursor.getColumnIndexOrThrow("hidrometro_acessivel_manutencao")),
                     isVacationer = cursor.getString(cursor.getColumnIndexOrThrow("veranista")),
                     possuiPiscina = cursor.getString(cursor.getColumnIndexOrThrow("possui_piscina")),
                     possuiCaixaAgua = cursor.getString(cursor.getColumnIndexOrThrow("possui_caixa_agua")),
@@ -539,12 +547,12 @@ class LocalDatabase(context: Context) :
         }
 
         private const val DATABASE_NAME = "sanitation_final_v17.db"
-        private const val DATABASE_VERSION = 54
+        private const val DATABASE_VERSION = 55
         
         private const val CREATE_TABLE_CUSTOMERS = """
             CREATE TABLE IF NOT EXISTS customers (
                 id TEXT PRIMARY KEY, cidade_id TEXT, leiturista_id TEXT, name TEXT, matricula TEXT, digito_matricula TEXT, email TEXT, celular TEXT,
-                caixa_padrao TEXT, lacres_padronizados TEXT, hd_acessivel TEXT, veranista TEXT, possui_piscina TEXT, possui_caixa_agua TEXT,
+                caixa_padrao TEXT, lacres_padronizados TEXT, hd_acessivel TEXT, hidrometro_acessivel_manutencao TEXT, veranista TEXT, possui_piscina TEXT, possui_caixa_agua TEXT,
                 latitude REAL, longitude REAL, situacao_local TEXT, qtd_economias INTEGER, adicionado_por TEXT, capturado_em TEXT, updated_at TEXT, date TEXT,
                 qualidade TEXT, entrevistado_nome TEXT, entrevistado_cpf TEXT, entrevistado_mae TEXT, entrevistado_nascimento TEXT, entrevistado_sexo TEXT,
                 entrevistado_apresentou_doc TEXT, entrevistado_qual_doc TEXT, logradouro TEXT, numero TEXT, complemento TEXT, bairro TEXT, cidade TEXT,
